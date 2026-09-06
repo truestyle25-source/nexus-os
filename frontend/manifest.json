@@ -2,7 +2,6 @@
   "id": "nexus-os",
   "name": "NEXUS OS",
   "short_name": "NEXUS OS",
-  "description": "Plataforma SaaS empresarial que transforma dados em decisões com IA",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
@@ -10,24 +9,16 @@
   "theme_color": "#8b5cf6",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/4712/4712109.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/4712/4712109.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshot-1.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
     }
   ]
 }
