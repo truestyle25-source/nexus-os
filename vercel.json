@@ -1,15 +1,27 @@
 {
-  "services": {
-    "frontend": {
-      "root": "Frontend",
-      "framework": "vite",
-      "buildCommand": "npm run build",
-      "installCommand": "npm install",
-      "outputDirectory": "dist"
+    "services": {
+        "frontend": {
+            "root": "frontend",
+            "framework": "vite"
+        },
+        "backend": {
+            "root": "backend"
+        }
     },
-    "backend": {
-      "root": "backend",
-      "path": "/api"
-    }
-  }
+    "rewrites": [
+        {
+            "source": "/api(/.*)?",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/(.*)",
+            "destination": {
+                "type": "service",
+                "service": "frontend"
+            }
+        }
+    ]
 }
