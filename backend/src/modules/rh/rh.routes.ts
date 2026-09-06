@@ -3,7 +3,6 @@ import { rhController } from './rh.controller';
 import { authMiddleware } from '../../middleware/auth';
 
 const router = Router();
-
 router.use(authMiddleware);
 
 router.get('/funcionarios', rhController.listFuncionarios);
