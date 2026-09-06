@@ -1,6 +1,15 @@
 {
+  "buildCommand": "cd Frontend && npm install && npm run build",
+  "outputDirectory": "Frontend/dist",
+  "framework": "vite",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/backend/:path*" },
-    { "source": "/(.*)", "destination": "/Frontend/$1" }
+    {
+      "source": "/api/:path*",
+      "destination": "https://nexus-os-7u4g.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/Frontend/$1"
+    }
   ]
 }
