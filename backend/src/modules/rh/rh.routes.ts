@@ -1,9 +1,9 @@
-
 import { Router } from 'express';
 import { rhController } from './rh.controller';
 import { authMiddleware } from '../../middleware/auth';
 
 const router = Router();
+
 router.use(authMiddleware);
 
 router.get('/funcionarios', rhController.listFuncionarios);
@@ -13,4 +13,5 @@ router.delete('/funcionarios/:id', rhController.deleteFuncionario);
 router.get('/ponto', rhController.listPonto);
 router.post('/ponto', rhController.registrarPonto);
 
+export const rhRoutes = router;
 export default router;
