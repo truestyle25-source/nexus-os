@@ -1,4 +1,3 @@
-
 import { Router } from 'express';
 import { pdvController } from './pdv.controller';
 import { authMiddleware } from '../../middleware/auth';
@@ -12,4 +11,5 @@ router.get('/caixa/atual', pdvController.getCaixaAtual);
 router.post('/vendas', pdvController.criarVenda);
 router.get('/vendas', pdvController.listVendas);
 
+export const pdvRoutes = router;
 export default router;
