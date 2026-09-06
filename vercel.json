@@ -1,0 +1,15 @@
+{
+  "services": {
+    "frontend": {
+      "root": "Frontend",
+      "framework": "vite",
+      "buildCommand": "npm run build",
+      "installCommand": "npm install",
+      "outputDirectory": "dist"
+    },
+    "backend": {
+      "root": "backend",
+      "path": "/api"
+    }
+  }
+}
