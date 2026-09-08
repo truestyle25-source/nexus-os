@@ -1,3 +1,3 @@
 
-import pdvRoutes from './pdv.routes';
+import pdvRoutes from './pdv.routes.js';
 export { pdvRoutes };

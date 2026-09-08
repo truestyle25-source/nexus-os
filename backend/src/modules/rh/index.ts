@@ -1,3 +1,3 @@
 
-import rhRoutes from './rh.routes';
+import rhRoutes from './rh.routes.js';
 export { rhRoutes };

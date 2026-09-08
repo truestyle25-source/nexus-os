@@ -1,6 +1,6 @@
 
 import { Request, Response } from 'express';
-import { rhService } from './rh.service';
+import { rhService } from './rh.service.js';
 
 export const rhController = {
   async listFuncionarios(req: Request, res: Response) {

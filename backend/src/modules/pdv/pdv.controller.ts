@@ -1,6 +1,6 @@
 
 import { Request, Response } from 'express';
-import { pdvService } from './pdv.service';
+import { pdvService } from './pdv.service.js';
 
 export const pdvController = {
   async abrirCaixa(req: Request, res: Response) {

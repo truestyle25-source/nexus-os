@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { pdvController } from './pdv.controller';
-import { authMiddleware } from '../../middleware/auth';
+import { pdvController } from './pdv.controller.js';
+import { authMiddleware } from '../../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware);
