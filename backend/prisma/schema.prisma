@@ -1,0 +1,95 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  nome      String
+  role      String   @default("USER")
+  criadoEm  DateTime @default(now())
+}
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String?
+  telefone  String?
+  criadoEm  DateTime @default(now())
+}
+
+model Produto {
+  id        String   @id @default(cuid())
+  nome      String
+  preco     Float
+  estoque   Int      @default(0)
+  criadoEm  DateTime @default(now())
+}
+
+// RH MODELS
+model Cargo {
+  id            String        @id @default(cuid())
+  nome          String        @unique
+  salarioBase   Float
+  funcionarios  Funcionario[]
+}
+
+model Funcionario {
+  id          String    @id @default(cuid())
+  nome        String
+  cpf         String    @unique
+  cargoId     String
+  cargo       Cargo     @relation(fields: [cargoId], references: [id])
+  salario     Float
+  admissao    DateTime  @default(now())
+  status      String    @default("ATIVO")
+  pontos      Ponto[]
+  criadoEm    DateTime  @default(now())
+}
+
+model Ponto {
+  id             String      @id @default(cuid())
+  funcionarioId  String
+  funcionario    Funcionario @relation(fields: [funcionarioId], references: [id])
+  dataHora       DateTime    @default(now())
+  tipo           String      // ENTRADA, SAIDA, INTERVALO
+  criadoEm       DateTime    @default(now())
+}
+
+// PDV MODELS
+model Caixa {
+  id          String    @id @default(cuid())
+  saldoInicial Float
+  saldoFinal   Float?
+  status       String    @default("ABERTO")
+  abertoEm     DateTime  @default(now())
+  fechadoEm    DateTime?
+  vendas       Venda[]
+}
+
+model Venda {
+  id          String      @id @default(cuid())
+  caixaId     String?
+  caixa       Caixa?      @relation(fields: [caixaId], references: [id])
+  total       Float
+  formaPagamento String   @default("DINHEIRO")
+  itens       ItemVenda[]
+  criadoEm    DateTime    @default(now())
+}
+
+model ItemVenda {
+  id          String   @id @default(cuid())
+  vendaId     String
+  venda       Venda    @relation(fields: [vendaId], references: [id])
+  produto     String
+  quantidade  Int
+  precoUnit   Float
+  subtotal    Float
+}
