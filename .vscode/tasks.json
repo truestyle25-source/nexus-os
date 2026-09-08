@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Package corrected NEXUS OS ZIP",
+			"type": "shell",
+			"command": "$src='C:\\Users\\samue\\Downloads\\NEXUS_OS_FASE_1\\nexus-os'; $stage='C:\\Users\\samue\\Downloads\\NEXUS_OS_FASE_1\\nexus-os-package-staging'; $zip='C:\\Users\\samue\\Downloads\\NEXUS_OS_FASE_1\\NEXUS_OS_FASE_1_CORRIGIDA.zip'; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item $zip -Force -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Path $stage | Out-Null; Get-ChildItem $src -Force | Where-Object { $_.Name -notin @('node_modules','.next','dist','coverage') } | Copy-Item -Destination $stage -Recurse -Force; Get-ChildItem $stage -Recurse -Force | Where-Object { $_.Name -in @('node_modules','.next','dist','coverage') -or $_.Name -like '.env' -or $_.Name -like '.env.*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; Compress-Archive -Path ($stage + '\\*') -DestinationPath $zip -CompressionLevel Optimal; Remove-Item $stage -Recurse -Force; Write-Output $zip",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
