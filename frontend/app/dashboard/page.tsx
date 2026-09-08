@@ -4,6 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchMe, clearToken, getToken, type MeResponse } from '@/lib/api';
 
+const navigation = [
+  ['Dashboard', '▦'], ['Produtos', '◇'], ['Estoque', '♧'], ['Vendas', '⌁'],
+  ['PDV', '▤'], ['Financeiro', '▥'], ['DRE', '↗'], ['Fluxo', '↗'],
+  ['Metas', '◎'], ['RH', '♧'], ['Informação Cruzada', '◷'], ['IA', '♧'],
+];
+
+function formatCompanyName(name: string) {
+  return name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -28,71 +38,50 @@ export default function DashboardPage() {
     router.replace('/');
   }
 
-  if (error) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-300">
-        <p>{error} — redirecionando para o login...</p>
-      </main>
-    );
-  }
-
-  if (!me) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-400">
-        <p>Carregando...</p>
-      </main>
-    );
-  }
+  if (error) return <main className="dashboard-state">{error} - redirecionando para o login...</main>;
+  if (!me) return <main className="dashboard-state">Carregando...</main>;
 
   return (
-    <main className="min-h-screen px-6 py-10 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl logo-glow flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h7l-1 8 11-14h-8l1-6z"/></svg>
-          </div>
-          <span className="text-white font-bold text-xl">NEXUS OS</span>
+    <main className="dashboard-shell">
+      <aside className="sidebar">
+        <div className="brand-lockup">
+          <div className="brand-mark"><svg width="21" height="21" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h7l-1 8 11-14h-8l1-6z" /></svg></div>
+          <div><strong>NEXUS OS</strong><span>TRUE STYLE</span></div>
         </div>
-        <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-white border border-white/10 rounded-full px-4 py-2">
-          Sair
-        </button>
-      </div>
+        <nav className="main-nav" aria-label="Navegação principal">
+          {navigation.map(([label, icon], index) => (
+            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => index !== 0 && alert(`${label} estará disponível em breve.`)}>
+              <span className="nav-icon" aria-hidden="true">{icon}</span>{label}
+            </button>
+          ))}
+        </nav>
+        <button className="logout-button" type="button" onClick={handleLogout}>↪ <span>Sair</span></button>
+      </aside>
 
-      <div className="card rounded-2xl p-6">
-        <p className="text-gray-400 text-sm mb-1">Bem-vindo(a),</p>
-        <h1 className="text-white text-2xl font-bold mb-4">{me.name}</h1>
-
-        <div className="grid grid-cols-2 gap-4 text-sm">
+      <section className="dashboard-content">
+        <header className="dashboard-header">
           <div>
-            <p className="text-gray-500">E-mail</p>
-            <p className="text-gray-200">{me.email}</p>
+            <h1>Dashboard</h1>
+            <p>Empresa: {formatCompanyName(me.name)} <span>•</span> Usuário: {me.email} <span>•</span> companyId via JWT</p>
           </div>
-          <div>
-            <p className="text-gray-500">Papel</p>
-            <p className="text-gray-200 capitalize">{me.role.name}</p>
-          </div>
+          <div className="header-status"><span className="status-pill"><i /> Ativo</span><span className="payment-pill">3 pagamentos</span></div>
+        </header>
+
+        <div className="metric-grid">
+          <article className="metric-card"><div className="metric-heading">VENDAS HOJE <span className="metric-icon green">⌑</span></div><strong>R$ 2.840,00</strong><p className="positive">+12% vs ontem • companyId isolado</p></article>
+          <article className="metric-card"><div className="metric-heading">ESTOQUE <span className="metric-icon purple">♧</span></div><strong>1.247 itens</strong><p>Isolado por empresa • dados sincronizados</p></article>
+          <article className="metric-card"><div className="metric-heading">TRIAL / PLANO <span className="metric-icon amber">◷</span></div><strong className="plan-title">Plano Ativo</strong><p>R$19,90/mês manual • InfinitePay preservado</p></article>
         </div>
 
-        <div className="mt-6 pt-6 border-t border-white/10">
-          <p className="text-gray-500 text-xs mb-2">Permissões ({me.role.permissions.length})</p>
-          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-            {me.role.permissions.map((p) => (
-              <span key={p} className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-full px-2.5 py-1">
-                {p}
-              </span>
-            ))}
-          </div>
+        <div className="panel-grid">
+          <article className="info-panel"><h2><span className="panel-symbol purple-text">♢</span> Segurança multi-tenant preservada</h2><div className="info-list"><InfoRow label="companyId origem" value="JWT exclusivo" accent /><InfoRow label="Isolamento A×B" value="Ativo • Validado" accent /><InfoRow label="CNPJ pertence à" value={formatCompanyName(me.name)} /><InfoRow label="Usuário autenticado" value={me.email} /></div></article>
+          <article className="info-panel"><h2><span className="panel-symbol amber-text">▣</span> InfinitePay • Manual R$19,90 preservado</h2><div className="info-list"><InfoRow label="order_nsu" value="ORD_1788820928646_USG0" /><InfoRow label="transaction_nsu" value="TRX_1788820928646_ISNN5I" /><InfoRow label="Checkout" value="Manual • +30 dias" /><InfoRow label="Webhook / payment_check" value="Preservado" accent /></div><button className="finance-button" type="button" onClick={() => alert('Módulo financeiro em construção.')}>↗ <span>Abrir Financeiro</span></button></article>
         </div>
-      </div>
-
-      <div className="card rounded-2xl p-6 mt-4">
-        <p className="text-white font-semibold mb-1">✅ Fase 1 — Fundação concluída</p>
-        <p className="text-gray-400 text-sm">
-          Autenticação, usuários, permissões granulares e auditoria estão funcionando.
-          Os módulos de Produtos, Estoque, Vendas, PDV e demais (Fase 2 em diante) aparecerão aqui
-          conforme forem construídos sobre esta base.
-        </p>
-      </div>
+      </section>
     </main>
   );
+}
+
+function InfoRow({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return <div className="info-row"><span>{label}</span><strong className={accent ? 'accent-value' : ''}>{value}</strong></div>;
 }
