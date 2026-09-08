@@ -4,20 +4,22 @@ import helmet from 'helmet';
 import { Pool } from 'pg';
 import type { AppConfig } from './config/env.js';
 import { PostgresCompanyRepository, PostgresRoleRepository, PostgresUserRepository, PostgresAuditRepository, PostgresSessionRepository } from './repositories/postgres/index.js';
+import { InMemoryCompanyRepository, InMemoryRoleRepository, InMemoryUserRepository, InMemoryAuditRepository, InMemorySessionRepository } from './repositories/memory/index.js';
 import { AuthService } from './services/authService.js';
 import { buildAuthRoutes } from './routes/auth.js';
 import { buildMeRoutes } from './routes/me.js';
 
 export function buildApp(config: AppConfig) {
-  const pool = new Pool({ connectionString: config.databaseUrl });
+  const useMemoryStore = config.databaseUrl === 'memory://local';
+  const pool = useMemoryStore ? null : new Pool({ connectionString: config.databaseUrl });
 
-  const companies = new PostgresCompanyRepository(pool);
-  const roles = new PostgresRoleRepository(pool);
-  const users = new PostgresUserRepository(pool);
-  const sessions = new PostgresSessionRepository(pool);
-  const audit = new PostgresAuditRepository(pool);
+  const companies = useMemoryStore ? new InMemoryCompanyRepository() : new PostgresCompanyRepository(pool!);
+  const roles = useMemoryStore ? new InMemoryRoleRepository() : new PostgresRoleRepository(pool!);
+  const users = useMemoryStore ? new InMemoryUserRepository() : new PostgresUserRepository(pool!);
+  const sessions = useMemoryStore ? new InMemorySessionRepository() : new PostgresSessionRepository(pool!);
+  const audit = useMemoryStore ? new InMemoryAuditRepository() : new PostgresAuditRepository(pool!);
 
-  const authService = new AuthService(companies, roles, users, audit, config.jwtSecret, pool, sessions);
+  const authService = new AuthService(companies, roles, users, audit, config.jwtSecret, pool ?? undefined, sessions);
 
   const app = express();
   app.use(helmet());
