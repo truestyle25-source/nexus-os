@@ -7,7 +7,7 @@ import { fetchMe, logout, getToken, type MeResponse } from '@/lib/api';
 const navigation = [
   ['Dashboard', '▦'], ['Produtos', '◇'], ['Estoque', '♧'], ['Vendas', '⌁'],
   ['PDV', '▤'], ['Financeiro', '▥'], ['DRE', '↗'], ['Fluxo', '↗'],
-  ['Metas', '◎'], ['RH', '♧'], ['Informação Cruzada', '◷'], ['IA', '♧'],
+  ['Metas', '◎'], ['RH', '♧'], ['Informação Cruzada', '◷'], ['IA', '♧'], ['Configurações', '⚙'],
 ];
 
 function formatCompanyName(name: string) {
@@ -50,7 +50,7 @@ export default function DashboardPage() {
         </div>
         <nav className="main-nav" aria-label="Navegação principal">
           {navigation.map(([label, icon], index) => (
-            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => index !== 0 && alert(`${label} estará disponível em breve.`)}>
+            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => label === 'Configurações' ? router.push('/admin') : index !== 0 && alert(`${label} estará disponível em breve.`)}>
               <span className="nav-icon" aria-hidden="true">{icon}</span>{label}
             </button>
           ))}
@@ -68,14 +68,14 @@ export default function DashboardPage() {
         </header>
 
         <div className="metric-grid">
-          <article className="metric-card"><div className="metric-heading">VENDAS HOJE <span className="metric-icon green">⌑</span></div><strong>R$ 2.840,00</strong><p className="positive">+12% vs ontem • companyId isolado</p></article>
-          <article className="metric-card"><div className="metric-heading">ESTOQUE <span className="metric-icon purple">♧</span></div><strong>1.247 itens</strong><p>Isolado por empresa • dados sincronizados</p></article>
-          <article className="metric-card"><div className="metric-heading">TRIAL / PLANO <span className="metric-icon amber">◷</span></div><strong className="plan-title">Plano Ativo</strong><p>R$19,90/mês manual • InfinitePay preservado</p></article>
+          <article className="metric-card"><div className="metric-heading">VENDAS HOJE <span className="metric-icon green">⌑</span></div><strong>Sem dados</strong><p>Nenhuma venda registrada</p></article>
+          <article className="metric-card"><div className="metric-heading">ESTOQUE <span className="metric-icon purple">♧</span></div><strong>Sem dados</strong><p>Módulo de estoque ainda não configurado</p></article>
+          <article className="metric-card"><div className="metric-heading">TRIAL / PLANO <span className="metric-icon amber">◷</span></div><strong className="plan-title">Não configurado</strong><p>Nenhuma assinatura cadastrada</p></article>
         </div>
 
         <div className="panel-grid">
           <article className="info-panel"><h2><span className="panel-symbol purple-text">♢</span> Segurança multi-tenant preservada</h2><div className="info-list"><InfoRow label="companyId origem" value="JWT exclusivo" accent /><InfoRow label="Isolamento A×B" value="Ativo • Validado" accent /><InfoRow label="CNPJ pertence à" value={formatCompanyName(me.name)} /><InfoRow label="Usuário autenticado" value={me.email} /></div></article>
-          <article className="info-panel"><h2><span className="panel-symbol amber-text">▣</span> InfinitePay • Manual R$19,90 preservado</h2><div className="info-list"><InfoRow label="order_nsu" value="ORD_1788820928646_USG0" /><InfoRow label="transaction_nsu" value="TRX_1788820928646_ISNN5I" /><InfoRow label="Checkout" value="Manual • +30 dias" /><InfoRow label="Webhook / payment_check" value="Preservado" accent /></div><button className="finance-button" type="button" onClick={() => alert('Módulo financeiro em construção.')}>↗ <span>Abrir Financeiro</span></button></article>
+          <article className="info-panel"><h2><span className="panel-symbol amber-text">▣</span> Integração de pagamentos</h2><div className="info-list"><InfoRow label="Status" value="Não configurado" /><InfoRow label="Última sincronização" value="Sem dados" /><InfoRow label="Checkout" value="Aguardando configuração oficial" /><InfoRow label="Webhook / payment_check" value="Não configurado" accent /></div><button className="finance-button" type="button" onClick={() => alert('A integração só será ativada após configuração oficial.')}>↗ <span>Abrir Financeiro</span></button></article>
         </div>
       </section>
     </main>

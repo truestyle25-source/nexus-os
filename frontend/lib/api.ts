@@ -125,3 +125,48 @@ export interface MeResponse {
 export function fetchMe() {
   return request<MeResponse>('/api/me');
 }
+
+export interface AdminUser {
+  id: string;
+  companyId: string;
+  sectorId: string | null;
+  roleId: string;
+  name: string;
+  email: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface AdminRole {
+  id: string;
+  companyId: string;
+  name: string;
+  isSystem: boolean;
+  permissions: string[];
+}
+
+export interface AuditEntry {
+  id: string;
+  userId: string | null;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  origin: string;
+  createdAt: string;
+}
+
+export function fetchAdminUsers() {
+  return request<AdminUser[]>('/api/admin/users');
+}
+
+export function fetchAdminRoles() {
+  return request<AdminRole[]>('/api/admin/roles');
+}
+
+export function fetchAdminAudit() {
+  return request<AuditEntry[]>('/api/admin/audit');
+}
+
+export function createAdminUser(input: { name: string; email: string; password: string; roleId: string }) {
+  return request<AdminUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(input) });
+}
