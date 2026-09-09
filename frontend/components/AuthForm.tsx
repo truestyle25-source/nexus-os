@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { login, registerCompany, saveToken } from '@/lib/api';
+import { login, registerCompany, saveSession } from '@/lib/api';
 import { maskCnpj, isValidCnpjClientSide, generateRandomValidCnpjClientSide } from '@/lib/cnpj';
 
 type Tab = 'login' | 'signup';
@@ -34,7 +34,7 @@ export default function AuthForm() {
     setLoading(true);
     try {
       const result = await login(loginEmail, loginPassword);
-      saveToken(result.accessToken);
+      saveSession(result);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao entrar');
@@ -62,7 +62,7 @@ export default function AuthForm() {
         companyName, cnpj, responsibleName,
         email: signupEmail, password: signupPassword, confirmPassword,
       });
-      saveToken(result.accessToken);
+      saveSession(result);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar conta');

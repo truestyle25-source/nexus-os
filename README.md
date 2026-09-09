@@ -171,13 +171,19 @@ npm start
   glass), conectada de verdade ao backend (sem dados fake)
 - ✅ Dashboard mínimo, protegido por sessão, mostrando usuário e permissões
   reais vindas da API
+- ✅ APIs administrativas protegidas por `configuracoes`: usuários, papéis e
+  auditoria, sempre isoladas pelo `companyId` do token
+- ✅ Sessão do frontend com refresh token, renovação automática após expiração
+  do access token e logout que solicita revogação no backend
+- ✅ Frontend oficial definido como Next.js; o frontend Vite legado fica fora
+  do build para evitar dois contratos de autenticação concorrentes
 
 ## Funcionalidades ainda pendentes (próximas fases)
 
 - ⏳ Recuperação de senha ("esqueci minha senha") — mencionada no prompt
   mestre, ainda não implementada nesta fase
-- ⏳ Tela de administração de usuários/papéis (a API de permissões existe,
-  falta a interface para o admin gerenciar isso visualmente)
+- ⏳ Tela de administração visual de usuários/papéis (as APIs da fundação já
+  existem; a interface administrativa será adicionada sem dados fictícios)
 - ⏳ Todos os módulos de negócio: Produtos, Estoque, Compras, Fornecedores,
   Clientes, Vendas, PDV (Fase 2), Financeiro/DRE/ROI/Ticket Médio/Metas
   (Fase 3), RH/Ponto (Fase 4), Dashboard avançado/IA/Intelligence Center/

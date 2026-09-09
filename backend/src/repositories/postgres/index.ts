@@ -120,6 +120,13 @@ export class PostgresRoleRepository implements RoleRepository {
     if (rows.length === 0) return null;
     return this.findById(rows[0].id, db);
   }
+
+  async listByCompany(companyId: string, client?: PoolClient | Pool): Promise<Role[]> {
+    const db = client ?? this.pool;
+    const { rows } = await db.query(`SELECT id FROM roles WHERE company_id = $1 ORDER BY name`, [companyId]);
+    const roles = await Promise.all(rows.map((row) => this.findById(row.id, db)));
+    return roles.filter((role): role is Role => role !== null);
+  }
 }
 
 export class PostgresUserRepository implements UserRepository {
@@ -168,6 +175,17 @@ export class PostgresUserRepository implements UserRepository {
       [id]
     );
     return rows[0] ?? null;
+  }
+
+  async listByCompany(companyId: string, client?: PoolClient | Pool): Promise<User[]> {
+    const db = client ?? this.pool;
+    const { rows } = await db.query(
+      `SELECT id, company_id AS "companyId", sector_id AS "sectorId", role_id AS "roleId",
+              name, email, password_hash AS "passwordHash", status, created_at AS "createdAt"
+       FROM users WHERE company_id = $1 ORDER BY name`,
+      [companyId]
+    );
+    return rows;
   }
 }
 

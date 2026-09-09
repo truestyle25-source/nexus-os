@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { fetchMe, clearToken, getToken, type MeResponse } from '@/lib/api';
+import { fetchMe, logout, getToken, type MeResponse } from '@/lib/api';
 
 const navigation = [
   ['Dashboard', '▦'], ['Produtos', '◇'], ['Estoque', '♧'], ['Vendas', '⌁'],
@@ -28,13 +28,13 @@ export default function DashboardPage() {
       .then(setMe)
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Sessão inválida');
-        clearToken();
+        void logout();
         setTimeout(() => router.replace('/'), 1500);
       });
   }, [router]);
 
   function handleLogout() {
-    clearToken();
+    void logout();
     router.replace('/');
   }
 

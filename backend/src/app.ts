@@ -8,6 +8,7 @@ import { InMemoryCompanyRepository, InMemoryRoleRepository, InMemoryUserReposito
 import { AuthService } from './services/authService.js';
 import { buildAuthRoutes } from './routes/auth.js';
 import { buildMeRoutes } from './routes/me.js';
+import { buildAdminRoutes } from './routes/admin.js';
 
 export function buildApp(config: AppConfig) {
   const useMemoryStore = config.databaseUrl === 'memory://local';
@@ -29,6 +30,7 @@ export function buildApp(config: AppConfig) {
   app.get('/health', (_req, res) => res.json({ status: 'ok', env: config.nodeEnv }));
   app.use('/api/auth', buildAuthRoutes(authService));
   app.use('/api/me', buildMeRoutes(config.jwtSecret, users, roles));
+  app.use('/api/admin', buildAdminRoutes(config.jwtSecret, users, roles, audit));
 
   // handler de erro genérico — nunca vaza detalhes internos ao cliente
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

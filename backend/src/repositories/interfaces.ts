@@ -10,6 +10,7 @@ export interface RoleRepository {
   create(data: Omit<Role, 'id'>, client?: unknown): Promise<Role>;
   findById(id: string, client?: unknown): Promise<Role | null>;
   findByCompanyAndName(companyId: string, name: string, client?: unknown): Promise<Role | null>;
+  listByCompany(companyId: string, client?: unknown): Promise<Role[]>;
 }
 
 export interface UserRepository {
@@ -17,6 +18,7 @@ export interface UserRepository {
   findByEmail(companyId: string, email: string, client?: unknown): Promise<User | null>;
   findByEmailAcrossCompanies(email: string, client?: unknown): Promise<User[]>;
   findById(id: string, client?: unknown): Promise<User | null>;
+  listByCompany(companyId: string, client?: unknown): Promise<User[]>;
 }
 
 export interface SessionRepository {

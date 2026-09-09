@@ -41,6 +41,10 @@ export class InMemoryRoleRepository implements RoleRepository {
     }
     return null;
   }
+
+  async listByCompany(companyId: string): Promise<Role[]> {
+    return [...this.roles.values()].filter((role) => role.companyId === companyId);
+  }
 }
 
 export class InMemoryUserRepository implements UserRepository {
@@ -67,6 +71,10 @@ export class InMemoryUserRepository implements UserRepository {
 
   async findById(id: string): Promise<User | null> {
     return this.users.get(id) ?? null;
+  }
+
+  async listByCompany(companyId: string): Promise<User[]> {
+    return [...this.users.values()].filter((user) => user.companyId === companyId);
   }
 }
 
