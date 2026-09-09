@@ -60,3 +60,34 @@ export interface AuditEntry {
   ip: string | null;
   createdAt: string;
 }
+
+export interface Product {
+  id: string;
+  companyId: string;
+  name: string;
+  sku: string;
+  barcode: string | null;
+  cost: number;
+  salePrice: number;
+  unit: string;
+  currentStock: number;
+  minimumStock: number;
+  maximumStock: number | null;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InventoryMovementType = 'entry' | 'exit' | 'adjustment' | 'loss' | 'return';
+
+export interface InventoryMovement {
+  id: string;
+  companyId: string;
+  productId: string;
+  userId: string | null;
+  quantity: number;
+  type: InventoryMovementType;
+  reason: string | null;
+  origin: string;
+  createdAt: string;
+}

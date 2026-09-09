@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
-import type { AuditEntry, Company, ModuleName, PermissionAction, Role, Session, User } from '../../domain/types.js';
-import type { AuditRepository, CompanyRepository, RoleRepository, SessionRepository, UserRepository } from '../interfaces.js';
+import type { AuditEntry, Company, InventoryMovement, ModuleName, PermissionAction, Product, Role, Session, User } from '../../domain/types.js';
+import type { AuditRepository, CompanyRepository, ProductRepository, RoleRepository, SessionRepository, UserRepository } from '../interfaces.js';
 import { verifyRefreshToken } from '../../auth/hash.js';
 
 // NOTA: este arquivo depende do pacote 'pg' (node-postgres).
@@ -279,5 +279,71 @@ export class PostgresAuditRepository implements AuditRepository {
       [companyId, limit]
     );
     return rows;
+  }
+}
+
+export class PostgresProductRepository implements ProductRepository {
+  constructor(private readonly pool: Pool) {}
+
+  async create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>, client?: PoolClient | Pool): Promise<Product> {
+    const db = client ?? this.pool;
+    const { rows } = await db.query(
+      `INSERT INTO products (company_id, name, sku, barcode, cost, sale_price, unit, current_stock, minimum_stock, maximum_stock, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id, company_id AS "companyId", name, sku, barcode,
+       cost::float8 AS cost, sale_price::float8 AS "salePrice", unit, current_stock::float8 AS "currentStock",
+       minimum_stock::float8 AS "minimumStock", maximum_stock::float8 AS "maximumStock", status,
+       created_at AS "createdAt", updated_at AS "updatedAt"`,
+      [data.companyId, data.name, data.sku, data.barcode, data.cost, data.salePrice, data.unit, data.currentStock, data.minimumStock, data.maximumStock, data.status]
+    );
+    return rows[0];
+  }
+
+  async findById(companyId: string, id: string, client?: PoolClient | Pool): Promise<Product | null> {
+    const db = client ?? this.pool;
+    const { rows } = await db.query(
+      `SELECT id, company_id AS "companyId", name, sku, barcode, cost::float8 AS cost, sale_price::float8 AS "salePrice",
+       unit, current_stock::float8 AS "currentStock", minimum_stock::float8 AS "minimumStock", maximum_stock::float8 AS "maximumStock",
+       status, created_at AS "createdAt", updated_at AS "updatedAt" FROM products WHERE company_id = $1 AND id = $2`,
+      [companyId, id]
+    );
+    return rows[0] ?? null;
+  }
+
+  async listByCompany(companyId: string, client?: PoolClient | Pool): Promise<Product[]> {
+    const db = client ?? this.pool;
+    const { rows } = await db.query(
+      `SELECT id, company_id AS "companyId", name, sku, barcode, cost::float8 AS cost, sale_price::float8 AS "salePrice",
+       unit, current_stock::float8 AS "currentStock", minimum_stock::float8 AS "minimumStock", maximum_stock::float8 AS "maximumStock",
+       status, created_at AS "createdAt", updated_at AS "updatedAt" FROM products WHERE company_id = $1 ORDER BY name`,
+      [companyId]
+    );
+    return rows;
+  }
+
+  async recordMovement(data: Omit<InventoryMovement, 'id' | 'createdAt'>, client?: PoolClient | Pool): Promise<InventoryMovement> {
+    const db = client ?? this.pool;
+    const ownsTransaction = !client;
+    const txClient = ownsTransaction ? await this.pool.connect() : db as PoolClient;
+    try {
+      if (ownsTransaction) await txClient.query('BEGIN');
+      const updated = await txClient.query(
+        `UPDATE products SET current_stock = current_stock + $1, updated_at = NOW()
+         WHERE id = $2 AND company_id = $3 AND current_stock + $1 >= 0 RETURNING id`,
+        [data.quantity, data.productId, data.companyId]
+      );
+      if (updated.rowCount !== 1) throw new Error('Produto não encontrado ou estoque insuficiente');
+      const { rows } = await txClient.query(
+        `INSERT INTO inventory_movements (company_id, product_id, user_id, quantity, type, reason, origin)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, company_id AS "companyId", product_id AS "productId", user_id AS "userId", quantity::float8 AS quantity, type, reason, origin, created_at AS "createdAt"`,
+        [data.companyId, data.productId, data.userId, data.quantity, data.type, data.reason, data.origin]
+      );
+      if (ownsTransaction) await txClient.query('COMMIT');
+      return rows[0];
+    } catch (error) {
+      if (ownsTransaction) await txClient.query('ROLLBACK');
+      throw error;
+    } finally {
+      if (ownsTransaction) txClient.release();
+    }
   }
 }

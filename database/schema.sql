@@ -107,6 +107,41 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_audit_company_created ON audit_log (company_id, created_at DESC);
 CREATE INDEX idx_users_company ON users (company_id);
 
+-- ---------- PRODUTOS E ESTOQUE ----------
+
+CREATE TABLE IF NOT EXISTS products (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id    UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  sku           TEXT NOT NULL,
+  barcode       TEXT,
+  cost          NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  sale_price    NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
+  unit          TEXT NOT NULL DEFAULT 'un',
+  current_stock NUMERIC(14,3) NOT NULL DEFAULT 0,
+  minimum_stock NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK (minimum_stock >= 0),
+  maximum_stock NUMERIC(14,3),
+  status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (company_id, sku)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  product_id  UUID NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+  quantity    NUMERIC(14,3) NOT NULL CHECK (quantity <> 0),
+  type        TEXT NOT NULL CHECK (type IN ('entry','exit','adjustment','loss','return')),
+  reason      TEXT,
+  origin      TEXT NOT NULL DEFAULT 'manual',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_company ON products (company_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_company ON inventory_movements (company_id, created_at DESC);
+
 -- ---------- SEED: permissões padrão (módulo x ação) ----------
 INSERT INTO permissions (module, action)
 SELECT m, a

@@ -177,6 +177,9 @@ npm start
   do access token e logout que solicita revogação no backend
 - ✅ Frontend oficial definido como Next.js; o frontend Vite legado fica fora
   do build para evitar dois contratos de autenticação concorrentes
+- ✅ Primeira vertical da Fase 2: produtos e movimentações de estoque com
+  persistência PostgreSQL, modo de desenvolvimento em memória, permissões,
+  validações e auditoria
 
 ## Funcionalidades ainda pendentes (próximas fases)
 
@@ -184,8 +187,8 @@ npm start
   mestre, ainda não implementada nesta fase
 - ⏳ Tela de administração visual de usuários/papéis (as APIs da fundação já
   existem; a interface administrativa será adicionada sem dados fictícios)
-- ⏳ Todos os módulos de negócio: Produtos, Estoque, Compras, Fornecedores,
-  Clientes, Vendas, PDV (Fase 2), Financeiro/DRE/ROI/Ticket Médio/Metas
+- ⏳ Módulos de operação restantes: Compras, Fornecedores, Clientes, Vendas e
+  PDV (Fase 2), Financeiro/DRE/ROI/Ticket Médio/Metas
   (Fase 3), RH/Ponto (Fase 4), Dashboard avançado/IA/Intelligence Center/
   Alertas/Integrações (Fase 5)
 - ⏳ Central de Integrações, InfinitePay, OpenAI — arquitetura ainda não

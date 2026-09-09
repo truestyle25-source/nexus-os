@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { AuditEntry, Company, Role, Session, User } from '../../domain/types.js';
-import type { AuditRepository, CompanyRepository, RoleRepository, SessionRepository, UserRepository } from '../interfaces.js';
+import type { AuditEntry, Company, InventoryMovement, Product, Role, Session, User } from '../../domain/types.js';
+import type { AuditRepository, CompanyRepository, ProductRepository, RoleRepository, SessionRepository, UserRepository } from '../interfaces.js';
 import { verifyRefreshToken } from '../../auth/hash.js';
 
 export class InMemoryCompanyRepository implements CompanyRepository {
@@ -137,5 +137,40 @@ export class InMemoryAuditRepository implements AuditRepository {
       .filter((e) => e.companyId === companyId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+}
+
+export class InMemoryProductRepository implements ProductRepository {
+  private products = new Map<string, Product>();
+  private movements = new Map<string, InventoryMovement>();
+
+  async create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<Product> {
+    if ([...this.products.values()].some((product) => product.companyId === data.companyId && product.sku === data.sku)) {
+      throw new Error('SKU já cadastrado para esta empresa');
+    }
+    const now = new Date().toISOString();
+    const product: Product = { ...data, id: randomUUID(), createdAt: now, updatedAt: now };
+    this.products.set(product.id, product);
+    return product;
+  }
+
+  async findById(companyId: string, id: string): Promise<Product | null> {
+    const product = this.products.get(id);
+    return product?.companyId === companyId ? product : null;
+  }
+
+  async listByCompany(companyId: string): Promise<Product[]> {
+    return [...this.products.values()].filter((product) => product.companyId === companyId);
+  }
+
+  async recordMovement(data: Omit<InventoryMovement, 'id' | 'createdAt'>): Promise<InventoryMovement> {
+    const product = await this.findById(data.companyId, data.productId);
+    if (!product) throw new Error('Produto não encontrado');
+    const nextStock = product.currentStock + data.quantity;
+    if (nextStock < 0) throw new Error('Estoque insuficiente');
+    this.products.set(product.id, { ...product, currentStock: nextStock, updatedAt: new Date().toISOString() });
+    const movement: InventoryMovement = { ...data, id: randomUUID(), createdAt: new Date().toISOString() };
+    this.movements.set(movement.id, movement);
+    return movement;
   }
 }

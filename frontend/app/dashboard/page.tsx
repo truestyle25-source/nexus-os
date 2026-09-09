@@ -50,7 +50,7 @@ export default function DashboardPage() {
         </div>
         <nav className="main-nav" aria-label="Navegação principal">
           {navigation.map(([label, icon], index) => (
-            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => label === 'Configurações' ? router.push('/admin') : index !== 0 && alert(`${label} estará disponível em breve.`)}>
+            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => label === 'Configurações' ? router.push('/admin') : label === 'Produtos' ? router.push('/products') : index !== 0 && alert(`${label} estará disponível em breve.`)}>
               <span className="nav-icon" aria-hidden="true">{icon}</span>{label}
             </button>
           ))}

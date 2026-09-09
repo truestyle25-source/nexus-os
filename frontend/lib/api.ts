@@ -170,3 +170,32 @@ export function fetchAdminAudit() {
 export function createAdminUser(input: { name: string; email: string; password: string; roleId: string }) {
   return request<AdminUser>('/api/admin/users', { method: 'POST', body: JSON.stringify(input) });
 }
+
+export interface Product {
+  id: string;
+  companyId: string;
+  name: string;
+  sku: string;
+  barcode: string | null;
+  cost: number;
+  salePrice: number;
+  unit: string;
+  currentStock: number;
+  minimumStock: number;
+  maximumStock: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchProducts() {
+  return request<Product[]>('/api/products');
+}
+
+export function createProduct(input: { name: string; sku: string; cost: number; salePrice: number; minimumStock: number }) {
+  return request<Product>('/api/products', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function createInventoryMovement(productId: string, input: { quantity: number; type: 'entry' | 'exit' | 'adjustment' | 'loss' | 'return'; reason: string }) {
+  return request(`/api/products/${productId}/movements`, { method: 'POST', body: JSON.stringify(input) });
+}

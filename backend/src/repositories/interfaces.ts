@@ -1,4 +1,4 @@
-import type { AuditEntry, Company, Role, Session, User } from '../domain/types.js';
+import type { AuditEntry, Company, InventoryMovement, Product, Role, Session, User } from '../domain/types.js';
 
 export interface CompanyRepository {
   create(data: Omit<Company, 'id' | 'createdAt'>, client?: unknown): Promise<Company>;
@@ -34,4 +34,11 @@ export interface SessionRepository {
 export interface AuditRepository {
   record(entry: Omit<AuditEntry, 'id' | 'createdAt'>, client?: unknown): Promise<void>;
   listByCompany(companyId: string, limit?: number): Promise<AuditEntry[]>;
+}
+
+export interface ProductRepository {
+  create(data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>, client?: unknown): Promise<Product>;
+  findById(companyId: string, id: string, client?: unknown): Promise<Product | null>;
+  listByCompany(companyId: string, client?: unknown): Promise<Product[]>;
+  recordMovement(data: Omit<InventoryMovement, 'id' | 'createdAt'>, client?: unknown): Promise<InventoryMovement>;
 }
