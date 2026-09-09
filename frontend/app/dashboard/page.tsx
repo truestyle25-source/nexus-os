@@ -49,11 +49,11 @@ export default function DashboardPage() {
           <div><strong>NEXUS OS</strong><span>TRUE STYLE</span></div>
         </div>
         <nav className="main-nav" aria-label="Navegação principal">
-          {navigation.map(([label, icon], index) => (
-            <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => label === 'Configurações' ? router.push('/admin') : label === 'Produtos' ? router.push('/products') : index !== 0 && alert(`${label} estará disponível em breve.`)}>
-              <span className="nav-icon" aria-hidden="true">{icon}</span>{label}
-            </button>
-          ))}
+          {navigation.map(([label, icon], index) => {
+            const available = label === 'Dashboard' || label === 'Produtos' || label === 'Configurações';
+            if (!available) return <div key={label} className="nav-item nav-item-disabled" aria-disabled="true"><span className="nav-icon" aria-hidden="true">{icon}</span>{label}</div>;
+            return <button key={label} className={`nav-item ${index === 0 ? 'nav-item-active' : ''}`} type="button" onClick={() => label === 'Configurações' ? router.push('/admin') : label === 'Produtos' ? router.push('/products') : undefined}><span className="nav-icon" aria-hidden="true">{icon}</span>{label}</button>;
+          })}
         </nav>
         <button className="logout-button" type="button" onClick={handleLogout}>↪ <span>Sair</span></button>
       </aside>
@@ -75,7 +75,7 @@ export default function DashboardPage() {
 
         <div className="panel-grid">
           <article className="info-panel"><h2><span className="panel-symbol purple-text">♢</span> Segurança multi-tenant preservada</h2><div className="info-list"><InfoRow label="companyId origem" value="JWT exclusivo" accent /><InfoRow label="Isolamento A×B" value="Ativo • Validado" accent /><InfoRow label="CNPJ pertence à" value={formatCompanyName(me.name)} /><InfoRow label="Usuário autenticado" value={me.email} /></div></article>
-          <article className="info-panel"><h2><span className="panel-symbol amber-text">▣</span> Integração de pagamentos</h2><div className="info-list"><InfoRow label="Status" value="Não configurado" /><InfoRow label="Última sincronização" value="Sem dados" /><InfoRow label="Checkout" value="Aguardando configuração oficial" /><InfoRow label="Webhook / payment_check" value="Não configurado" accent /></div><button className="finance-button" type="button" onClick={() => alert('A integração só será ativada após configuração oficial.')}>↗ <span>Abrir Financeiro</span></button></article>
+          <article className="info-panel"><h2><span className="panel-symbol amber-text">▣</span> Integração de pagamentos</h2><div className="info-list"><InfoRow label="Status" value="Não configurado" /><InfoRow label="Última sincronização" value="Sem dados" /><InfoRow label="Checkout" value="Aguardando configuração oficial" /><InfoRow label="Webhook / payment_check" value="Não configurado" accent /></div><p className="integration-note">Nenhum provedor oficial foi configurado.</p></article>
         </div>
       </section>
     </main>
