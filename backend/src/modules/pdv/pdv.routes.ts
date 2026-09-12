@@ -1,8 +1,14 @@
+<<<<<<< HEAD
 
 import { FastifyInstance } from 'fastify';
 import { prisma } from '../../lib/prisma.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
+=======
+import { Router } from 'express';
+import { pdvController } from './pdv.controller.js';
+import { authMiddleware } from '../../middleware/auth.js';
+>>>>>>> 9a24c34c6d11c3f2872b796a0c1af740ba42af22
 
 export async function pdvRoutes(app: FastifyInstance) {
   app.get('/pdv/integracoes', { preHandler: [(app as any).authenticate, await permissaoMiddleware('pdv', 'visualizar')] }, async (req:any) => {
@@ -21,6 +27,7 @@ export async function pdvRoutes(app: FastifyInstance) {
     return integracao;
   });
 
+<<<<<<< HEAD
   app.post('/pdv/sincronizar/:id', { preHandler: [(app as any).authenticate, await permissaoMiddleware('pdv', 'editar')] }, async (req:any, reply:any) => {
     const { id } = req.params;
     const integracao = await prisma.integracaoPDV.findFirst({ where: { id, empresaId: req.user.empresaId } });
@@ -32,3 +39,7 @@ export async function pdvRoutes(app: FastifyInstance) {
     });
   });
 }
+=======
+export const pdvRoutes = router;
+export default router;
+>>>>>>> 9a24c34c6d11c3f2872b796a0c1af740ba42af22

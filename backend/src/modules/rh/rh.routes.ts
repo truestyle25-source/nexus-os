@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -5,6 +6,11 @@ import { prisma } from '../../lib/prisma.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { decryptSecret, encryptSecret } from '../../lib/secrets.js';
+=======
+import { Router } from 'express';
+import { rhController } from './rh.controller.js';
+import { authMiddleware } from '../../middleware/auth.js';
+>>>>>>> 9a24c34c6d11c3f2872b796a0c1af740ba42af22
 
 export async function rhRoutes(app: FastifyInstance) {
   // Departamentos
@@ -27,6 +33,7 @@ export async function rhRoutes(app: FastifyInstance) {
     return prisma.cargo.create({ data: { empresaId: req.user.empresaId, nome, departamentoId, descricao } });
   });
 
+<<<<<<< HEAD
   // Funcionários Seção 20 - CPF único, idExternoPonto
   app.get('/funcionarios', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
     return prisma.funcionario.findMany({ where: { empresaId: req.user.empresaId }, include: { cargo: true, departamento: true }, orderBy: { createdAt: 'desc' } });
@@ -181,3 +188,7 @@ export async function rhRoutes(app: FastifyInstance) {
   });
 
 }
+=======
+export const rhRoutes = router;
+export default router;
+>>>>>>> 9a24c34c6d11c3f2872b796a0c1af740ba42af22
