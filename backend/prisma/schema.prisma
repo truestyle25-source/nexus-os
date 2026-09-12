@@ -1,95 +1,791 @@
-
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  nome      String
-  role      String   @default("USER")
-  criadoEm  DateTime @default(now())
+enum Origem {
+  MANUAL
+  IMPORTADO
+  API
+  AUTOMATICO
+  PDV
+  PONTO
+  INTEGRACAO
+  IA
+}
+enum StatusGeral {
+  ATIVO
+  INATIVO
+  ARQUIVADO
+}
+enum AcaoAuditoria {
+  CRIAR
+  EDITAR
+  EXCLUIR
+  LOGIN
+  LOGOUT
+  IMPORTAR
+  SINCRONIZAR
+  ALTERAR_PERMISSAO
+  ALTERAR_CONFIG
+}
+enum TipoMovEstoque {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  INVENTARIO
+  PERDA
+  AVARIA
+  TRANSFERENCIA
+  DEVOLUCAO
+  VENDA
+  COMPRA
+}
+enum StatusCompra {
+  SOLICITADA
+  PEDIDO
+  RECEBIDA
+  CANCELADA
 }
 
-model Cliente {
+model Empresa {
   id        String   @id @default(cuid())
   nome      String
-  email     String?
-  telefone  String?
-  criadoEm  DateTime @default(now())
+  razaoSocial String?
+  cnpj      String?  @unique
+  inscricaoEstadual String?
+  responsavelCpf String?
+  responsavelRg String?
+  cep String?
+  endereco String?
+  cidade String?
+  estado String?
+  status    StatusGeral @default(ATIVO)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  origem    Origem   @default(MANUAL)
+  filiais   Filial[]
+  usuarios  Usuario[]
+  setores   Setor[]
+  produtos  Produto[]
+  fornecedores Fornecedor[]
+  clientes Cliente[]
+  assinatura Assinatura?
+}
+
+model Filial {
+  id         String   @id @default(cuid())
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id])
+  nome       String
+  cnpj       String?
+  cidade     String?
+  estado     String?
+  status     StatusGeral @default(ATIVO)
+  origem     Origem @default(MANUAL)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  setores    Setor[]
+  usuarios   Usuario[]
+  estoques   Estoque[]
+  movimentacoesOrigem  EstoqueMovimentacao[] @relation("MovOrigem")
+  movimentacoesDestino EstoqueMovimentacao[] @relation("MovDestino")
+  compras    Compra[]
+  snapshotsEstoque EstoqueSnapshotDiario[]
+  @@index([empresaId])
+}
+
+model Setor {
+  id        String   @id @default(cuid())
+  empresaId String
+  filialId  String?
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  filial    Filial?  @relation(fields: [filialId], references: [id])
+  nome      String
+  descricao String?
+  status    StatusGeral @default(ATIVO)
+  origem    Origem @default(MANUAL)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  usuarios  Usuario[]
+  @@index([empresaId, filialId])
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  empresaId    String
+  filialId     String?
+  setorId      String?
+  empresa      Empresa  @relation(fields: [empresaId], references: [id])
+  filial       Filial?  @relation(fields: [filialId], references: [id])
+  setor        Setor?   @relation(fields: [setorId], references: [id])
+  nome         String
+  email        String   @unique
+  senhaHash    String
+  status       StatusGeral @default(ATIVO)
+  origem       Origem @default(MANUAL)
+  ultimoLogin  DateTime?
+  permissoes   Permissao[]
+  auditorias   Auditoria[]
+  movimentacoes EstoqueMovimentacao[]
+  tokensRecuperacao TokenRecuperacaoSenha[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([empresaId])
+}
+
+model Permissao {
+  id        String @id @default(cuid())
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  modulo    String
+  acao      String
+  permitido Boolean @default(false)
+  origem    Origem @default(MANUAL)
+  createdAt DateTime @default(now())
+  @@unique([usuarioId, modulo, acao])
+  @@index([usuarioId])
+}
+
+// Seção 5 - recuperação de senha. Armazena apenas o hash do token; o valor
+// bruto é entregue uma única vez ao usuário pelo canal de envio (e-mail),
+// que ainda não está integrado nesta base (ver PENDÊNCIAS no relatório).
+model TokenRecuperacaoSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+  @@index([usuarioId])
+  @@index([expiraEm])
+}
+
+model Auditoria {
+  id           String @id @default(cuid())
+  usuarioId    String?
+  usuario      Usuario? @relation(fields: [usuarioId], references: [id])
+  empresaId    String?
+  acao         AcaoAuditoria
+  entidade     String
+  entidadeId   String?
+  valorAnterior Json?
+  valorNovo    Json?
+  origem       Origem
+  ip           String?
+  contexto     String?
+  createdAt    DateTime @default(now())
+  @@index([usuarioId])
+  @@index([entidade, entidadeId])
+  @@index([createdAt])
+}
+
+// --- PARTE 2: Seção 8 Produtos ---
+model Categoria {
+  id        String @id @default(cuid())
+  empresaId String
+  nome      String
+  descricao String?
+  produtos  Produto[]
+  createdAt DateTime @default(now())
+  @@index([empresaId])
 }
 
 model Produto {
-  id        String   @id @default(cuid())
+  id              String   @id @default(cuid())
+  empresaId       String
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+  categoriaId     String?
+  categoria       Categoria? @relation(fields: [categoriaId], references: [id])
+  fornecedorId    String?
+  fornecedor      Fornecedor? @relation(fields: [fornecedorId], references: [id])
+  nome            String
+  sku             String?
+  codigoBarras    String?
+  custo           Decimal  @db.Decimal(10,2)
+  precoVenda      Decimal  @db.Decimal(10,2)
+  margem          Decimal? @db.Decimal(5,2) // calculada: (preco-custo)/preco*100
+  unidade         String   @default("UN")
+  estoqueMinimo    Int      @default(5)
+  estoqueMaximo    Int      @default(100)
+  validade        DateTime?
+  imagem          String?
+  descricao       String?
+  status          StatusGeral @default(ATIVO)
+  origem          Origem @default(MANUAL)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  estoques        Estoque[]
+  movimentacoes   EstoqueMovimentacao[]
+  snapshotsEstoque EstoqueSnapshotDiario[]
+  comprasItens    CompraItem[]
+  @@index([empresaId])
+  @@index([sku])
+  @@unique([empresaId, sku])
+}
+
+// --- Seção 9 Estoque ---
+model Estoque {
+  id         String @id @default(cuid())
+  empresaId  String
+  filialId   String
+  produtoId  String
+  produto    Produto @relation(fields: [produtoId], references: [id])
+  filial     Filial  @relation(fields: [filialId], references: [id])
+  quantidade Int @default(0)
+  valorTotal Decimal @db.Decimal(12,2) @default(0)
+  updatedAt  DateTime @updatedAt
+  @@unique([filialId, produtoId])
+  @@index([empresaId])
+}
+
+// Decisão arquitetural (Fase 3, dívida técnica registrada em
+// DEBITO-TECNICO.md item 8): giro real precisa de estoque médio no
+// período, que por sua vez precisa de uma série histórica de saldo diário
+// — a posição atual (Estoque) e o log de eventos (EstoqueMovimentacao) não
+// bastam sozinhos porque reconstruir o saldo em cada dia passado a partir
+// só do log seria caro de consultar toda vez. Uma linha por
+// produto×filial×dia é o suficiente (não guarda histórico de preço por
+// unidade nem lote — isso seria over-engineering para o que a Seção 9
+// pede). Alimentada por src/scripts/gerarSnapshotsDiarios.ts (rodado uma
+// vez por dia por um agendador externo — este projeto não inclui um
+// scheduler) ou por POST /estoque/snapshot/gerar.
+model EstoqueSnapshotDiario {
+  id            String   @id @default(cuid())
+  empresaId     String
+  filialId      String
+  filial        Filial   @relation(fields: [filialId], references: [id])
+  produtoId     String
+  produto       Produto  @relation(fields: [produtoId], references: [id])
+  data          DateTime // truncado para 00:00 do dia
+  quantidade    Int
+  custoUnitario Decimal  @db.Decimal(10,2)
+  valorTotal    Decimal  @db.Decimal(12,2)
+  createdAt     DateTime @default(now())
+  @@unique([filialId, produtoId, data])
+  @@index([empresaId, data])
+}
+
+model EstoqueMovimentacao {
+  id              String @id @default(cuid())
+  empresaId       String
+  produtoId       String
+  produto         Produto @relation(fields: [produtoId], references: [id])
+  // Filial onde o efeito de estoque desta linha ocorre. Para TRANSFERENCIA,
+  // esta é a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
+  // aponta a filial que recebe — uma segunda linha (tipo TRANSFERENCIA,
+  // quantidade positiva) é criada na filial de destino, ligada pelo mesmo
+  // valor de `documento` (ver estoque.service.ts).
+  filialId        String
+  filial          Filial  @relation("MovOrigem", fields: [filialId], references: [id])
+  filialDestinoId String?
+  filialDestino   Filial? @relation("MovDestino", fields: [filialDestinoId], references: [id])
+  usuarioId       String?
+  usuario         Usuario? @relation(fields: [usuarioId], references: [id])
+  quantidade      Int // positivo entrada, negativo saida - mas tipo define
+  tipo            TipoMovEstoque
+  motivo          String?
+  documento       String? // NF, pedido, venda id; para TRANSFERENCIA, agrupa as duas pontas
+  origem          Origem
+  createdAt       DateTime @default(now())
+  @@index([empresaId, produtoId])
+  @@index([empresaId, filialId])
+  @@index([createdAt])
+}
+
+// --- Seção 11 Fornecedores ---
+model Fornecedor {
+  id        String @id @default(cuid())
+  empresaId String
+  empresa   Empresa @relation(fields: [empresaId], references: [id])
   nome      String
-  preco     Float
-  estoque   Int      @default(0)
-  criadoEm  DateTime @default(now())
+  cnpjCpf   String?
+  contato   String?
+  telefone  String?
+  email     String?
+  endereco  String?
+  status    StatusGeral @default(ATIVO)
+  origem    Origem @default(MANUAL)
+  produtos  Produto[]
+  compras   Compra[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([empresaId])
 }
 
-// RH MODELS
-model Cargo {
-  id            String        @id @default(cuid())
-  nome          String        @unique
-  salarioBase   Float
-  funcionarios  Funcionario[]
+// --- Seção 10 Compras ---
+// Decisão arquitetural (Fase 3): a filial de destino é definida na CRIAÇÃO
+// da compra, não solta no momento do recebimento. Motivo: uma ordem de
+// compra real já nasce sabendo para onde a mercadoria vai (orçamento,
+// centro de custo, planejamento de estoque da filial); aceitar a filial só
+// no recebimento permitiria receber uma compra numa filial diferente da
+// planejada sem nenhum registro de que isso é uma exceção. Com
+// Compra.filialId fixo, POST /compras/:id/receber deixa de aceitar
+// filialId no corpo e usa sempre compra.filialId — impossível divergir.
+model Compra {
+  id           String @id @default(cuid())
+  empresaId    String
+  filialId     String
+  filial       Filial @relation(fields: [filialId], references: [id])
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id])
+  valorTotal   Decimal @db.Decimal(12,2)
+  status       StatusCompra @default(SOLICITADA)
+  condPagamento String?
+  dataCompra   DateTime @default(now())
+  dataRecebimento DateTime?
+  origem       Origem @default(MANUAL)
+  itens        CompraItem[]
+  createdAt    DateTime @default(now())
+  @@index([empresaId])
+  @@index([empresaId, filialId])
 }
 
-model Funcionario {
-  id          String    @id @default(cuid())
-  nome        String
-  cpf         String    @unique
-  cargoId     String
-  cargo       Cargo     @relation(fields: [cargoId], references: [id])
-  salario     Float
-  admissao    DateTime  @default(now())
-  status      String    @default("ATIVO")
-  pontos      Ponto[]
-  criadoEm    DateTime  @default(now())
+model CompraItem {
+  id         String @id @default(cuid())
+  compraId   String
+  compra     Compra @relation(fields: [compraId], references: [id], onDelete: Cascade)
+  produtoId  String
+  produto    Produto @relation(fields: [produtoId], references: [id])
+  quantidade Int
+  valorUnit  Decimal @db.Decimal(10,2)
 }
 
-model Ponto {
-  id             String      @id @default(cuid())
-  funcionarioId  String
-  funcionario    Funcionario @relation(fields: [funcionarioId], references: [id])
-  dataHora       DateTime    @default(now())
-  tipo           String      // ENTRADA, SAIDA, INTERVALO
-  criadoEm       DateTime    @default(now())
+// --- Seção 12 Clientes ---
+model Cliente {
+  id              String @id @default(cuid())
+  empresaId       String
+  empresa         Empresa @relation(fields: [empresaId], references: [id])
+  nome            String
+  documento       String?
+  telefone        String?
+  email           String?
+  endereco        String?
+  valorTotalComprado Decimal @db.Decimal(12,2) @default(0)
+  ticketMedio     Decimal @db.Decimal(10,2) @default(0)
+  ultimaCompra    DateTime?
+  frequencia      Int @default(0)
+  status          StatusGeral @default(ATIVO)
+  origem          Origem @default(MANUAL)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  vendas          Venda[]
+  @@index([empresaId])
 }
 
-// PDV MODELS
-model Caixa {
-  id          String    @id @default(cuid())
-  saldoInicial Float
-  saldoFinal   Float?
-  status       String    @default("ABERTO")
-  abertoEm     DateTime  @default(now())
-  fechadoEm    DateTime?
-  vendas       Venda[]
+// --- PARTE 3: Seção 13 Vendas ---
+enum StatusVenda {
+  ABERTA
+  FINALIZADA
+  CANCELADA
+  DEVOLVIDA
+  ESTORNADA
+}
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
 }
 
 model Venda {
-  id          String      @id @default(cuid())
-  caixaId     String?
-  caixa       Caixa?      @relation(fields: [caixaId], references: [id])
-  total       Float
-  formaPagamento String   @default("DINHEIRO")
-  itens       ItemVenda[]
-  criadoEm    DateTime    @default(now())
+  id              String @id @default(cuid())
+  empresaId       String
+  filialId        String
+  setorId         String?
+  clienteId       String?
+  cliente         Cliente? @relation(fields: [clienteId], references: [id])
+  funcionarioId   String? // Usuario que vendeu
+  formaPagamento  FormaPagamento @default(DINHEIRO)
+  status          StatusVenda @default(ABERTA)
+  subtotal        Decimal @db.Decimal(12,2)
+  desconto        Decimal @db.Decimal(12,2) @default(0)
+  total           Decimal @db.Decimal(12,2)
+  origem          Origem @default(MANUAL)
+  pdvId           String?
+  pdvSincronizado Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  itens           VendaItem[]
+  @@index([empresaId, filialId])
+  @@index([createdAt])
 }
 
-model ItemVenda {
-  id          String   @id @default(cuid())
-  vendaId     String
-  venda       Venda    @relation(fields: [vendaId], references: [id])
-  produto     String
-  quantidade  Int
-  precoUnit   Float
-  subtotal    Float
+model VendaItem {
+  id         String @id @default(cuid())
+  vendaId    String
+  venda      Venda @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  produtoId  String
+  quantidade Int
+  preco      Decimal @db.Decimal(10,2)
+  custoUnitario Decimal @db.Decimal(10,2)
+  desconto   Decimal @db.Decimal(10,2) @default(0)
+  total      Decimal @db.Decimal(12,2)
+  @@index([vendaId])
+}
+
+// --- Seção 14 PDV - Integração oficial ---
+enum StatusIntegracao {
+  CONECTADO
+  ATENCAO
+  ERRO
+  NAO_CONFIGURADO
+}
+model IntegracaoPDV {
+  id                  String @id @default(cuid())
+  empresaId           String
+  nome                String // ex: PDV Principal
+  tipo                String // API_OFICIAL, SDK_OFICIAL, WEBHOOK_OFICIAL, BANCO_AUTORIZADO
+  url                 String?
+  status              StatusIntegracao @default(NAO_CONFIGURADO)
+  ultimaSincronizacao DateTime?
+  proximaSincronizacao DateTime?
+  qtdRegistros        Int @default(0)
+  erros               Json? // array de erros
+  historico           Json? // array historico
+  origem              Origem @default(INTEGRACAO)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  @@index([empresaId])
+}
+
+// --- Seção 15 Financeiro ---
+enum TipoFinanceiro {
+  RECEITA
+  DESPESA
+}
+enum StatusFinanceiro {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+model Financeiro {
+  id           String @id @default(cuid())
+  empresaId    String
+  filialId     String?
+  tipo         TipoFinanceiro
+  categoria    String // vendas, fornecedores, salarios, serviços, impostos, operacionais
+  centroCusto  String?
+  descricao    String
+  valor        Decimal @db.Decimal(12,2)
+  vencimento   DateTime?
+  status       StatusFinanceiro @default(PENDENTE)
+  vendaId      String? // link com venda quando for receita de venda
+  compraId     String?
+  origem       Origem @default(MANUAL)
+  createdAt    DateTime @default(now())
+  @@index([empresaId, tipo])
+  @@index([vencimento])
+}
+
+// --- Seção 16 DRE ---
+model DRE {
+  id             String @id @default(cuid())
+  empresaId      String
+  filialId       String?
+  periodoInicio  DateTime
+  periodoFim     DateTime
+  receitaBruta   Decimal @db.Decimal(12,2)
+  deducoes       Decimal @db.Decimal(12,2) @default(0)
+  receitaLiquida Decimal @db.Decimal(12,2)
+  custos         Decimal @db.Decimal(12,2)
+  despesas       Decimal @db.Decimal(12,2)
+  resultadoOperacional Decimal @db.Decimal(12,2)
+  lucroPrejuizo  Decimal @db.Decimal(12,2)
+  margemBruta    Decimal @db.Decimal(5,2)
+  margemLiquida  Decimal @db.Decimal(5,2)
+  origem         Origem @default(AUTOMATICO)
+  createdAt      DateTime @default(now())
+  @@index([empresaId, periodoInicio, periodoFim])
+}
+
+// --- Seção 18 Ticket Médio e 19 Metas ---
+model IndicadorDiario {
+  id              String @id @default(cuid())
+  empresaId       String
+  filialId        String?
+  data            DateTime @db.Date
+  faturamento     Decimal @db.Decimal(12,2) @default(0)
+  qtdVendas       Int @default(0)
+  ticketMedio     Decimal @db.Decimal(10,2) @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@unique([empresaId, filialId, data])
+}
+
+model Meta {
+  id          String @id @default(cuid())
+  empresaId   String
+  filialId    String?
+  setorId     String?
+  funcionarioId String?
+  tipo        String // EMPRESA, FILIAL, SETOR, FUNCIONARIO, VENDAS, FINANCEIRO, PRODUTO, PRODUTIVIDADE, ESTOQUE
+  periodo     String // 2026-09, 2026-Q3, 2026
+  metaValor   Decimal @db.Decimal(12,2)
+  realizado   Decimal @db.Decimal(12,2) @default(0)
+  percentual  Decimal @db.Decimal(5,2) @default(0)
+  diferenca   Decimal @db.Decimal(12,2) @default(0)
+  projecao    Decimal @db.Decimal(12,2) @default(0)
+  status      String @default("EM_ANDAMENTO")
+  origem      Origem @default(MANUAL)
+  createdAt   DateTime @default(now())
+  @@index([empresaId, tipo, periodo])
+}
+
+// --- PARTE 5: Seção 20 RH ---
+enum StatusFuncionario {
+  ATIVO
+  INATIVO
+  FERIAS
+  AFASTADO
+  DESLIGADO
+}
+
+model Departamento {
+  id        String @id @default(cuid())
+  empresaId String
+  nome      String
+  descricao String?
+  createdAt DateTime @default(now())
+  cargos    Cargo[]
+  funcionarios Funcionario[]
+  @@index([empresaId])
+}
+
+model Cargo {
+  id             String @id @default(cuid())
+  empresaId      String
+  departamentoId String?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  nome           String
+  descricao      String?
+  createdAt      DateTime @default(now())
+  funcionarios   Funcionario[]
+  @@index([empresaId])
+}
+
+model Funcionario {
+  id              String @id @default(cuid())
+  empresaId       String
+  filialId        String?
+  departamentoId  String?
+  departamento    Departamento? @relation(fields: [departamentoId], references: [id])
+  cargoId         String?
+  cargo           Cargo? @relation(fields: [cargoId], references: [id])
+  nome            String
+  cpf             String? // CPF único por empresa
+  idExternoPonto  String? // ID do ControlID iDClass para sincronizar
+  dataAdmissao    DateTime?
+  dataDesligamento DateTime?
+  status          StatusFuncionario @default(ATIVO)
+  origem          Origem @default(MANUAL)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  pontos          Ponto[]
+  advertencias    Advertencia[]
+  ferias          Ferias[]
+  @@index([empresaId])
+  @@index([cpf])
+  @@unique([empresaId, cpf])
+  @@unique([empresaId, idExternoPonto])
+}
+
+model Advertencia {
+  id             String @id @default(cuid())
+  funcionarioId  String
+  funcionario    Funcionario @relation(fields: [funcionarioId], references: [id])
+  motivo         String
+  data           DateTime @default(now())
+  origem         Origem @default(MANUAL)
+}
+
+model Ferias {
+  id             String @id @default(cuid())
+  funcionarioId  String
+  funcionario    Funcionario @relation(fields: [funcionarioId], references: [id])
+  inicio         DateTime
+  fim            DateTime
+  status         String @default("AGENDADA")
+  origem         Origem @default(MANUAL)
+}
+
+// --- Seção 21 Controle de Ponto - ControlID iDClass API oficial ---
+// Documentação oficial ControlID: POST /login.fcgi + POST /load_objects.fcgi com object: access_logs
+model Ponto {
+  id              String @id @default(cuid())
+  empresaId       String
+  funcionarioId   String
+  funcionario     Funcionario @relation(fields: [funcionarioId], references: [id])
+  data            DateTime @db.Date
+  entrada         DateTime?
+  saidaIntervalo  DateTime?
+  retornoIntervalo DateTime?
+  saida           DateTime?
+  atrasoMinutos   Int @default(0)
+  horaExtraMinutos Int @default(0)
+  falta           Boolean @default(false)
+  inconsistencia  String? // ex: falta batida, ponto duplicado
+  bancoHoras      Int @default(0) // minutos
+  saidaAntecipada Boolean @default(false)
+  origem          Origem @default(PONTO) // PONTO quando vem do equipamento
+  idExterno       String? // id do log no iDClass
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@unique([funcionarioId, data])
+  @@index([empresaId, data])
+}
+
+// Integração ControlID
+model IntegracaoPonto {
+  id                  String @id @default(cuid())
+  empresaId           String
+  nome                String
+  url                 String // IP do iDClass ex: http://192.168.1.100
+  usuario             String // usuario do iDClass
+  senhaCriptografada  String?
+  status              StatusIntegracao @default(NAO_CONFIGURADO)
+  ultimaSincronizacao DateTime?
+  qtdRegistros        Int @default(0)
+  erros               Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// ===== PARTE 6 - IA (mesclado de schema-additions-ia.prisma) =====
+enum TipoAlerta {
+  ESTOQUE_BAIXO
+  ESTOQUE_ZERADO
+  VALIDADE
+  QUEDA_VENDAS
+  META_BAIXA
+  CONTA_VENCIDA
+  DESPESA_ALTA
+  FALTA
+  ATRASO
+  HORA_EXTRA
+  ANOMALIA_IA
+}
+enum PrioridadeAlerta {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+enum StatusAlerta {
+  ABERTO
+  LIDO
+  RESOLVIDO
+}
+
+model Alerta {
+  id String @id @default(cuid())
+  empresaId String
+  tipo TipoAlerta
+  prioridade PrioridadeAlerta @default(MEDIA)
+  titulo String
+  descricao String
+  status StatusAlerta @default(ABERTO)
+  entidade String?
+  entidadeId String?
+  origem Origem @default(AUTOMATICO)
+  createdAt DateTime @default(now())
+  @@index([empresaId, status])
+}
+
+model Notificacao {
+  id String @id @default(cuid())
+  empresaId String
+  usuarioId String?
+  tipo String
+  prioridade PrioridadeAlerta @default(MEDIA)
+  titulo String
+  mensagem String
+  lida Boolean @default(false)
+  origem String?
+  link String?
+  createdAt DateTime @default(now())
+  @@index([empresaId, usuarioId, lida])
+}
+
+model RegraAutomacao {
+  id String @id @default(cuid())
+  empresaId String
+  nome String
+  condicao String
+  acao String
+  ativa Boolean @default(true)
+  origem Origem @default(AUTOMATICO)
+  createdAt DateTime @default(now())
+}
+
+model ConversaIA {
+  id String @id @default(cuid())
+  empresaId String
+  usuarioId String
+  pergunta String
+  resposta String @db.Text
+  contexto Json?
+  origem Origem @default(IA)
+  createdAt DateTime @default(now())
+}
+
+
+// ===== COMERCIAL / ASSINATURA =====
+enum StatusAssinatura {
+  TRIAL
+  ATIVA
+  ATRASADA
+  CANCELADA
+  EXPIRADA
+}
+model Assinatura {
+  id String @id @default(cuid())
+  empresaId String @unique
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  status StatusAssinatura @default(TRIAL)
+  trialInicio DateTime
+  trialFim DateTime
+  proximaCobranca DateTime?
+  valorMensal Decimal @db.Decimal(10,2) @default(19.90)
+  checkoutUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  pagamentos Pagamento[]
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  FALHOU
+  ESTORNADO
+}
+model Pagamento {
+  id String @id @default(cuid())
+  assinaturaId String
+  assinatura Assinatura @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
+  valor Decimal @db.Decimal(10,2)
+  status StatusPagamento @default(PENDENTE)
+  orderNsu String?
+  externalId String?
+  pagoEm DateTime?
+  origem Origem @default(INTEGRACAO)
+  createdAt DateTime @default(now())
+  @@index([assinaturaId, status])
+  @@index([orderNsu])
+}
+
+
+model TokenRevogado {
+  id        String   @id @default(cuid())
+  jti       String   @unique
+  expiraEm  DateTime
+  createdAt DateTime @default(now())
+  @@index([expiraEm])
 }
