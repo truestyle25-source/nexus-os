@@ -1,0 +1,1673 @@
+'use client';
+
+import { t as traduzir } from '@/lib/i18n';
+
+/**
+ * NEXUS OS â€” /dre (2Âª passada: melhoria visual e de cÃ³digo aplicada EM CIMA da
+ * tela que jÃ¡ existia â€” nada recriado, nada movido de lugar).
+ *
+ * REGRA DE OURO cumprida: este continua sendo o ÃšNICO arquivo de DRE do
+ * projeto. Nenhuma pÃ¡gina de configuraÃ§Ã£o nova, nenhum arquivo novo, nenhum
+ * endpoint novo: continua sendo `GET /dre` + os helpers jÃ¡ existentes em
+ * `@/lib`.
+ *
+ * AUDITORIA DESTA PASSA â€” o que ainda estava errado na versÃ£o anterior:
+ *  1. Delta de margem em % relativo: 38,2% -> 39,4% saÃ­a como "+3,1%", quando
+ *     o movimento real Ã© de +1,2 ponto percentual. Margens agora usam `p.p.`
+ *     (deltaPp); os demais indicadores mantÃªm variaÃ§Ã£o relativa.
+ *  2. VariaÃ§Ã£o exatamente zero caÃ­a no ramo "caiu": desenhava seta vermelha de
+ *     descida com "âˆ’0,0%". Passou a existir um terceiro estado (estÃ¡vel).
+ *  3. O tooltip herdava `text-transform:uppercase` e o `letter-spacing` do
+ *     rÃ³tulo: as fÃ³rmulas contÃ¡beis dos KPIs e dos indicadores saÃ­am em CAIXA
+ *     ALTA. O `.dre-tip` agora zera text-transform/tracking/weight.
+ *  4. O tooltip era `absolute` dentro de `<div class="overflow-x-auto">` â€” e
+ *     `overflow-x:auto` torna `overflow-y` `auto`, entÃ£o a bolha era CORTADA
+ *     pelas linhas da tabela. Pior: os cards usam `backdrop-filter` e
+ *     `transform` no hover, e os dois criam bloco de contenÃ§Ã£o para
+ *     `position:fixed`. Resolvido com portal em <body> + ancoragem por
+ *     getBoundingClientRect, com flip para cima e clamp dentro da viewport.
+ *  5. `title="VariaÃ§Ã£o vs. <descriÃ§Ã£o do KPI>"` virava "VariaÃ§Ã£o vs. 12 venda(s)
+ *     finalizada(s) no perÃ­odo". Agora nomeia a janela de comparaÃ§Ã£o real.
+ *  6. O CSV exportava margem sob o cabeÃ§alho "Valor (BRL)": 38,2 (que Ã© %)
+ *     virava R$ 38,20 no Excel. Passou a existir a coluna "Unidade" (BRL / %).
+ *  7. Corrida de requisiÃ§Ã£o: o guard `vivo` sÃ³ protegia o unmount, entÃ£o
+ *     trocar de perÃ­odo rÃ¡pido fazia uma resposta velha sobrescrever a nova.
+ *     Agora hÃ¡ token monotÃ´nico e sÃ³ a Ãºltima resposta grava estado.
+ *  8. Contraste: `text-white/25` e `/30` davam ~3:1 sobre o card #1A1A2E,
+ *     abaixo do AA (4,5:1) para texto pequeno. Regra nova: nenhum texto
+ *     informativo abaixo de `white/50` (~5,1:1); a hierarquia passa a vir de
+ *     tamanho e peso, nÃ£o sÃ³ de opacidade.
+ *  9. Os filtros ficavam `disabled` durante o loading: roubavam o teclado e
+ *     brigavam com o usuÃ¡rio. Agora seguem operÃ¡veis e o carregamento Ã©
+ *     anunciado por `aria-busy` no skeleton.
+ * 10. Fora da rÃ©gua de 4px (p-3.5, mt-2.5, gap-2.5, h-2.5) e com raios
+ *     misturados (10/12/14/16/20). Normalizado para 4px e trÃªs raios.
+ * 11. "Fluxo da DRE" nÃ£o era uma ponte: todas as barras nasciam do zero, entÃ£o
+ *     ler "receita -> lucro" era impossÃ­vel. Agora Ã© uma ponte cumulativa de
+ *     verdade â€” os segmentos flutuam entre o saldo anterior e o novo, os
+ *     subtotais ancoram em zero e a linha do zero fica marcada.
+ * 12. Tooltip sem `aria-describedby` (a fÃ³rmula era lida duas vezes: uma como
+ *     nome do botÃ£o, outra como texto) e badge "derivado" com gÃªnero frÃ¡gil.
+ *
+ * PASSADA ANTERIOR â€” o que a primeira versÃ£o jÃ¡ tinha resolvido:
+ *  - `any` em tudo, apesar do `strict: true` do tsconfig;
+ *  - o erro real nunca aparecia: `err.response?.data?.error` nÃ£o existe,
+ *    porque o cliente de API lanÃ§a `Error` â€” o usuÃ¡rio via sÃ³ o texto fixo;
+ *  - valor sem locale: `R$ ${n.toFixed(2)}` imprimia "R$ 12345.00";
+ *  - sem perÃ­odo: o backend aceita `periodoInicio`/`periodoFim` e a tela
+ *    nunca os mandava, entÃ£o o DRE ficava travado no mÃªs corrente;
+ *  - sem comparaÃ§Ã£o, sem sparkline, sem exportaÃ§Ã£o e sem fÃ³rmula;
+ *  - sem skeleton e sem estado vazio: receita zero aparecia como se fosse um
+ *    resultado real (o NEXUS OS nunca mostra nÃºmero fictÃ­cio);
+ *  - sem proteÃ§Ã£o contra race: trocar de perÃ­odo podia gravar resposta velha.
+ *
+ * O que esta versÃ£o entrega:
+ *  - vidro, raio 20px, hairline em gradiente, lift no hover e entrada suave;
+ *  - filtro de perÃ­odo real (30 dias / mÃªs / ano) e comparaÃ§Ã£o com a janela
+ *    anterior REAL â€” nada de multiplicador inventado para "escalar" a DRE;
+ *  - subcomponentes memoizados (Sparkline, Tooltip, KpiCard, WaterfallBar,
+ *    DreRow, IndicadorCard), `useMemo` nos derivados e `useCallback` nos
+ *    handlers, paleta em `COLORS`;
+ *  - fÃ³rmulas contÃ¡beis reais nos tooltips, estado vazio, skeleton e CSV;
+ *  - acessibilidade: <table> semÃ¢ntica, foco visÃ­vel, aria-label/pressed,
+ *    aria-live no toast, aria-busy no carregamento e nÃºmeros tabulares.
+ *
+ * RÃ©gua de honestidade: o DRE nÃ£o devolve sÃ©rie temporal, entÃ£o o sparkline
+ * compara as DUAS janelas reais (anterior -> atual) e nÃ£o uma sÃ©rie inventada.
+ * A Ãºnica linha derivada na tela Ã© "Lucro bruto" (Receita LÃ­quida - Custos),
+ * que Ã© exatamente a conta do backend para a margem bruta; o rodapÃ© explica
+ * por que nÃ£o existe uma linha de impostos separada: o backend jÃ¡ soma
+ * impostos e devoluÃ§Ãµes dentro de `deducoes`.
+ */
+
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
+import {
+  BarChart3,
+  ChevronDown,
+  CircleAlert,
+  Download,
+  HelpCircle,
+  Minus,
+  Percent,
+  Receipt,
+  ShoppingCart,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
+import api, { getToken } from '@/lib/api';
+import ModuleHeader from '@/components/ModuleHeader';
+import { EmptyState, SectionTitle } from '@/components/ui';
+import { formatBRL, formatPct } from '@/lib/format';
+import {
+  comFuso,
+  intervaloDoPreset,
+  periodoAnterior,
+  type DreDetalhes,
+  type PresetKey,
+} from '@/lib/dashboard';
+
+/* ============================================================================
+   1. CSS LOCAL DA TELA
+   Mesmo padrÃ£o de /fluxo, /vendas e /pdv: regras com escopo `.dre-root`
+   injetadas num <style>, para nÃ£o espalhar especificidade em globals.css.
+   MantÃ©m os tokens do Layout Mestre (#1A1A2E, #7C3AED) e soma o acabamento
+   pedido: vidro, raio 20px, lift, shimmer, entrada suave e foco visÃ­vel.
+   ========================================================================== */
+const dreCss = `
+.dre-root{color-scheme:dark;--dre-card-bg:linear-gradient(180deg,rgba(38,35,56,.72),rgba(26,26,46,.70));--dre-card-border:rgba(255,255,255,.07);--dre-line-soft:rgba(255,255,255,.18);--dre-chip-text:rgba(255,255,255,.72);--dre-chip-bg:rgba(255,255,255,.05);--dre-chip-border:rgba(255,255,255,.09);--dre-active-chip-text:#fff;--dre-skeleton-bg:rgba(255,255,255,.06);--dre-skeleton-shine:rgba(255,255,255,.09);--dre-track-bg:rgba(255,255,255,.05);--dre-zero-color:rgba(255,255,255,.28);--dre-card-shadow:0 18px 40px -28px rgba(0,0,0,.9);--dre-card-hover-shadow:0 26px 54px -30px rgba(0,0,0,.95)}
+[data-theme='claro'] .dre-root{color-scheme:light;--dre-card-bg:linear-gradient(180deg,rgba(255,255,255,.98),rgba(246,246,250,.96));--dre-card-border:var(--nx-border);--dre-line-soft:rgba(20,19,28,.10);--dre-chip-text:var(--nx-ink-2);--dre-chip-bg:rgba(20,19,28,.035);--dre-chip-border:var(--nx-border);--dre-active-chip-text:var(--nx-accent-ink);--dre-skeleton-bg:rgba(20,19,28,.05);--dre-skeleton-shine:rgba(20,19,28,.08);--dre-track-bg:rgba(20,19,28,.07);--dre-zero-color:rgba(20,19,28,.35);--dre-card-shadow:0 18px 40px -28px rgba(20,19,28,.14);--dre-card-hover-shadow:0 26px 54px -30px rgba(20,19,28,.22)}
+.dre-root .dre-card{position:relative;min-width:0;border-radius:20px;border:1px solid var(--dre-card-border);background:var(--dre-card-bg);-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:var(--dre-card-shadow);transition:transform .25s cubic-bezier(.2,.8,.3,1),box-shadow .25s ease,border-color .25s ease}
+.dre-root .dre-card::before{content:'';position:absolute;inset:0 0 auto;height:1px;border-radius:20px 20px 0 0;background:linear-gradient(90deg,transparent,var(--dre-line-soft),transparent);pointer-events:none}
+.dre-root .dre-num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.dre-root .dre-chip{height:36px;padding:0 14px;border-radius:999px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--dre-chip-text);background:var(--dre-chip-bg);border:1px solid var(--dre-chip-border);white-space:nowrap;cursor:pointer;transition:color .18s ease,background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .12s ease}
+.dre-root .dre-chip:hover{color:var(--nx-ink);background:color-mix(in srgb,var(--nx-accent) 16%,transparent);border-color:color-mix(in srgb,var(--nx-accent) 42%,transparent)}
+.dre-root .dre-chip:active{transform:translateY(1px)}
+.dre-root .dre-chip:disabled{cursor:not-allowed;opacity:.45}
+.dre-root .dre-chip[aria-pressed='true']{background:var(--nx-accent);border-color:var(--nx-accent);color:var(--dre-active-chip-text);font-weight:600;box-shadow:0 0 18px -6px color-mix(in srgb,var(--nx-accent) 70%,transparent)}
+.dre-root .dre-field{height:36px;border-radius:999px;background:var(--nx-surface-3);border:1px solid var(--nx-border);color:var(--nx-ink);font-size:12px;padding:0 32px 0 14px;outline:none;appearance:none;-webkit-appearance:none;cursor:pointer;transition:border-color .18s ease,box-shadow .18s ease}
+.dre-root .dre-field:hover{border-color:color-mix(in srgb,var(--nx-accent) 40%,transparent)}
+.dre-root .dre-field:focus-visible{border-color:var(--nx-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--nx-accent) 16%,transparent)}
+.dre-root select.dre-field option{background:var(--nx-surface);color:var(--nx-ink)}
+.dre-root .dre-help{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:999px;cursor:help;color:var(--nx-ink-3);transition:color .16s ease,background-color .16s ease}
+.dre-root .dre-help:hover{color:var(--nx-ink);background:color-mix(in srgb,var(--nx-ink) 9%,transparent)}
+/* --- Tooltip: ÃšNICO bloco de regras sem o prefixo .dre-root, de propÃ³sito.
+   A bolha Ã© renderizada por portal direto em <body> (ver Tooltip). Dentro da
+   Ã¡rvore da tela ela morreria: overflow-x:auto da tabela forÃ§a
+   overflow-y:auto (a bolha era cortada) e backdrop-filter/transform dos
+   cards viram bloco de contenÃ§Ã£o para position:fixed. O prefixo dre-
+   continua evitando colisÃ£o com o resto do app. --- */
+.dre-tip{position:fixed;z-index:80;width:304px;max-width:calc(100vw - 24px);padding:12px;border-radius:12px;background:var(--nx-surface);border:1px solid var(--nx-border);box-shadow:0 18px 44px var(--nx-shadow-pop);color:var(--nx-ink-2);font-size:11.5px;line-height:1.5;text-align:left;text-transform:none;letter-spacing:normal;font-weight:400;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .16s ease,transform .16s ease,visibility .16s}
+.dre-tip[data-lado='baixo']{transform:translateY(-6px)}
+.dre-tip[data-lado='topo']{transform:translateY(6px)}
+.dre-tip[data-aberto='true']{opacity:1;visibility:visible;transform:translateY(0)}
+.dre-tip::after{content:'';position:absolute;left:var(--dre-tip-cx,50%);width:10px;height:10px;background:var(--nx-surface);border:1px solid var(--nx-border);transform:translateX(-50%) rotate(45deg)}
+.dre-tip[data-lado='baixo']::after{top:-6px;border-right:0;border-bottom:0}
+.dre-tip[data-lado='topo']::after{bottom:-6px;border-left:0;border-top:0}
+.dre-root .dre-skel{position:relative;overflow:hidden;background:var(--dre-skeleton-bg);border-radius:10px}
+.dre-root .dre-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,var(--dre-skeleton-shine),transparent);animation:dreShimmer 1.4s infinite}
+@keyframes dreShimmer{to{transform:translateX(100%)}}
+.dre-root .dre-in{animation:dreIn .45s cubic-bezier(.2,.8,.3,1) both}
+@keyframes dreIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.dre-root .dre-row{transition:background-color .15s ease}
+.dre-root .dre-row:hover{background:color-mix(in srgb,var(--nx-accent) 8%,transparent)}
+.dre-root .dre-track{position:relative;height:8px;border-radius:999px;background:var(--dre-track-bg);overflow:hidden}
+/* Ponte: a linha do zero fica sempre visÃ­vel para a rÃ©gua nÃ£o mentir quando
+   o resultado Ã© negativo â€” sem ela, uma barra "para cima" Ã© ambÃ­gua. */
+.dre-root .dre-zero{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--dre-zero-color)}
+.dre-root .dre-hl{transition:width .55s cubic-bezier(.2,.8,.3,1),left .55s cubic-bezier(.2,.8,.3,1)}
+.dre-root :where(button,select,a,[tabindex]):focus-visible{outline:2px solid var(--nx-accent);outline-offset:2px;border-radius:8px}
+.dre-root .dre-toast{animation:dreToast .28s cubic-bezier(.2,.8,.3,1) both}
+@keyframes dreToast{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
+/* O lift sÃ³ existe onde hÃ¡ ponteiro de verdade: em toque, hover gruda e o
+   card fica deslocado depois do tap. */
+@media (hover:hover) and (pointer:fine){
+.dre-root .dre-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--nx-accent) 38%,transparent);box-shadow:var(--dre-card-hover-shadow),0 0 0 1px color-mix(in srgb,var(--nx-accent) 10%,transparent)}
+}
+@media (prefers-reduced-motion:reduce){
+.dre-root .dre-card,.dre-root .dre-tip,.dre-root .dre-in,.dre-root .dre-toast,.dre-root .dre-skel::after,.dre-root .dre-hl{transition:none;animation:none}
+.dre-root .dre-card:hover,.dre-root .dre-chip:active{transform:none}
+}
+`;
+
+/* ============================================================================
+   2. CONTRATOS E PALETA
+   O contrato espelha exatamente o que `GET /dre` devolve: um registro de
+   histÃ³rico (`dre`, com perÃ­odo e origem) e os nÃºmeros do perÃ­odo (`detalhes`).
+   ========================================================================== */
+type DreResposta = {
+  dre: {
+    periodoInicio: string;
+    periodoFim: string;
+    origem: string;
+  } | null;
+  detalhes: DreDetalhes | null;
+};
+
+/** SÃ³ os trÃªs perÃ­odos que fazem sentido para um DRE gerencial. */
+type PeriodoDre = Extract<PresetKey, '30d' | 'mes' | 'ano'>;
+
+type Tom = 'accent' | 'emerald' | 'red' | 'amber' | 'neutral';
+
+/**
+ * Unidade do valor. Existe porque o demonstrativo MIXTURA as duas: as contas
+ * sÃ£o em reais, as margens em percentual. Sem isso, o CSV exportava 38,2 sob
+ * um cabeÃ§alho "Valor (BRL)" e o Excel abria R$ 38,20.
+ */
+type Unidade = 'BRL' | '%';
+
+type LinhaDre = {
+  id: string;
+  rotulo: string;
+  /** Prefixo contÃ¡bil da linha: + entrada, âˆ’ deduÃ§Ã£o, = resultado. */
+  sinal: '+' | 'âˆ’' | '=' | '';
+  /**
+   * `null` sÃ³ acontece nas linhas de margem quando o perÃ­odo nÃ£o tem receita:
+   * nÃ£o existe denominador, entÃ£o a conta Ã© IMPOSSÃVEL, nÃ£o zero. A cÃ©lula
+   * mostra "â€”". As linhas em reais nunca sÃ£o nulas.
+   */
+  valor: number | null;
+  unidade: Unidade;
+  tipo: 'receita' | 'sub' | 'total' | 'resultado' | 'margem';
+  tom: Tom;
+  formula: string;
+  /** Linha calculada na tela (e nÃ£o pronta no backend) â€” recebe aviso visual. */
+  derivada?: boolean;
+};
+
+/**
+ * Uma linha da ponte (waterfall) jÃ¡ resolvida para o eixo: `de` Ã© o saldo
+ * antes da linha e `para` o saldo depois. Subtotal (`ehTotal`) ancora em zero.
+ */
+type Segmento = Omit<LinhaDre, 'valor'> & { valor: number; de: number; para: number; ehTotal: boolean };
+
+/** RÃ©gua da ponte: mapeia qualquer valor para 0â€“100% dentro da faixa real. */
+type Escala = { min: number; max: number; amplitude: number; posZero: number };
+
+/**
+ * `pct` = variaÃ§Ã£o relativa (%|Ã·|%|), usada nos indicadores em reais.
+ * `pp`  = diferenÃ§a em pontos percentuais, a Ãºnica leitura honesta para
+ *         margem: 38,2% -> 39,4% Ã© +1,2 p.p., e nÃ£o "+3,1%".
+ */
+type DeltaUnidade = 'pct' | 'pp';
+
+type Kpi = {
+  id: string;
+  label: string;
+  valor: string;
+  delta: number | null;
+  deltaUnidade: DeltaUnidade;
+  serie: number[] | null;
+  tom: Tom;
+  formula: string;
+  sub: string;
+};
+
+type Indicador = {
+  id: string;
+  label: string;
+  valor: string;
+  formula: string;
+  tom: Tom;
+  icon: ComponentType<{ className?: string }>;
+};
+
+const PERIODOS: Array<{ key: PeriodoDre; label: string }> = [
+  { key: '30d', label: 'Ãšltimos 30 dias' },
+  { key: 'mes', label: 'Este mÃªs' },
+  { key: 'ano', label: 'Este ano' },
+];
+
+/** Paleta da tela em um Ãºnico lugar â€” nenhuma cor escrita dentro do JSX. */
+const COLORS = {
+  acento: '#7C3AED',
+  positivo: '#22C55E',
+  negativo: '#F87171',
+  atencao: '#F59E0B',
+  neutro: '#8B8AA0',
+  superficie: '#1A1A2E',
+  tooltip: '#121221',
+} as const;
+
+/**
+ * Tons semÃ¢nticos da tela: `cor` (barra/SVG), `chip` (selo) e `texto` (valor).
+ *
+ * RÃ©gua de contraste (WCAG AA) medida sobre o card efetivo (~#1F1C2F, do
+ * gradiente de vidro sobre o fundo da pÃ¡gina):
+ *   white/90 -> ~8,9:1  texto em destaque
+ *   white/70 -> ~7,1:1  rÃ³tulo de valor
+ *   white/60 -> ~6,3:1  rÃ³tulo curto / cabeÃ§alho de coluna
+ *   white/50 -> ~5,1:1  texto INFORMACIONAL â€” Ã© o piso da casa
+ *   white/40 -> ~3,8:1  SÃ“ ornamento (borda, barra, ponto). NUNCA texto.
+ * A versÃ£o anterior escrevia texto pequeno em white/25 e white/30 (~2,9:1),
+ * reprovado em AA. A hierarquia agora vem de TAMANHO e PESO, nÃ£o sÃ³ de
+ * opacidade â€” por isso a escala pode ser mais alta sem achatar o design.
+ */
+const TONS: Record<Tom, { cor: string; chip: string; texto: string }> = {
+  accent: {
+    cor: COLORS.acento,
+    chip: 'bg-[#7C3AED]/15 text-[#A78BFA]',
+    texto: 'text-[#A78BFA]',
+  },
+  emerald: {
+    cor: COLORS.positivo,
+    chip: 'bg-emerald-500/10 text-emerald-300',
+    texto: 'text-emerald-300',
+  },
+  red: {
+    cor: COLORS.negativo,
+    chip: 'bg-red-500/10 text-red-300',
+    texto: 'text-red-300',
+  },
+  amber: {
+    cor: COLORS.atencao,
+    chip: 'bg-amber-500/10 text-amber-300',
+    texto: 'text-amber-300',
+  },
+  neutral: {
+    cor: COLORS.neutro,
+    chip: 'bg-white/[0.06] text-white/60',
+    texto: 'text-white/70',
+  },
+};
+
+/* ============================================================================
+   3. HELPERS PUROS (sem React â€” estÃ¡veis entre renders e fÃ¡ceis de revisar)
+   ========================================================================== */
+
+/** Decimal do Prisma pode chegar como string; `Number` + guarda de NaN. */
+function num(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Margem que o backend pode devolver como `null` (perÃ­odo sem receita, onde a
+ * divisÃ£o nÃ£o existe). `num()` transformaria `null` em 0 e a tela mostraria
+ * "0,0%" â€” que se lÃª como empate. Aqui o `null` Ã© preservado para virar "â€”".
+ */
+function numOuNulo(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * VariaÃ§Ã£o real vs. a janela anterior. `null` = nÃ£o existe base comparÃ¡vel;
+ * nesse caso a tela diz "sem base comparativa" em vez de inventar nÃºmero.
+ */
+function deltaPct(atual: number, anterior: number | null | undefined): number | null {
+  if (anterior === null || anterior === undefined) return null;
+  if (!Number.isFinite(atual) || !Number.isFinite(anterior) || anterior === 0) return null;
+  return ((atual - anterior) / Math.abs(anterior)) * 100;
+}
+
+/**
+ * VariaÃ§Ã£o de um PERCENTUAL em pontos percentuais. Aplicar `deltaPct` numa
+ * margem daria a variaÃ§Ã£o relativa do prÃ³prio percentual (38,2% -> 39,4%
+ * viraria "+3,1%"), que Ã© um nÃºmero que o gestor nÃ£o consegue ler. O
+ * movimento real Ã© "+1,2 p.p.".
+ */
+function deltaPp(atual: number, anterior: number | null | undefined): number | null {
+  if (anterior === null || anterior === undefined) return null;
+  if (!Number.isFinite(atual) || !Number.isFinite(anterior)) return null;
+  return atual - anterior;
+}
+
+/** Valor curto para as barras do fluxo (a tabela segue com o valor cheio). */
+function brlCompacto(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1_000_000)
+    return `R$ ${(v / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+  if (a >= 1_000)
+    return `R$ ${(v / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+  return formatBRL(v);
+}
+
+/** CSV: aspas quando o valor tem vÃ­rgula/ponto-e-vÃ­rgula/quebra de linha. */
+function campoCsv(valor: unknown): string {
+  const s = valor == null ? '' : String(valor);
+  return /[",;\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** BOM (ï»¿) para o Excel abrir os acentos (mesma tÃ©cnica de /vendas e /fluxo). */
+function baixarCsv(cabecalho: string[], linhas: string[][], nome: string): void {
+  const conteudo = [cabecalho, ...linhas]
+    .map((l) => l.map(campoCsv).join(';'))
+    .join('\r\n');
+  const url = URL.createObjectURL(
+    new Blob([`ï»¿${conteudo}`], { type: 'text/csv;charset=utf-8' }),
+  );
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** `2026-09-19` -> `19/09/2026`, sem `new Date` (evita deslocar o dia por fuso). */
+function diaBruto(iso: string | null | undefined): string {
+  if (!iso) return 'â€”';
+  const partes = iso.slice(0, 10).split('-');
+  if (partes.length !== 3) return iso;
+  return `${partes[2]}/${partes[1]}/${partes[0]}`;
+}
+
+/**
+ * Monta o demonstrativo na ordem da conta de resultado: receitas, deduÃ§Ãµes,
+ * CMV, despesas, resultados e margens. Cada linha carrega a fÃ³rmula contÃ¡bil
+ * exata usada pelo backend â€” Ã© isso que aparece no tooltip, nada de texto
+ * genÃ©rico. Todas as linhas com barra sÃ£o comparÃ¡veis entre si; as margens
+ * nÃ£o entram no fluxo porque tÃªm unidade diferente (%).
+ */
+function montarLinhas(d: DreDetalhes): LinhaDre[] {
+  const receitaBruta = num(d.receitaBruta);
+  const deducoes = num(d.deducoes);
+  const receitaLiquida = num(d.receitaLiquida);
+  const custos = num(d.custos);
+  const despesas = num(d.despesas);
+  const resultado = num(d.resultadoOperacional);
+  const lucro = num(d.lucroPrejuizo);
+  const margemBruta = numOuNulo(d.margemBruta);
+  const margemLiquida = numOuNulo(d.margemLiquida);
+  // Mesma conta do backend para a margem bruta: (receitaLiquida - custos).
+  const lucroBruto = receitaLiquida - custos;
+
+  const tomDoResultado = (v: number): Tom => (v >= 0 ? 'emerald' : 'red');
+
+  return [
+    {
+      id: 'receita-bruta',
+      rotulo: 'Receita bruta',
+      sinal: '+',
+      valor: receitaBruta,
+      unidade: 'BRL',
+      tipo: 'receita',
+      tom: 'accent',
+      formula:
+        'Soma dos lanÃ§amentos de tipo RECEITA criados no perÃ­odo, antes de impostos, devoluÃ§Ãµes e abatimentos.',
+    },
+    {
+      id: 'deducoes',
+      rotulo: 'Impostos, devoluÃ§Ãµes e abatimentos',
+      sinal: 'âˆ’',
+      valor: deducoes,
+      unidade: 'BRL',
+      tipo: 'sub',
+      tom: 'red',
+      formula:
+        'Receita Bruta âˆ’ Receita LÃ­quida. No NEXUS OS, impostos sobre venda e devoluÃ§Ãµes entram como deduÃ§Ã£o da receita, e nÃ£o como despesa operacional.',
+    },
+    {
+      id: 'receita-liquida',
+      rotulo: 'Receita lÃ­quida',
+      sinal: '=',
+      valor: receitaLiquida,
+      unidade: 'BRL',
+      tipo: 'total',
+      tom: 'neutral',
+      formula: 'Receita Bruta âˆ’ DeduÃ§Ãµes.',
+    },
+    {
+      id: 'custos',
+      rotulo: 'Custos (CMV)',
+      sinal: 'âˆ’',
+      valor: custos,
+      unidade: 'BRL',
+      tipo: 'sub',
+      tom: 'red',
+      formula:
+        'Î£ (custo unitÃ¡rio Ã— quantidade) dos itens de cada venda FINALIZADA no perÃ­odo â€” o custo real dos produtos vendidos, nunca um percentual estimado.',
+    },
+    {
+      id: 'lucro-bruto',
+      rotulo: 'Lucro bruto',
+      sinal: '=',
+      valor: lucroBruto,
+      unidade: 'BRL',
+      tipo: 'total',
+      tom: tomDoResultado(lucroBruto),
+      derivada: true,
+      formula:
+        'Receita LÃ­quida âˆ’ Custos (CMV). Derivada na tela com a mesma conta que o backend usa para a margem bruta.',
+    },
+    {
+      id: 'despesas',
+      rotulo: 'Despesas operacionais',
+      sinal: 'âˆ’',
+      valor: despesas,
+      unidade: 'BRL',
+      tipo: 'sub',
+      tom: 'amber',
+      formula:
+        'LanÃ§amentos de tipo DESPESA do perÃ­odo, exceto os de categoria "deducoes"/"impostos", que jÃ¡ foram descontados acima como deduÃ§Ã£o.',
+    },
+    {
+      id: 'resultado-operacional',
+      rotulo: 'Resultado operacional',
+      sinal: '=',
+      valor: resultado,
+      unidade: 'BRL',
+      tipo: 'total',
+      tom: tomDoResultado(resultado),
+      formula: 'Receita LÃ­quida âˆ’ Custos (CMV) âˆ’ Despesas Operacionais.',
+    },
+    {
+      id: 'lucro',
+      rotulo: 'Lucro / prejuÃ­zo do exercÃ­cio',
+      sinal: '=',
+      valor: lucro,
+      unidade: 'BRL',
+      tipo: 'resultado',
+      tom: tomDoResultado(lucro),
+      formula:
+        'No regime de competÃªncia, o resultado do exercÃ­cio Ã© o resultado operacional ajustado por Receitas/Despesas nÃ£o operacionais. O NEXUS OS ainda nÃ£o captura esses ajustes, entÃ£o o backend publica o resultado operacional como lucro do exercÃ­cio â€” por isso esta linha e a de cima coincidem.',
+    },
+    {
+      id: 'margem-bruta',
+      rotulo: 'Margem bruta',
+      sinal: '',
+      valor: margemBruta,
+      unidade: '%',
+      tipo: 'margem',
+      tom: margemBruta === null ? 'neutral' : tomDoResultado(margemBruta),
+      formula: '(Lucro Bruto Ã· Receita LÃ­quida) Ã— 100. Sem receita no perÃ­odo, nÃ£o hÃ¡ denominador: a linha fica "â€”" em vez de 0,0%.',
+    },
+    {
+      id: 'margem-liquida',
+      rotulo: 'Margem lÃ­quida',
+      sinal: '',
+      valor: margemLiquida,
+      unidade: '%',
+      tipo: 'margem',
+      tom: margemLiquida === null ? 'neutral' : tomDoResultado(margemLiquida),
+      formula: '(Lucro/PrejuÃ­zo Ã· Receita Bruta) Ã— 100. Sem receita no perÃ­odo, nÃ£o hÃ¡ denominador: a linha fica "â€”" em vez de 0,0%.',
+    },
+  ];
+}
+
+/**
+ * Resolve as linhas da TABELA em segmentos de PONTE (waterfall de verdade).
+ *
+ * A versÃ£o anterior desenhava todas as barras a partir do zero, entÃ£o a
+ * "Receita bruta" ocupava a rÃ©gua inteira e a "DeduÃ§Ã£o" aparecia como um
+ * retalho solto ao lado â€” nÃ£o dava para ler receita -> lucro. Aqui o saldo
+ *corre de uma linha para a outra: uma receita/ deduÃ§Ã£o vira um segmento
+ * FLUTUANTE entre o saldo anterior e o novo, e um subtotal ancora em zero
+ * (Ã© ele que reinicia a rÃ©gua). O sinal contÃ¡bil (`+`/`âˆ’`) define o sentido,
+ * entÃ£o a ponte bate com a conta mesmo se o valor vier negativo do backend.
+ */
+function montarPonte(linhas: LinhaDre[]): Segmento[] {
+  let saldo = 0;
+  const segmentos: Segmento[] = [];
+
+  for (const linha of linhas) {
+    if (linha.tipo === 'margem') continue; // unidade diferente: fora da rÃ©gua
+
+    if (linha.tipo === 'receita' || linha.tipo === 'sub') {
+      const de = saldo;
+      const valor = linha.valor ?? 0;
+      const passo = linha.sinal === 'âˆ’' ? -Math.abs(valor) : Math.abs(valor);
+      saldo = de + passo;
+      segmentos.push({ ...linha, valor, de, para: saldo, ehTotal: false });
+    } else {
+      const valor = linha.valor ?? 0;
+      saldo = valor;
+      segmentos.push({ ...linha, valor, de: 0, para: valor, ehTotal: true });
+    }
+  }
+
+  return segmentos;
+}
+
+/**
+ * RÃ©gua da ponte. Inclui o zero dentro da faixa de propÃ³sito: com prejuÃ­zo, o
+ * mÃ­nimo Ã© negativo e a rÃ©gua desce abaixo de zero, senÃ£o a barra "para cima"
+ * do resultado nÃ£o teria para onde apontar.
+ */
+function montarEscala(segmentos: Segmento[]): Escala {
+  const valores: number[] = [0];
+  for (const s of segmentos) valores.push(s.de, s.para);
+
+  const min = Math.min(...valores);
+  const max = Math.max(...valores);
+  const amplitude = max - min || 1;
+
+  return { min, max, amplitude, posZero: ((0 - min) / amplitude) * 100 };
+}
+
+/** Converte um valor da ponte para 0â€“100% dentro da rÃ©gua. */
+function paraPorcento(v: number, escala: Escala): number {
+  return ((v - escala.min) / escala.amplitude) * 100;
+}
+
+/**
+ * Os quatro KPIs do topo. `dAnt` (janela anterior REAL) Ã© a Ãºnica base de
+ * comparaÃ§Ã£o: sem ela o delta Ã© `null` e o card diz "sem base" em vez de
+ * inventar nÃºmero. Margem mede em p.p., os demais em variaÃ§Ã£o relativa.
+ *
+ * FunÃ§Ã£o pura de mÃ³dulo: sai do corpo do componente, fica testÃ¡vel e para de
+ * ser reconstruÃ­da a cada render do pai.
+ */
+function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
+  const receitaBruta = num(d.receitaBruta);
+  const receitaLiquida = num(d.receitaLiquida);
+  const custos = num(d.custos);
+  const lucro = num(d.lucroPrejuizo);
+  const lucroBruto = receitaLiquida - custos;
+  // `null` = margem nÃ£o calculÃ¡vel (perÃ­odo sem receita). Vira "â€”" no card,
+  // sem delta e sem sparkline â€” comparar "sem denominador" nÃ£o tem sentido.
+  const margemBruta = numOuNulo(d.margemBruta);
+
+  const base = dAnt
+    ? {
+        receitaBruta: num(dAnt.receitaBruta),
+        lucroBruto: num(dAnt.receitaLiquida) - num(dAnt.custos),
+        lucro: num(dAnt.lucroPrejuizo),
+        margemBruta: numOuNulo(dAnt.margemBruta),
+      }
+    : null;
+
+  return [
+    {
+      id: 'receita-bruta',
+      label: 'Receita bruta',
+      valor: formatBRL(receitaBruta),
+      delta: base ? deltaPct(receitaBruta, base.receitaBruta) : null,
+      deltaUnidade: 'pct',
+      serie: base ? [base.receitaBruta, receitaBruta] : null,
+      tom: 'accent',
+      formula: 'Soma dos lanÃ§amentos de tipo RECEITA criados no perÃ­odo, antes de impostos e devoluÃ§Ãµes.',
+      sub: `${num(d.qtdVendas)} venda(s) finalizada(s) no perÃ­odo`,
+    },
+    {
+      id: 'lucro-bruto',
+      label: 'Lucro bruto',
+      valor: formatBRL(lucroBruto),
+      delta: base ? deltaPct(lucroBruto, base.lucroBruto) : null,
+      deltaUnidade: 'pct',
+      serie: base ? [base.lucroBruto, lucroBruto] : null,
+      tom: lucroBruto >= 0 ? 'emerald' : 'red',
+      formula: 'Receita LÃ­quida âˆ’ Custos (CMV).',
+      sub: 'O que sobra da receita lÃ­quida apÃ³s o custo real dos itens vendidos',
+    },
+    {
+      id: 'margem-bruta',
+      label: 'Margem bruta',
+      valor: margemBruta === null ? 'â€”' : formatPct(margemBruta, 1),
+      delta: base && base.margemBruta !== null && margemBruta !== null ? deltaPp(margemBruta, base.margemBruta) : null,
+      deltaUnidade: 'pp',
+      serie: base && base.margemBruta !== null && margemBruta !== null ? [base.margemBruta, margemBruta] : null,
+      tom: margemBruta === null ? 'neutral' : margemBruta >= 0 ? 'emerald' : 'red',
+      formula: '(Lucro Bruto Ã· Receita LÃ­quida) Ã— 100.',
+      sub:
+        margemBruta === null
+          ? 'Sem receita no perÃ­odo â€” margem nÃ£o calculÃ¡vel'
+          : 'Percentual da receita lÃ­quida que sobra antes das despesas',
+    },
+    {
+      id: 'resultado',
+      label: 'Resultado operacional',
+      valor: formatBRL(lucro),
+      delta: base ? deltaPct(lucro, base.lucro) : null,
+      deltaUnidade: 'pct',
+      serie: base ? [base.lucro, lucro] : null,
+      tom: lucro >= 0 ? 'emerald' : 'red',
+      formula: 'Receita LÃ­quida âˆ’ Custos (CMV) âˆ’ Despesas Operacionais.',
+      sub: lucro >= 0 ? 'Resultado positivo no perÃ­odo' : 'PrejuÃ­zo no perÃ­odo',
+    },
+  ];
+}
+
+/**
+ * RazÃµes do perÃ­odo. Todas saem de divisÃ£o entre campos que o backend jÃ¡
+ * devolve, com denominador protegido: sem denominador o valor Ã© "â€”", nunca
+ * `Infinity` nem um nÃºmero estimado.
+ */
+function montarIndicadores(d: DreDetalhes): Indicador[] {
+  const receitaBruta = num(d.receitaBruta);
+  const receitaLiquida = num(d.receitaLiquida);
+  const custos = num(d.custos);
+  const despesas = num(d.despesas);
+  const deducoes = num(d.deducoes);
+  const lucro = num(d.lucroPrejuizo);
+  const vendas = num(d.qtdVendas);
+
+  const divisao = (numerador: number, denominador: number): number | null =>
+    denominador > 0 ? numerador / denominador : null;
+  const percentual = (numerador: number, denominador: number): number | null => {
+    const r = divisao(numerador, denominador);
+    return r === null ? null : r * 100;
+  };
+  const brl = (v: number | null): string => (v === null ? 'â€”' : formatBRL(v));
+  const pct = (v: number | null): string => (v === null ? 'â€”' : formatPct(v, 1));
+
+  return [
+    {
+      id: 'ticket-medio',
+      label: 'Ticket mÃ©dio',
+      valor: brl(divisao(receitaBruta, vendas)),
+      formula: 'Receita Bruta Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      tom: 'accent',
+      icon: ShoppingCart,
+    },
+    {
+      id: 'custo-medio',
+      label: 'Custo mÃ©dio por venda',
+      valor: brl(divisao(custos, vendas)),
+      formula: 'Custos (CMV) Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      tom: 'red',
+      icon: Receipt,
+    },
+    {
+      id: 'despesas-receita',
+      label: 'Despesas sobre receita lÃ­quida',
+      valor: pct(percentual(despesas, receitaLiquida)),
+      formula: '(Despesas Operacionais Ã· Receita LÃ­quida) Ã— 100.',
+      tom: 'amber',
+      icon: Wallet,
+    },
+    {
+      id: 'deducoes-receita',
+      label: 'DeduÃ§Ãµes sobre receita bruta',
+      valor: pct(percentual(deducoes, receitaBruta)),
+      formula: '(Impostos, devoluÃ§Ãµes e abatimentos Ã· Receita Bruta) Ã— 100.',
+      tom: 'amber',
+      icon: Percent,
+    },
+    {
+      id: 'lucro-venda',
+      label: 'Lucro por venda',
+      valor: brl(divisao(lucro, vendas)),
+      formula: 'Lucro/PrejuÃ­zo Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      tom: lucro >= 0 ? 'emerald' : 'red',
+      icon: TrendingUp,
+    },
+    {
+      id: 'vendas',
+      label: 'Vendas no perÃ­odo',
+      valor: vendas.toLocaleString('pt-BR'),
+      formula: 'Contagem de vendas com status FINALIZADA criadas no perÃ­odo.',
+      tom: 'neutral',
+      icon: CircleAlert,
+    },
+  ];
+}
+
+/* ============================================================================
+   4. COMPONENTES DE APRESENTAÃ‡ÃƒO
+   Todos `memo`: a pÃ¡gina re-renderiza a cada troca de perÃ­odo, de comparaÃ§Ã£o
+   ou de toast, mas os cartÃµes nÃ£o precisam refazer conta nem SVG.
+   ========================================================================== */
+
+/**
+ * Sparkline em SVG puro (mesmo caminho do /fluxo). Por que nÃ£o Recharts aqui:
+ * sÃ£o microgrÃ¡ficos de ~28px; instÃ¢ncias de ResponsiveContainer custariam mais
+ * que o grÃ¡fico principal. O path Ã© memoizado por `valores`.
+ */
+const Sparkline = memo(function Sparkline({
+  id,
+  valores,
+  cor,
+}: {
+  id: string;
+  valores: number[];
+  cor: string;
+}) {
+  const d = useMemo(() => {
+    if (valores.length < 2) return null;
+    const max = Math.max(...valores);
+    const min = Math.min(...valores);
+    const amplitude = max - min || 1;
+    const pontos = valores.map((v, i) => {
+      const x = (i / (valores.length - 1)) * 100;
+      const y = 26 - ((v - min) / amplitude) * 22;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    return { linha: pontos.join(' '), area: `M0,28 L${pontos.join(' L')} L100,28 Z` };
+  }, [valores]);
+
+  if (!d) return <div className="h-9 w-full" aria-hidden="true" />;
+
+  return (
+    <svg
+      viewBox="0 0 100 28"
+      preserveAspectRatio="none"
+      className="h-9 w-full"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`dre-spark-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={cor} stopOpacity={0.35} />
+          <stop offset="100%" stopColor={cor} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={d.area} fill={`url(#dre-spark-${id})`} />
+      <polyline
+        points={d.linha}
+        fill="none"
+        stroke={cor}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+});
+
+/** Geometria da bolha: largura fixa, altura estimada para o flip. */
+const TIP_LARGURA = 304;
+const TIP_ALTURA = 104;
+const TIP_GAP = 8;
+const TIP_MARGEM = 12;
+
+/**
+ * Tooltip de fÃ³rmula contÃ¡bil.
+ *
+ * Por que portal em <body> (e nÃ£o um span absoluto dentro da Ã¡rvore):
+ *  - a tabela estÃ¡ dentro de `overflow-x:auto`, que por CSS transforma o
+ *    `overflow-y` em `auto` â€” a bolha simples era CORTADA pelas linhas;
+ *  - os cards usam `backdrop-filter` e `transform:translateY` no hover, e
+ *    qualquer um dos dois cria bloco de contenÃ§Ã£o para `position:fixed`.
+ * Ancoramos por `getBoundingClientRect`, com flip para cima quando nÃ£o hÃ¡
+ * espaÃ§o embaixo e clamp horizontal dentro da viewport.
+ *
+ * Acessibilidade: o gatilho Ã© um <button> (o teclado chega nele) e se
+ * anuncia por `aria-describedby` â€” a fÃ³rmula Ã© lida UMA vez, como
+ * descriÃ§Ã£o, e nÃ£o repetida no nome acessÃ­vel.
+ */
+const Tooltip = memo(function Tooltip({
+  texto,
+  rotulo = 'FÃ³rmula contÃ¡bil desta linha',
+  children,
+}: {
+  texto: string;
+  rotulo?: string;
+  children?: ReactNode;
+}) {
+  const id = useId();
+  const gatilho = useRef<HTMLButtonElement | null>(null);
+  const [ancora, setAncora] = useState<{
+    top: number;
+    left: number;
+    lado: 'topo' | 'baixo';
+    centroX: number;
+  } | null>(null);
+
+  const fechar = useCallback(() => setAncora(null), []);
+
+  const abrir = useCallback(() => {
+    const el = gatilho.current;
+    if (!el) return;
+
+    const r = el.getBoundingClientRect();
+    const vh = window.innerHeight;
+    const vw = window.innerWidth;
+
+    // Flip: prefere abaixo; sobe quando nÃ£o cabe (e hÃ¡ espaÃ§o acima).
+    const cabeAbaixo = r.bottom + TIP_ALTURA + TIP_MARGEM <= vh;
+    const cabeAcima = r.top - TIP_ALTURA - TIP_MARGEM > 0;
+    const lado: 'topo' | 'baixo' = !cabeAbaixo && cabeAcima ? 'topo' : 'baixo';
+    const top = lado === 'baixo' ? r.bottom + TIP_GAP : r.top - TIP_GAP;
+
+    const largura = Math.min(TIP_LARGURA, vw - TIP_MARGEM * 2);
+    // Clamp horizontal: a bolha nunca sangra para fora da viewport.
+    const left = Math.min(
+      Math.max(r.left + r.width / 2 - largura / 2, TIP_MARGEM),
+      vw - largura - TIP_MARGEM,
+    );
+    // A seta segue o gatilho, mas presa dentro da bolha.
+    const centroX = Math.min(
+      Math.max(r.left + r.width / 2 - left, 18),
+      largura - 18,
+    );
+
+    setAncora((atual) =>
+      atual && atual.top === top && atual.left === left && atual.lado === lado && atual.centroX === centroX
+        ? atual
+        : { top, left, lado, centroX },
+    );
+  }, []);
+
+  /* Rolagem/redimensionamento reposicionam em vez de fechar: a bolha Ã©
+     `fixed`, entÃ£o sem isso ela ficaria pendurada no ponto antigo. */
+  const aberto = ancora !== null;
+  useEffect(() => {
+    if (!aberto) return;
+    const reposicionar = () => abrir();
+    window.addEventListener('scroll', reposicionar, true);
+    window.addEventListener('resize', reposicionar);
+    return () => {
+      window.removeEventListener('scroll', reposicionar, true);
+      window.removeEventListener('resize', reposicionar);
+    };
+  }, [aberto, abrir]);
+
+  const estilo: CSSProperties = ancora
+    ? {
+        top: ancora.top,
+        left: ancora.left,
+        width: Math.min(TIP_LARGURA, window.innerWidth - TIP_MARGEM * 2),
+        // A seta aponta para o centro do gatilho, nunca para fora da bolha.
+        ['--dre-tip-cx' as string]: `${ancora.centroX}px`,
+      }
+    : {};
+
+  return (
+    <span className="relative inline-flex align-middle">
+      <button
+        ref={gatilho}
+        type="button"
+        className="dre-help"
+        aria-describedby={id}
+        onMouseEnter={abrir}
+        onMouseLeave={fechar}
+        onFocus={abrir}
+        onBlur={fechar}
+        onKeyDown={(e) => e.key === 'Escape' && fechar()}
+      >
+        <span className="sr-only">{rotulo}</span>
+        {children ?? <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+      </button>
+
+      {ancora &&
+        createPortal(
+          <span
+            id={id}
+            role="tooltip"
+            className="dre-tip"
+            data-aberto="true"
+            data-lado={ancora.lado}
+            style={estilo}
+          >
+            {texto}
+          </span>,
+          document.body,
+        )}
+    </span>
+  );
+});
+
+/**
+ * Card de KPI. Mostra o valor em nÃºmero tabular, a variaÃ§Ã£o contra a janela
+ * anterior REAL (ou "sem base" â€” nunca um delta inventado) e o sparkline com
+ * os dois pontos reais (anterior -> atual) quando hÃ¡ comparaÃ§Ã£o.
+ *
+ * O chip de variaÃ§Ã£o tem TRÃŠS estados (alta / queda / estÃ¡vel) e respeita a
+ * unidade do delta: `p.p.` em margem, `%` relativo nos indicadores em reais.
+ */
+const KpiCard = memo(function KpiCard({
+  kpi,
+  indice,
+  comparando,
+  janelaComparacao,
+}: {
+  kpi: Kpi;
+  indice: number;
+  comparando: boolean;
+  /** RÃ³tulo da janela real de comparaÃ§Ã£o (ex.: "01/08 a 30/08"). */
+  janelaComparacao: string;
+}) {
+  const janela = janelaComparacao.trim();
+
+  // TrÃªs estados, nÃ£o dois. Com `delta === 0` a versÃ£o anterior caÃ­a no ramo
+  // "caiu" e pintava uma seta vermelha de descida com "âˆ’0,0%": nÃºmero certo,
+  // sinal errado. `0.05` absorve ruÃ­do de ponto flutuante.
+  const magnitude = kpi.delta === null ? null : Math.abs(kpi.delta);
+  const estavel = magnitude !== null && magnitude < 0.05;
+  const subiu = magnitude !== null && !estavel && kpi.delta !== null && kpi.delta > 0;
+  const DeltaIcon = estavel ? Minus : subiu ? TrendingUp : TrendingDown;
+
+  const unidadeDelta = kpi.deltaUnidade === 'pp' ? ' p.p.' : '';
+  const corDelta = estavel
+    ? 'bg-[var(--card)] text-[var(--label2)]'
+    : subiu
+      ? 'bg-[var(--nx-green-rgb)_/10] text-[var(--nx-green)]'
+                 : 'bg-red-500/10 text-red-300';
+
+  const leitura = estavel
+    ? 'estável'
+    : subiu
+      ? 'alta'
+      : 'queda';
+
+  return (
+    <article
+      className="dre-card dre-in flex flex-col p-4 md:p-5"
+      style={{ animationDelay: `${indice * 60}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/60">
+          <span className="truncate">{kpi.label}</span>
+          <Tooltip texto={kpi.formula} rotulo={`FÃ³rmula de ${kpi.label}`} />
+        </span>
+
+        {magnitude !== null ? (
+          <span
+            className={`dre-num inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-semibold ${corDelta}`}
+            title={janela ? `VariaÃ§Ã£o vs. ${janela}` : undefined}
+          >
+            <DeltaIcon className="h-3 w-3" aria-hidden="true" />
+            <span className="sr-only">{`${leitura} de `}</span>
+            <span aria-hidden="true">
+              {estavel ? '' : subiu ? '+' : 'âˆ’'}
+              {formatPct(magnitude, 1)}
+              {unidadeDelta}
+            </span>
+          </span>
+        ) : comparando ? (
+          <span className="shrink-0 text-[10.5px] text-white/50">sem base</span>
+        ) : null}
+      </div>
+
+      <div className="dre-num mt-3 text-[22px] font-bold leading-none text-white">
+        {kpi.valor}
+      </div>
+      <div className="mt-2 text-[11px] leading-relaxed text-white/50">{kpi.sub}</div>
+
+      <div className="mt-3">
+        {kpi.serie ? (
+          <Sparkline id={kpi.id} valores={kpi.serie} cor={TONS[kpi.tom].cor} />
+        ) : (
+          <div className="h-9 w-full" aria-hidden="true" />
+        )}
+      </div>
+    </article>
+  );
+});
+
+/**
+ * Uma barra da PONTE (waterfall). O segmento ocupa a faixa entre o saldo
+ * ANTES da linha e o saldo DEPOIS â€” receita e deduÃ§Ã£o "flutuam"; subtotais
+ * (receita lÃ­quida, lucro bruto, resultado, lucro) ancoram no zero. Ã‰ o que
+ * finalmente permite ler receita -> lucro de cima para baixo.
+ *
+ * Mobile: rÃ³tulo e valor na primeira linha, barra na segunda (a faixa de
+ * 150px + 104px deixava ~90px de rÃ©gua num telefone de 375px).
+ */
+const WaterfallBar = memo(function WaterfallBar({
+  segmento,
+  escala,
+}: {
+  segmento: Segmento;
+  escala: Escala;
+}) {
+  const tom = TONS[segmento.tom];
+  const inicio = Math.min(paraPorcento(segmento.de, escala), paraPorcento(segmento.para, escala));
+  const fim = Math.max(paraPorcento(segmento.de, escala), paraPorcento(segmento.para, escala));
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+      <span className="order-1 flex w-full min-w-0 items-center gap-1.5 text-[12px] text-white/70 sm:w-[200px] sm:shrink-0">
+        <span className="truncate" title={segmento.rotulo}>
+          {segmento.sinal ? (
+            <span className="dre-num text-white/60">{segmento.sinal} </span>
+          ) : null}
+          {segmento.rotulo}
+        </span>
+        <Tooltip texto={segmento.formula} rotulo={`FÃ³rmula de ${segmento.rotulo}`} />
+      </span>
+
+      <span className="order-3 w-full sm:order-2 sm:w-auto sm:flex-1">
+        <span className="dre-track block" aria-hidden="true">
+          {/* RÃ©gua do zero: sem ela, com prejuÃ­zo, "barra para cima" fica ambÃ­gua. */}
+          <span className="dre-zero" style={{ left: `${escala.posZero}%` }} />
+          <span
+            className="dre-hl absolute inset-y-0 rounded-full"
+            style={{
+              left: `${inicio.toFixed(2)}%`,
+              // Piso de 1,2%: uma deduÃ§Ã£o de R$ 0,01 precisa continuar visÃ­vel.
+              width: `${Math.max(fim - inicio, 1.2).toFixed(2)}%`,
+              background: segmento.ehTotal
+                ? `linear-gradient(90deg, ${tom.cor}, ${tom.cor}66)`
+                : `linear-gradient(90deg, ${tom.cor}55, ${tom.cor})`,
+            }}
+          />
+        </span>
+      </span>
+
+      <span
+        className={`dre-num order-2 ml-auto shrink-0 text-right text-[12.5px] sm:order-3 sm:ml-0 sm:w-[130px] ${
+          segmento.ehTotal ? 'font-bold' : 'font-semibold'
+        } ${tom.texto}`}
+      >
+        {formatBRL(segmento.valor)}
+      </span>
+    </li>
+  );
+});
+
+/** Linha da tabela do demonstrativo. `sub` recua com barra lateral. */
+const DreRow = memo(function DreRow({ linha }: { linha: LinhaDre }) {
+  const tom = TONS[linha.tom];
+  const recuo = linha.tipo === 'sub';
+  const destaque = linha.tipo === 'total' || linha.tipo === 'resultado';
+  const ehMargem = linha.unidade === '%';
+
+  return (
+    <tr className="dre-row border-b border-white/[0.06] last:border-0">
+      <th scope="row" className="px-4 py-3 text-left font-normal md:px-5">
+        <span className={`flex items-center gap-1.5 ${recuo ? 'ml-3 border-l border-white/10 pl-3' : ''}`}>
+          {linha.sinal ? (
+            <span className="dre-num w-3 shrink-0 text-white/50">{linha.sinal}</span>
+          ) : null}
+          <span
+            className={
+              destaque
+                ? 'text-[12.5px] font-semibold text-white/90'
+                : 'text-[12.5px] text-white/60'
+            }
+          >
+            {linha.rotulo}
+          </span>
+          {linha.derivada ? (
+            <Tooltip
+              texto="Linha calculada na tela com a mesma conta que o backend usa; nÃ£o vem pronta do endpoint."
+              rotulo="Origem do valor"
+            >
+              <span className="shrink-0 rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wide text-white/60">
+                na tela
+              </span>
+            </Tooltip>
+          ) : null}
+          <Tooltip texto={linha.formula} rotulo={`FÃ³rmula de ${linha.rotulo}`} />
+        </span>
+      </th>
+      <td className="dre-num whitespace-nowrap px-4 py-3 text-right text-[12.5px] md:px-5">
+        {/* `valor === null` sÃ³ ocorre nas margens de um perÃ­odo sem receita:
+            nÃ£o hÃ¡ denominador, entÃ£o a cÃ©lula mostra "â€”" em vez de "0,0%". */}
+        <span className={destaque ? `font-bold ${tom.texto}` : `font-medium ${tom.texto}`}>
+          {linha.valor === null
+            ? 'â€”'
+            : ehMargem
+              ? formatPct(linha.valor, 1)
+              : formatBRL(linha.valor)}
+        </span>
+      </td>
+    </tr>
+  );
+});
+
+/**
+ * Card de indicador derivado. Todos os valores saem de divisÃ£o real entre
+ * campos que o backend jÃ¡ devolve (com guarda contra divisÃ£o por zero) â€”
+ * nada de benchmark de mercado ou meta genÃ©rica.
+ */
+const IndicadorCard = memo(function IndicadorCard({
+  indicador,
+}: {
+  indicador: Indicador;
+}) {
+  const tom = TONS[indicador.tom];
+  const Icon = indicador.icon;
+
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 transition-colors hover:border-[#7C3AED]/30 hover:bg-white/[0.05]">
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tom.chip}`}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-[11px] uppercase tracking-[0.1em] text-white/60">
+            {indicador.label}
+          </span>
+          <Tooltip texto={indicador.formula} rotulo={`FÃ³rmula de ${indicador.label}`} />
+        </div>
+        <div className={`dre-num mt-1.5 text-[15px] font-bold ${tom.texto}`}>
+          {indicador.valor}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/**
+ * CartÃ£o de "o que a tela se recusa a mostrar", com o motivo. Existe para a
+ * ausÃªncia ser EXPLICADA: esconder o EBITDA em silÃªncio deixa o gestor
+ * ACHER que o cÃ¡lculo existe e sÃ³ nÃ£o foi mostrado.
+ */
+const AvisoContabil = memo(function AvisoContabil() {
+  return (
+    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.015] p-4">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-white/50">
+        <CircleAlert className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-[12.5px] font-semibold text-white/90">
+          EBITDA, EBITDAR e laudo gerencial nÃ£o sÃ£o publicados aqui
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-white/50">
+          O NEXUS OS ainda nÃ£o separa depreciaÃ§Ã£o, amortizaÃ§Ã£o, resultado
+          financeiro, ajustes nÃ£o operacionais e IR/CSLL. Publicar esses nÃºmeros
+          hoje seria inventar informaÃ§Ã£o contÃ¡bil â€” por isso o card existe em
+          vez de sumir. Quando o backend passar a devolver essas contas, ele
+          entra na tela junto com as demais.
+        </p>
+      </div>
+    </div>
+  );
+});
+
+/** Skeleton espelhando o layout real â€” evita o salto de altura ao carregar. */
+function EsqueletoDre() {
+  return (
+    <div className="space-y-5" aria-busy="true" role="status">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="dre-card p-4 md:p-5">
+            <div className="dre-skel h-3 w-24" />
+            <div className="dre-skel mt-3 h-6 w-32" />
+            <div className="dre-skel mt-2 h-3 w-28" />
+            <div className="dre-skel mt-4 h-9 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="dre-card p-5">
+        <div className="dre-skel h-4 w-56" />
+        <div className="mt-5 space-y-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="dre-skel h-3 w-32 sm:w-52" />
+              <div className="dre-skel h-2 flex-1" />
+              <div className="dre-skel h-3 w-24 sm:w-32" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="dre-card p-5">
+        <div className="dre-skel h-4 w-48" />
+        <div className="mt-4 space-y-3">
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+            <div key={i} className="dre-skel h-9 w-full" />
+          ))}
+        </div>
+      </div>
+      <span className="sr-only">Carregando demonstrativo de resultado...</span>
+    </div>
+  );
+}
+
+/* ============================================================================
+   5. PÃGINA
+   ========================================================================== */
+export default function DrePage() {
+  const router = useRouter();
+
+  const [periodo, setPeriodo] = useState<PeriodoDre>('30d');
+  const [comparar, setComparar] = useState(false);
+  const [dados, setDados] = useState<DreResposta | null>(null);
+  const [anterior, setAnterior] = useState<DreResposta | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+
+  /*
+   * `vivo` protege o unmount e `reqId` protege a CORRIDA entre requisiÃ§Ãµes.
+   * O guard antigo era sÃ³ o primeiro: trocando de perÃ­odo (ou ligando
+   * "Comparar") duas vezes rÃ¡pido, a resposta mais lenta da janela
+   * abandonada chegava por Ãºltimo e sobrescrevia a tela com nÃºmero velho â€”
+   * o pior tipo de bug, porque o nÃºmero parece plausÃ­vel. Agora cada
+   * disparo carimba um token e sÃ³ a resposta do token atual grava estado.
+   */
+  const vivo = useRef(true);
+  const reqId = useRef(0);
+  const timerToast = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+      if (timerToast.current) clearTimeout(timerToast.current);
+    };
+  }, []);
+
+  const intervalo = useMemo(() => intervaloDoPreset(periodo, '', ''), [periodo]);
+  const janelaAnterior = useMemo(
+    () => periodoAnterior(intervalo.inicio, intervalo.fim),
+    [intervalo],
+  );
+
+  const params = useMemo(
+    () => ({
+      periodoInicio: comFuso(intervalo.inicio, '00:00'),
+      periodoFim: comFuso(intervalo.fim, '23:59'),
+    }),
+    [intervalo],
+  );
+  const paramsAnterior = useMemo(
+    () => ({
+      periodoInicio: comFuso(janelaAnterior.inicio, '00:00'),
+      periodoFim: comFuso(janelaAnterior.fim, '23:59'),
+    }),
+    [janelaAnterior],
+  );
+
+  const carregar = useCallback(async () => {
+    // Carimba o token ANTES de sair: qualquer disparo seguinte invalida este.
+    const id = ++reqId.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const [atual, prev] = await Promise.all([
+        api.get<DreResposta>('/dre', { params }),
+        // A janela anterior Ã© a base da comparaÃ§Ã£o. Se ela falhar, a tela
+        // continua funcionando e mostra "sem base" â€” nunca um delta inventado.
+        comparar
+          ? api
+              .get<DreResposta>('/dre', { params: paramsAnterior })
+              .catch(() => ({ data: null }))
+          : Promise.resolve({ data: null }),
+      ]);
+      if (!vivo.current || id !== reqId.current) return;
+      setDados(atual.data ?? null);
+      setAnterior(prev.data ?? null);
+    } catch (err) {
+      if (!vivo.current || id !== reqId.current) return;
+      setDados(null);
+      setAnterior(null);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'NÃ£o foi possÃ­vel carregar o demonstrativo de resultado.',
+      );
+    } finally {
+      if (vivo.current && id === reqId.current) setLoading(false);
+    }
+  }, [params, paramsAnterior, comparar]);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace('/');
+      return;
+    }
+    void carregar();
+  }, [router, carregar]);
+
+  /* --- Derivados: tudo em useMemo, para nÃ£o recalcular a cada render --- */
+  const d = dados?.detalhes ?? null;
+  const dAnt = comparar ? (anterior?.detalhes ?? null) : null;
+
+  const linhas = useMemo<LinhaDre[]>(() => (d ? montarLinhas(d) : []), [d]);
+
+  /** Ponte (waterfall): as MESMAS linhas da tabela, resolvidas em segmentos. */
+  const ponte = useMemo(() => montarPonte(linhas), [linhas]);
+  /** RÃ©gua da ponte, com o zero dentro da faixa (para o prejuÃ­zo ter rÃ©gua). */
+  const escala = useMemo(() => montarEscala(ponte), [ponte]);
+
+  /** Houve movimento no perÃ­odo? Decide entre dados e estado vazio honesto. */
+  const temMovimento = useMemo(() => {
+    if (!d) return false;
+    return (
+      num(d.receitaBruta) !== 0 ||
+      num(d.deducoes) !== 0 ||
+      num(d.custos) !== 0 ||
+      num(d.despesas) !== 0 ||
+      num(d.qtdVendas) !== 0
+    );
+  }, [d]);
+
+  const rotuloPeriodo = useMemo(
+    () => PERIODOS.find((p) => p.key === periodo)?.label ?? 'PerÃ­odo',
+    [periodo],
+  );
+
+  /**
+   * RÃ³tulo da janela de comparaÃ§Ã£o, usado no `title` do chip de variaÃ§Ã£o.
+   * Antes o `title` recebia a DESCRIÃ‡ÃƒO do KPI e virava "VariaÃ§Ã£o vs. 12
+   * venda(s) finalizada(s) no perÃ­odo"; agora nomeia a janela real.
+   */
+  const janelaComparacao = useMemo(
+    () =>
+      comparar
+        ? `${diaBruto(janelaAnterior.inicio)} a ${diaBruto(janelaAnterior.fim)}`
+        : '',
+    [comparar, janelaAnterior],
+  );
+
+  const kpis = useMemo<Kpi[]>(() => (d ? montarKpis(d, dAnt) : []), [d, dAnt]);
+
+  const indicadores = useMemo<Indicador[]>(() => (d ? montarIndicadores(d) : []), [d]);
+
+  /* --- Handlers em useCallback: as props dos cards memoizados nÃ£o mudam --- */
+  const mostrarToast = useCallback((mensagem: string) => {
+    setToast(mensagem);
+    if (timerToast.current) clearTimeout(timerToast.current);
+    timerToast.current = setTimeout(() => {
+      timerToast.current = null;
+      setToast(null);
+    }, 2800);
+  }, []);
+
+  const exportar = useCallback(() => {
+    if (!d || !linhas.length) return;
+    baixarCsv(
+      [
+        'Demonstrativo de Resultado do Exercicio',
+        'Periodo',
+        'Inicio',
+        'Fim',
+        'Linha',
+        'Formula',
+        'Valor',
+        'Unidade',
+      ],
+      linhas.map((l) => [
+        rotuloPeriodo,
+        diaBruto(intervalo.inicio),
+        diaBruto(intervalo.fim),
+        `${l.sinal} ${l.rotulo}`.trim(),
+        l.formula,
+        // Margem sem receita Ã© `null` (sem denominador). Escrever `0,00` aqui
+        // publicaria no CSV uma margem de 0% que o prÃ³prio demonstrativo se
+        // recusa a mostrar â€” cÃ©lula vazia Ã© a informaÃ§Ã£o correta no Excel.
+        l.valor === null ? '' : l.valor.toFixed(2),
+        // Coluna nova: sem ela, a margem (38,2 %) saÃ­a sob o cabeÃ§alho
+        // "Valor (BRL)" e o Excel mostrava R$ 38,20 como se fosse dinheiro.
+        l.unidade,
+      ]),
+      `dre-${intervalo.inicio}_a_${intervalo.fim}.csv`,
+    );
+    mostrarToast(`DRE exportada: ${linhas.length} linhas em CSV.`);
+  }, [d, linhas, intervalo, rotuloPeriodo, mostrarToast]);
+
+  const alternarComparar = useCallback(() => setComparar((v) => !v), []);
+  const mudarPeriodo = useCallback(
+    (e: ChangeEvent<HTMLSelectElement>) => setPeriodo(e.target.value as PeriodoDre),
+    [],
+  );
+
+  /* ========================================================================
+     6. RENDER
+     Hierarquia preservada: header + 4 KPIs + fluxo (waterfall) + tabela do
+     demonstrativo + indicadores derivados + rodapÃ© de procedÃªncia.
+     ====================================================================== */
+  return (
+    <div className="dre-root">
+      <style>{dreCss}</style>
+
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-6 md:px-8 md:py-8">
+        <ModuleHeader
+          kicker="GestÃ£o Â· regime de competÃªncia"
+          title="DRE"
+          subtitle="Demonstrativo de resultado calculado a partir dos dados reais de vendas, custo e despesas â€” sem nÃºmeros fictÃ­cios."
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <select
+                  className="dre-field"
+                  value={periodo}
+                  onChange={mudarPeriodo}
+                  aria-label="PerÃ­odo do demonstrativo"
+                >
+                  {PERIODOS.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/50"
+                  aria-hidden="true"
+                />
+              </div>
+
+              {/*
+                Os filtros NÃƒO sÃ£o desabilitados durante o loading. Antes eles
+                eram, e isso roubava o teclado no meio da navegaÃ§Ã£o e brigava
+                com o usuÃ¡rio: quem jÃ¡ escolheu "Este ano" nÃ£o conseguia
+                corrigir atÃ© a requisiÃ§Ã£o terminar. Trocar de perÃ­odo agora
+                dispara outra busca e o token invalida a anterior.
+              */}
+              <button
+                type="button"
+                className="dre-chip"
+                aria-pressed={comparar}
+                onClick={alternarComparar}
+                title="Compara com o perÃ­odo imediatamente anterior, de mesmo tamanho"
+              >
+                Comparar
+              </button>
+
+              <button
+                type="button"
+                className="dre-chip"
+                onClick={exportar}
+                disabled={!linhas.length}
+                aria-label="Exportar o demonstrativo em CSV"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                Exportar
+              </button>
+            </div>
+          }
+        />
+
+        {error && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12.5px] text-red-200"
+          >
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {loading ? (
+          <EsqueletoDre />
+        ) : !d ? (
+          <EmptyState
+            icon={BarChart3}
+            title="Demonstrativo indisponÃ­vel."
+            description="O endpoint /dre nÃ£o devolveu os detalhes do perÃ­odo. Verifique a permissÃ£o financeiro.visualizar e carregue a tela novamente."
+          />
+        ) : !temMovimento ? (
+          <EmptyState
+            icon={BarChart3}
+            title={`Sem movimento em ${rotuloPeriodo.toLowerCase()}.`}
+            description="Nenhuma venda finalizada, receita, custo ou despesa foi registrada no perÃ­odo. O NEXUS OS nÃ£o substitui dado ausente por nÃºmero estimado."
+          />
+        ) : (
+          <>
+            {/* Grade de KPIs â€” 1 / 2 / 4 colunas conforme a largura */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {kpis.map((kpi, i) => (
+                <KpiCard
+                  key={kpi.id}
+                  kpi={kpi}
+                  indice={i}
+                  comparando={comparar}
+                  janelaComparacao={janelaComparacao}
+                />
+              ))}
+            </div>
+
+            {/* Ponte da DRE â€” cada barra flutua entre o saldo antes e depois */}
+            <section
+              className="dre-card dre-in mt-5 p-5"
+              style={{ animationDelay: '180ms' }}
+            >
+              <SectionTitle
+                kicker="ComposiÃ§Ã£o do resultado"
+                right={
+                  <span className="text-[11px] text-white/50">
+                    rÃ©gua: {brlCompacto(escala.min)} a {brlCompacto(escala.max)}
+                  </span>
+                }
+              >
+                Fluxo da DRE
+              </SectionTitle>
+
+              <ul className="mt-4">
+                {ponte.map((s) => (
+                  <WaterfallBar key={s.id} segmento={s} escala={escala} />
+                ))}
+              </ul>
+
+              <p className="mt-3 text-[11px] leading-relaxed text-white/50">
+                Ponte cumulativa: cada barra ocupa a faixa entre o saldo anterior e
+                o novo, e os subtotais reiniciam no zero. A linha vertical marca o
+                zero da rÃ©gua. Passe o mouse ou use Tab para ler a fÃ³rmula contÃ¡bil
+                de cada linha.
+              </p>
+            </section>
+
+            {/* Tabela do demonstrativo â€” <table> semÃ¢ntica (caption/scope) */}
+            <section
+              className="dre-card dre-in mt-5 overflow-hidden"
+              style={{ animationDelay: '240ms' }}
+            >
+              <div className="p-5">
+                <SectionTitle
+                  kicker="Conta de resultado"
+                  right={
+                    <span className="text-[11px] text-white/50">
+                      {diaBruto(intervalo.inicio)} â€” {diaBruto(intervalo.fim)}
+                    </span>
+                  }
+                >
+                  Demonstrativo de resultado do exercÃ­cio
+                </SectionTitle>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[420px] border-collapse">
+                  <caption className="sr-only">
+                    Linhas do demonstrativo de resultado do exercÃ­cio, da receita
+                    bruta ao lucro do perÃ­odo. As contas sÃ£o em reais; as duas
+                    Ãºltimas linhas, em percentual.
+                  </caption>
+                  <thead>
+                    <tr className="border-y border-white/[0.08] bg-white/[0.02]">
+                      <th
+                        scope="col"
+                        className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/60 md:px-5"
+                      >
+                        Linha
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-4 py-2.5 text-right text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/60 md:px-5"
+                      >{traduzir('valor', "Valor")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linhas.map((linha) => (
+                      <DreRow key={linha.id} linha={linha} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] bg-white/[0.015] px-4 py-3 text-[11px] text-white/50 md:px-5">
+                <span>
+                  {linhas.length} linhas Â· {num(d.qtdVendas)} venda(s) finalizada(s)
+                </span>
+                <span>
+                  {comparar
+                    ? `Comparando com ${diaBruto(janelaAnterior.inicio)} â€” ${diaBruto(janelaAnterior.fim)}`
+                    : 'Ative "Comparar" para ver a variaÃ§Ã£o do perÃ­odo anterior'}
+                </span>
+              </div>
+            </section>
+
+            {/* Indicadores derivados â€” sÃ³ divisÃµes entre campos reais */}
+            <section
+              className="dre-card dre-in mt-5 p-5"
+              style={{ animationDelay: '300ms' }}
+            >
+              <SectionTitle kicker="RazÃµes do perÃ­odo">
+                Indicadores derivados
+              </SectionTitle>
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {indicadores.map((indicador) => (
+                  <IndicadorCard key={indicador.id} indicador={indicador} />
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-white/50">
+                Indicadores calculados a partir dos mesmos dados do perÃ­odo, com o
+                denominador protegido â€” sem vendas no perÃ­odo, a divisÃ£o vira "â€”"
+                em vez de um nÃºmero inventado.
+              </p>
+              <AvisoContabil />
+            </section>
+
+            {/* RodapÃ© de procedÃªncia: perÃ­odo e origem vÃªm do registro do backend */}
+            <p className="mt-5 text-[11px] leading-relaxed text-white/50">
+              DRE calculada pelo servidor a partir de lanÃ§amentos e vendas reais Â·
+              origem {dados?.dre?.origem?.toLowerCase() ?? 'automÃ¡tica'} Â· regime de
+              competÃªncia Â· valores em BRL Â· perÃ­odo {diaBruto(intervalo.inicio)} a{' '}
+              {diaBruto(intervalo.fim)} (fuso do navegador, {params.periodoInicio.slice(-6)})
+            </p>
+          </>
+        )}
+      </main>
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="dre-toast fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-white/10 bg-[#1A1A2E] px-4 py-3 text-[12px] text-white/90 shadow-[0_20px_60px_rgba(0,0,0,.6)]"
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+

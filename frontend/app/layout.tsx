@@ -1,22 +1,53 @@
-<<<<<<< HEAD
-import './globals.css';
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="pt-BR"><body style={{fontFamily:'Inter, sans-serif', background:'#0a0a0a', color:'#fff', margin:0}}>{children}</body></html>
-=======
 import type { Metadata } from 'next';
 import './globals.css';
+import ThemeScript from '@/components/ThemeScript';
+import ThemeSync from '@/components/ThemeSync';
 
 export const metadata: Metadata = {
-  title: 'NEXUS OS',
-  description: 'SaaS multi-tenant • Gestão completa da sua empresa',
+  title: {
+    default: 'NEXUS OS',
+    template: '%s | NEXUS OS',
+  },
+  description:
+    'NEXUS OS é uma plataforma SaaS multi-tenant para gestão completa de empresas.',
+  applicationName: 'NEXUS OS',
+  keywords: [
+    'NEXUS OS',
+    'gestão empresarial',
+    'ERP',
+    'SaaS',
+    'estoque',
+    'vendas',
+    'PDV',
+    'financeiro',
+    'RH',
+  ],
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
-    <html lang="pt-BR">
-      <body>{children}</body>
+    // `suppressHydrationWarning` é obrigatório: o ThemeScript altera
+    // data-theme / color-scheme no <html> antes da hidratação, e o React
+    // veria uma diferença entre servidor e cliente.
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        {/* Antes de qualquer pixel: aplica tema/densidade/accent salvos. */}
+        <ThemeScript />
+      </head>
+      <body>
+        {/* Depois da hidratação: mantém em dia quando a aba Configurações
+            salva uma escolha nova, ou quando outra aba do navegador salva. */}
+        <ThemeSync />
+        {children}
+      </body>
     </html>
   );
->>>>>>> 9a24c34c6d11c3f2872b796a0c1af740ba42af22
 }

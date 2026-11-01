@@ -1,0 +1,1237 @@
+﻿'use client';
+
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  Boxes,
+  ChevronDown,
+  Clock3,
+  Filter,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Printer,
+  TrendingDown,
+  X,
+} from 'lucide-react';
+import api from '@/lib/api';
+import { formatBRL, formatDate } from '@/lib/format';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+
+
+type EstoqueItem = {
+  id: string;
+  filialId: string;
+  produtoId: string;
+  quantidade: number;
+  valorTotal: number | string;
+  lote?: string | null;
+  local?: string | null;
+  updatedAt?: string;
+  filial?: { id: string; nome: string };
+  produto?: {
+    id: string;
+    nome: string;
+    sku?: string | null;
+    codigoBarras?: string | null;
+    unidade?: string;
+    custo?: number | string;
+    estoqueMinimo?: number;
+    validade?: string | null;
+    categoria?: { id: string; nome: string } | null;
+    fornecedor?: { id: string; nome: string } | null;
+  };
+};
+
+type Movimento = {
+  id: string;
+  quantidade: number;
+  tipo: string;
+  motivo?: string | null;
+  documento?: string | null;
+  origem?: string;
+  createdAt: string;
+  produto?: { nome: string; sku?: string | null };
+  usuario?: { nome: string } | null;
+  filial?: { nome: string };
+};
+
+/** Linha da folha de inventario, como o servidor a devolve. */
+type ContagemSessao = {
+  id: string; estoqueId: string | null; produtoId: string; produtoNome: string;
+  unidade: string | null; local: string | null;
+  quantidadeSistema: number; quantidadeContada: number | null;
+  contadoPor: string | null; contadoEm: string | null;
+  observacoes: string | null;
+  divergencia: 'BATEU' | 'SOBROU' | 'FALTOU' | null;
+};
+type SessaoInventario = {
+  id: string; nome: string; status: 'ABERTA' | 'CONCLUIDA' | 'CANCELADA';
+  cegas: boolean; filial: { id: string; nome: string } | null;
+  criadoPor: string | null; criadoEm: string;
+  concluidoPor: string | null; concluidoEm: string | null;
+  observacoes: string | null;
+  contagens: ContagemSessao[];
+  resumo: { total: number; contados: number; pendentes: number; bateram: number; sobraram: number; faltaram: number; fechavel: boolean };
+};
+type ResumoSessao = {
+  id: string; nome: string; status: string; cegas: boolean;
+  filial: { id: string; nome: string } | null;
+  criadoPor: string | null; criadoEm: string; concluidoPor: string | null; concluidoEm: string | null;
+  resumo: SessaoInventario['resumo'];
+};
+type EstoqueResponse = {
+  estoques: EstoqueItem[];
+  // Filiais do cadastro da empresa, NAO derivadas das linhas de estoque:
+  // uma filial sem lancamento sumiria do filtro e do destino da transferencia.
+  filiais?: Array<{ id: string; nome: string }>;
+  indicadores?: {
+    // Vem do servidor porque o gate e' de permissao: sem `custos:visualizar`
+    // os campos de dinheiro NEM chegam no payload (custo/precoVenda/valorTotal
+    // saem zerados pelo select). O front nao pode recalcular nada a partir
+    // das linhas â€” era exatamente assim que o gate era contornado.
+    podeVerCusto?: boolean;
+    valorTotal?: number;
+    qtdBaixo: number;
+    qtdSemEstoque: number;
+    produtosParados?: Array<any>;
+    giro?: { porProduto?: Array<any> };
+  };
+};
+
+// Moeda e data seguem a preferÃªncia "Moeda" / "Formato data" da aba
+// ConfiguraÃ§Ãµes. Antes fixavam pt-BR/BRL aqui, entÃ£o escolher USD/EUR na
+// ConfiguraÃ§Ãµes nÃ£o mudava nada no Estoque.
+// Janela usada no KPI "Parados". Antes o titulo dizia "+90 dias", o chip ao lado
+// dizia "30 dias" e a requisicao mandava 90: tres numeros para a mesma medida.
+const DIAS_PARADO = 90;
+
+const money = (value: number | string | undefined) => formatBRL(value ?? 0);
+
+// IMPRESSÃƒO DA FOLHA DE INVENTÃRIO
+// ----------------------------------
+// POR QUE ISTO Ã‰ DIFERENTE DO PADRÃƒO DE /vendas
+//
+// A regra antiga escondia a tela com `display: none` em `.estoque-noprint`.
+// SÃ³ que `.estoque-noprint` era a classe do INVOLUCRO DA PÃGINA e do <main> â€”
+// e a folha de inventÃ¡rio Ã© renderizada DENTRO dos dois (via <FolhaInventario>).
+//
+// Isso nÃ£o tem como funcionar: `display: none` num ancestral remove a
+// subÃ¡rvore INTEIRA da Ã¡rvore de renderizaÃ§Ã£o, e nenhum descendente consegue
+// trazÃª-la de volta. Nem `visibility: visible` â€” que Ã© justamente o truque
+// usado nas linhas seguintes. A folha morria ali dentro e a impressÃ£o saÃ­a
+// em branco. Foi por isso que o `visibility` jÃ¡ estava no CSS e nunca fez
+// diferenÃ§a: ele nunca chegou a ser avaliado.
+//
+// A ordem correta (a mesma de /vendas) Ã© esconder a folha com `display: none`
+// e mantÃª-la FORA de qualquer ancestral escondido. Como aqui a folha Ã© um
+// bloco normal da pÃ¡gina, a soluÃ§Ã£o Ã© inverter a estratÃ©gia:
+//
+//   1. SÃ³ o "chrome" de tela â€” topo, KPIs e barra de abas â€” recebe
+//      `.estoque-print-hide` e some de verdade. Nenhum deles Ã© ancestral da
+//      folha, entÃ£o nada de ancestral morre.
+//   2. O invÃ³lucro e o <main> ficam no fluxo e apenas sÃ£o invisÃ­veis pelo
+//      `visibility: hidden` do `body *`, que os descendentes CONSEGUEM
+//      reverter. Ã‰ essa a diferenÃ§a que importa: `visibility` Ã© herdÃ¡vel e
+//      sobrescrevÃ­vel; `display` nÃ£o Ã©.
+//   3. Como o chrome do item 1 sai do fluxo, a folha jÃ¡ comeÃ§a no topo do
+//      papel, sem `position: absolute` (que deslocaria a folha e quebraria a
+//      quebra de pÃ¡gina).
+const ESTOQUE_PRINT = `
+@media print {
+  aside, header, .estoque-print-hide { display: none !important; }
+
+  /* A tela inteira some MAS CONTINUA OCUPANDO ESPAÃ‡O. */
+  body * { visibility: hidden !important; }
+
+  /* A folha e tudo dentro dela volta a existir. */
+  .estoque-print-area, .estoque-print-area * { visibility: visible !important; }
+
+  .estoque-print-area {
+    position: static !important;
+    width: 100% !important; max-width: none !important;
+    height: auto !important; overflow: visible !important;
+    padding: 0 !important; margin: 0 !important;
+    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+    background: #fff !important; color: #000 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* Fundo escuro e texto claro em qualquer elemento interno deixariam a
+     folha ilegÃ­vel no papel: o "color: #000" do container nÃ£o vence uma
+     classe utilitÃ¡ria do Tailwind no filho. Aqui a regra ganha. */
+  .estoque-print-area *, .estoque-print-area *::before, .estoque-print-area *::after {
+    background: transparent !important;
+    color: #000 !important;
+    border-color: #999 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* A coluna da contagem fÃ­sica Ã© o que a pessoa preenche no depÃ³sito:
+     no papel precisa ser um campo em branco, com linha para escrever. */
+  .estoque-print-area input {
+    border: 0 !important;
+    border-bottom: 1px solid #666 !important;
+    background: transparent !important;
+    color: #000 !important;
+    -webkit-appearance: none; appearance: none;
+  }
+
+  /* Tabela: sem barra de rolagem horizontal e sem largura mÃ­nima, senÃ£o a
+     coluna de contagem cai fora da folha. E o cabeÃ§alho se repete em cada
+     pÃ¡gina â€” a folha de um depÃ³sito grande passa de uma pÃ¡gina sÃ³. */
+  .estoque-print-area .overflow-x-auto { overflow: visible !important; }
+  .estoque-print-area table { min-width: 0 !important; width: 100% !important; font-size: 10pt; border-collapse: collapse; }
+  .estoque-print-area thead { display: table-header-group !important; }
+  .estoque-print-area tr { page-break-inside: avoid; break-inside: avoid; }
+  .estoque-print-area th, .estoque-print-area td { padding: 4pt 6pt !important; }
+
+  @page { margin: 12mm; }
+}
+`;
+
+const date = (value?: string | null) => formatDate(value);
+
+const relativeTime = (value: string) => {
+  const diff = Date.now() - new Date(value).getTime();
+  const mins = Math.max(1, Math.floor(diff / 60000));
+  if (mins < 60) return `hÃ¡ ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `hÃ¡ ${hours}h`;
+  return `hÃ¡ ${Math.floor(hours / 24)}d`;
+};
+
+function statusOf(item: EstoqueItem) {
+  const qtd = Number(item.quantidade || 0);
+  const min = Number(item.produto?.estoqueMinimo || 0);
+  if (qtd <= 0) return { label: 'RUPTURA', cls: 'red' };
+  if (qtd <= min) return { label: 'BAIXO', cls: 'amber' };
+  return { label: 'OK', cls: 'green' };
+}
+
+
+// O dropdown oferece sete tipos, e eles NAO querem a mesma coisa no campo
+// quantidade: AJUSTE e INVENTARIO gravam o SALDO FINAL (o numero digitado
+// substitui o atual), enquanto os outros somam ou subtraem.
+//
+// Antes o campo se chamava so "Quantidade" nos sete casos. Quem selecionasse
+// PERDA e digitasse 50 - querendo "deixar 50 no estoque" - gravaria uma
+// subtracao de 50 do saldo que ja existisse, e a perda real seria outra. O
+// backend esta certo (estoque.service.ts separa entradas de saidas); o que
+// faltava era a tela dizer qual numero ela quer.
+const TIPOS_ABSOLUTOS = new Set(['AJUSTE', 'INVENTARIO']);
+const tipoEhAbsoluto = (t: string) => TIPOS_ABSOLUTOS.has(t);
+
+/** Quanto o saldo ficaria depois do movimento - usado no antes/depois. */
+function saldoApos(tipo: string, atual: number, quantidade: number): number {
+  if (tipoEhAbsoluto(tipo)) return quantidade;
+  if (tipo === 'ENTRADA' || tipo === 'DEVOLUCAO') return atual + quantidade;
+  if (tipo === 'SAIDA' || tipo === 'PERDA' || tipo === 'AVARIA') return atual - quantidade;
+  return atual;
+}
+/**
+ * PrÃ©via do saldo antes de gravar: mostra onde o nÃºmero vai parar.
+ *
+ * Existe porque "Quantidade" e "Saldo final" produzem resultados bem diferentes
+ * a partir do mesmo campo. Sem a prÃ©via, um PERDA de 50 sobre um saldo de 120
+ * parece correto na tela e sÃ³ Ã© percebido depois, quando o estoque caiu duas
+ * vezes. O saldo negativo Ã© destacado em vermelho pelo mesmo motivo.
+ */
+function PreviaSaldo({ tipo, atual, quantidade, unidade }: { tipo: string; atual: number; quantidade: string; unidade: string }) {
+  const q = Number(quantidade);
+  if (quantidade === '' || !Number.isFinite(q)) return null;
+  const depois = saldoApos(tipo, atual, q);
+  const negativo = depois < 0;
+  return (
+    <div className={'rounded-[12px] border px-3 py-2 text-[11px] ' + (negativo ? 'bg-red-500/10 border-red-500/20 text-red-200' : 'bg-[var(--nexus-panel-2)] border-[var(--nexus-border)] text-[var(--nexus-muted)]')}>
+      Saldo: {atual} {unidade} <span className="text-[var(--nexus-muted)]">â†’</span>{' '}
+      <strong className={negativo ? 'text-red-200' : 'text-white'}>{depois}</strong>
+      {negativo && ' â€” o saldo ficaria negativo. Confira a quantidade.'}
+    </div>
+  );
+}
+
+/**
+ * Folha de inventÃ¡rio â€” contagem com ou sem ver o saldo do sistema.
+ *
+ * PARA QUE SERVE A VISÃƒO CEGA
+ * ---------------------------
+ * Quem conta precisa dizer a verdade. Se a pessoa vÃª "120" no papel antes de
+ * abrir a caixa, ela conta o que o sistema espera e o inventÃ¡rio nÃ£o descobre
+ * desvio nenhum â€” vira conferÃªncia, nÃ£o contagem. Esconder o saldo obriga a
+ * contagem fÃ­sica a vir primeiro, e sÃ³ depois a comparaÃ§Ã£o aparece.
+ *
+ * A folha Ã© por PRODUTO E FILIAL, que Ã© a unidade que se caminha no depÃ³sito:
+ * o mesmo SKU em duas filiais sÃ£o dois lugares fÃ­sicos distintos.
+ */
+/**
+ * Folha de inventÃ¡rio â€” a contagem de uma sessÃ£o salva.
+ *
+ * A folha NÃƒO guarda a contagem no navegador: quem conta fecha a loja Ã s 18h
+ * com metade do depÃ³sito contado e volta no dia seguinte. O que aparece aqui
+ * veio do servidor, e o saldo do sistema Ã© o que estava gravado quando a
+ * sessÃ£o foi aberta â€” nÃ£o o de agora.
+ *
+ * A VISÃƒO CEGA
+ * -------------
+ * Com a sessao em modo cego, a coluna de saldo e a de divergÃªncia saem. Quem
+ * conta precisa escrever a contagem antes de saber o nÃºmero esperado, senÃ£o
+ * conta o que o sistema quer e o inventÃ¡rio nÃ£o descobre desvio nenhum.
+ */
+function FolhaInventario({
+  sessao, filiais, nova, setNova, abrir, setAbrir, salvando, erro, aviso,
+  onAbrir, onContar, onFechar,
+}: {
+  sessao: SessaoInventario | null;
+  filiais: Array<[string, string]>;
+  nova: { nome: string; filialId: string; cegas: boolean };
+  setNova: (v: { nome: string; filialId: string; cegas: boolean }) => void;
+  abrir: boolean;
+  setAbrir: (v: boolean) => void;
+  salvando: boolean;
+  erro: string | null;
+  aviso: string | null;
+  onAbrir: () => void;
+  onContar: (alterados: Array<{ estoqueId: string; quantidade: number | null }>) => void;
+  onFechar: (status: 'CONCLUIDA' | 'CANCELADA') => void;
+}) {
+  const cegas = sessao?.cegas ?? true;
+  const r = sessao?.resumo;
+
+  // â”€â”€ Sem sessÃ£o: a porta de entrada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  if (!sessao) {
+    return (
+      <div className="estoque-print-area rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5">
+        <h2 className="text-[15px] font-medium">InventÃ¡rio</h2>
+        <p className="text-[11px] text-[var(--nexus-muted)] mt-1 mb-4">
+          Abra uma contagem para comeÃ§ar. O saldo do sistema Ã© congelado no instante da abertura,
+          entÃ£o a divergÃªncia compara o que estava lÃ¡ com o que realmente existe.
+        </p>
+        {erro && <p className="mb-3 rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{erro}</p>}
+      {aviso && <p className="mb-3 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-200">{aviso}</p>}
+        {!abrir ? (
+          <button type="button" onClick={() => setAbrir(true)}
+            className="h-11 px-5 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white">
+            Abrir contagem
+          </button>
+        ) : (
+          <div className="space-y-3 max-w-xl">
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)] mb-1">Nome da contagem</label>
+              <input value={nova.nome} onChange={(e) => setNova({ ...nova, nome: e.target.value })}
+                placeholder="InventÃ¡rio 3T â€” Centro" className="w-full h-11 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px] outline-none focus:border-violet-500/40" />
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)] mb-1">Filial</label>
+              <select value={nova.filialId} onChange={(e) => setNova({ ...nova, filialId: e.target.value })}
+                className="w-full h-11 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px] outline-none focus:border-violet-500/40">
+                <option value="">Escolha a filialâ€¦</option>
+                {filiais.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-[12px] text-[var(--nexus-text)]">
+              <input type="checkbox" checked={nova.cegas} onChange={(e) => setNova({ ...nova, cegas: e.target.checked })}
+                className="w-4 h-4 accent-amber-400" />
+              Contagem Ã s cegas (esconder o saldo do sistema)
+            </label>
+            <div className="flex gap-2">
+              <button type="button" onClick={onAbrir} disabled={salvando || !nova.nome.trim() || !nova.filialId}
+                className="h-11 px-5 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white disabled:opacity-40">
+                {salvando ? 'Abrindoâ€¦' : 'Abrir contagem'}
+              </button>
+              <button type="button" onClick={() => setAbrir(false)}
+                className="h-11 px-5 rounded-full border border-[var(--nexus-border)] text-[13px] text-[var(--nexus-text)]">Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // REVELAÃ‡ÃƒO DA CONTAGEM Ã€S CEGAS
+  // --------------------------------
+  // REVELAÃ‡ÃƒO DO SALDO DO SISTEMA
+  // ------------------------------
+  // A folha Ã s cegas esconde o saldo do sistema ENQUANTO se conta: ver "120"
+  // antes de abrir a caixa faz a pessoa contar o que o sistema espera, e o
+  // inventÃ¡rio nÃ£o descobre desvio nenhum.
+  //
+  // Mas a folha cega nunca revelava a divergÃªncia, NEM depois de concluÃ­da.
+  // O gestor fechava a contagem e ficava com um histÃ³rico que sÃ³ guardava
+  // "12 de 40 contados": impossÃ­vel saber o que sobrou ou faltou. O backend
+  // calcula `classificarDivergencia` corretamente nos dois casos â€” o dado
+  // chegava ao cliente e a tela Ã© que nÃ£o mostrava.
+  //
+  // TrÃªs caminhos, em ordem de precedÃªncia:
+  //
+  //   1. folha COM saldo  â†’ sempre mostra;
+  //   2. folha CONCLUÃDA  â†’ mostra (o contador jÃ¡ saiu do depÃ³sito);
+  //   3. folha ABERTA Ã s cegas â†’ esconde, SALVO se o gestor marcar o
+  //      checkbox "mostrar saldo".
+  //
+  // O item 3 Ã© o que resolve "na impressÃ£o nÃ£o aparece o que consta no
+  // estoque real". Quem imprime uma folha jÃ¡ terminou a contagem â€” o papel Ã©
+  // o registro da conciliaÃ§Ã£o, e uma folha sem o saldo do sistema nÃ£o serve
+  // para conferir nada. Mas o padrÃ£o continua cego: a folha que vai PARA O
+  // DEPÃ“SITO nÃ£o pode mostrar o nÃºmero esperado. Quem imprime a folha cega
+  // para conciliaÃ§Ã£o marca o checkbox â€” e a decisÃ£o fica explÃ­cita.
+  const [verSaldo, setVerSaldo] = useState(false);
+  const concluida = sessao?.status === 'CONCLUIDA';
+  const cegaAberta = cegas && !concluida;
+  const revelarSaldo = !cegas || concluida || verSaldo;
+  const mostrarDivergencia = !!r && r.contados > 0 && revelarSaldo;
+  return (
+    <div className="estoque-print-area rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-[15px] font-medium flex items-center gap-2">
+            {sessao.nome}
+            {sessao.status === 'CONCLUIDA' && <span className="text-[10px] font-bold text-emerald-300">CONCLUÃDA</span>}
+            {sessao.status === 'CANCELADA' && <span className="text-[10px] font-bold text-[var(--nexus-muted)]">CANCELADA</span>}
+          </h2>
+          <p className="text-[11px] text-[var(--nexus-muted)] mt-1">
+            {sessao.filial?.nome} â€¢ aberta por {sessao.criadoPor ?? 'â€”'} em {new Date(sessao.criadoEm).toLocaleString('pt-BR')}
+            {sessao.concluidoEm ? <> â€¢ fechada por {sessao.concluidoPor ?? 'â€”'} em {new Date(sessao.concluidoEm).toLocaleString('pt-BR')}</> : null}
+          </p>
+          <p className="text-[11.5px] text-[var(--nexus-muted)] mt-1">
+            {r?.contados} de {r?.total} contados
+            {r && r.pendentes > 0 && <span className="text-amber-300"> â€¢ {r.pendentes} pendente(s)</span>}
+            {mostrarDivergencia && r ? <> â€¢ <span className="text-emerald-300">{r.bateram} bateram</span>, <span className="text-amber-300">{r.sobraram} sobraram</span>, <span className="text-red-300">{r.faltaram} faltaram</span></> : null}
+          </p>
+        </div>
+        {/* Imprimir/Cancelar/Concluir e o checkbox sÃ£o controles de tela: no
+            papel viram um campo com linha embaixo e botÃµes inÃºteis. */}
+        <div className="estoque-print-hide flex flex-wrap items-center gap-2">
+          {cegaAberta && (
+            <label className="flex items-center gap-2 text-[11.5px] text-amber-200/90 cursor-pointer select-none">
+              <input type="checkbox" checked={verSaldo} onChange={(e) => setVerSaldo(e.target.checked)}
+                className="w-4 h-4 accent-amber-400" />
+              Mostrar o saldo do sistema na folha
+            </label>
+          )}
+          <button type="button" onClick={() => typeof window !== 'undefined' && window.print()}
+            className="h-11 px-4 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white inline-flex items-center gap-2">
+            <Printer className="w-4 h-4" />Imprimir
+          </button>
+          {sessao.status === 'ABERTA' && (
+            <>
+              <button type="button" disabled={salvando} onClick={() => onFechar('CANCELADA')}
+                className="h-11 px-4 rounded-full border border-[var(--nexus-border)] text-[13px] text-[var(--nexus-text)] disabled:opacity-40">Cancelar contagem</button>
+              <button type="button" disabled={salvando || !r?.fechavel} onClick={() => onFechar('CONCLUIDA')}
+                title={r?.fechavel ? '' : 'Faltam itens sem contar'}
+                className="h-11 px-4 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[13px] text-emerald-200 disabled:opacity-40 disabled:border-[var(--nexus-border)] disabled:bg-[var(--nexus-panel-2)] disabled:text-[var(--nexus-muted)]">
+                Concluir contagem
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {cegas && (
+        <p className="mb-4 rounded-[12px] border border-amber-500/20 bg-amber-500/10 p-3 text-[11px] text-amber-200">
+          {concluida
+            ? 'Contagem Ã s cegas concluÃ­da: o saldo do sistema foi revelado para conferÃªncia. NinguÃ©m pode mais lanÃ§ar itens nesta folha.'
+            : revelarSaldo
+              ? 'O saldo do sistema estÃ¡ sendo exibido nesta folha. A contagem Ã s cegas serve para o papel que vai ao depÃ³sito â€” imprima sem o saldo para manter a contagem independente.'
+              : 'Contagem Ã s cegas: o saldo do sistema estÃ¡ escondido. Conte o que estÃ¡ no depÃ³sito â€” a comparaÃ§Ã£o aparece quando a folha for concluÃ­da, ou antes disso marcando "Mostrar o saldo do sistema na folha".'}
+        </p>
+      )}
+      {erro && <p className="mb-3 rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{erro}</p>}
+      {aviso && <p className="mb-3 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-200">{aviso}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-left">
+          <thead>
+            <tr className="border-b border-[var(--nexus-border)] text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">
+              <th className="px-4 py-3 w-10 font-medium">#</th>
+              <th className="px-4 py-3 font-medium">Produto</th>
+              <th className="px-4 py-3 font-medium">Local</th>
+              {revelarSaldo && <th className="px-4 py-3 font-medium">Saldo na abertura</th>}
+              <th className="px-4 py-3 font-medium">Contagem fÃ­sica</th>
+              {mostrarDivergencia && <th className="px-4 py-3 font-medium">DivergÃªncia</th>}
+              {mostrarDivergencia && <th className="px-4 py-3 font-medium">Contado por</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {sessao.contagens.map((c, idx) => {
+              const editavel = sessao.status === 'ABERTA' && !salvando;
+              return (
+                <tr key={c.id} className="border-b border-[var(--nexus-border)]">
+                  <td className="px-4 py-2.5 text-[11px] text-[var(--nexus-muted)] font-mono">{idx + 1}</td>
+                  <td className="px-4 py-2.5 text-[12px] font-medium">{c.produtoNome}</td>
+                  <td className="px-4 py-2.5 text-[11px] text-[var(--nexus-muted)]">{c.local || 'â€”'}</td>
+                  {revelarSaldo && <td className="px-4 py-2.5 font-mono text-[12px]">{c.quantidadeSistema}</td>}
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number" min="0" step="0.001"
+                      defaultValue={c.quantidadeContada === null ? '' : String(c.quantidadeContada)}
+                      disabled={!editavel}
+                      onBlur={(e) => {
+                        const bruto = e.target.value;
+                        const n = bruto === '' ? null : Number(bruto);
+                        if (n === c.quantidadeContada) return;
+                        if (c.estoqueId) onContar([{ estoqueId: c.estoqueId, quantidade: n }]);
+                      }}
+                      className="w-24 h-9 rounded-[8px] bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-2 text-[12px] font-mono outline-none focus:border-violet-500/40 disabled:opacity-50"
+                      aria-label={'Contagem fÃ­sica de ' + c.produtoNome}
+                    />
+                    <span className="ml-2 text-[10px] text-[var(--nexus-muted)]">{c.unidade || 'UN'}</span>
+                  </td>
+                  {mostrarDivergencia && (
+                    <td className="px-4 py-2.5 font-mono text-[12px]">
+                      {c.divergencia === null ? <span className="text-[var(--nexus-muted)]">â€”</span>
+                        : c.divergencia === 'BATEU' ? <span className="text-emerald-300">0</span>
+                        : c.divergencia === 'SOBROU' ? <span className="text-amber-300">+{c.quantidadeContada! - c.quantidadeSistema}</span>
+                        : <span className="text-red-300">{c.quantidadeContada! - c.quantidadeSistema}</span>}
+                    </td>
+                  )}
+                  {mostrarDivergencia && (
+                    <td className="px-4 py-2.5 text-[10.5px] text-[var(--nexus-muted)]">
+                      {c.contadoPor ?? 'â€”'}{c.contadoEm ? ' â€¢ ' + new Date(c.contadoEm).toLocaleString('pt-BR') : ''}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!sessao.contagens.length && (
+        <div className="p-10 text-center text-[13px] text-[var(--nexus-muted)]">Esta filial nÃ£o tinha item em estoque na hora em que a contagem foi aberta.</div>
+      )}
+      <p className="mt-4 text-[10.5px] text-[var(--nexus-muted)]">
+        A contagem Ã© salva: pode fechar o navegador e voltar. O saldo exibido Ã© o que estava
+        gravado quando a folha abriu. Concluir NÃƒO ajusta o estoque â€” registrar a diferenÃ§a Ã© um
+        movimento de inventÃ¡rio, feito pelo botÃ£o de aÃ§Ãµes da aba VisÃ£o Geral.
+      </p>
+    </div>
+  );
+}
+
+export default function EstoquePage() {
+
+  const [tab, setTab] = useState<'overview' | 'mov' | 'inventory' | 'transfer' | 'abc'>('overview');
+  const [data, setData] = useState<EstoqueResponse | null>(null);
+  const [movs, setMovs] = useState<Movimento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filial, setFilial] = useState('ALL');
+  const [categoria, setCategoria] = useState('ALL');
+  const [status, setStatus] = useState('ALL');
+  const [selected, setSelected] = useState<EstoqueItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Erro separado por formulÃ¡rio. Com um estado Ãºnico, uma falha do ajuste
+  // continuaria aparecendo embaixo do formulÃ¡rio de transferÃªncia â€” o usuÃ¡rio
+  // leria "estoque insuficiente" no lugar errado, achando que a transferÃªncia
+  // tinha sido recusada quando na verdade nem foi tentada.
+  const [ajusteError, setAjusteError] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [adjust, setAdjust] = useState({ tipo: 'ENTRADA', quantidade: '1', motivo: 'CorreÃ§Ã£o de estoque', documento: '' });
+  const [transfer, setTransfer] = useState({ destino: '', quantidade: '1', motivo: '' });
+
+  // FILTROS DA ABA TRANSFERÃŠNCIAS
+  // ------------------------------
+  // Estado prÃ³prio, separado do filtro `filial` da VisÃ£o Geral. NÃ£o Ã©
+  // descuido: os dois filtros significam coisas diferentes. Na VisÃ£o Geral,
+  // `filial` Ã© "mostrar os itens desta filial". Aqui a transferÃªncia Ã© um
+  // movimento entre DOIS lugares, entÃ£o a tela precisa de origem E destino â€”
+  // um select sÃ³ nÃ£o dÃ¡ conta do caso.
+  //
+  // AlÃ©m disso, os filtros da VisÃ£o Geral vivem dentro de `tab === 'overview'`
+  // (o <select> de filial Ã© renderizado ali e sÃ³ ali), entÃ£o antes nÃ£o havia
+  // como restringir a transferÃªncia a uma filial de origem: a aba mostrava
+  // as linhas de todas as filiais misturadas, sem nenhuma forma de separar.
+  const [tOrigem, setTOigem] = useState('ALL');
+  const [tDestino, setTDestino] = useState('ALL');
+  const [tBusca, setTBusca] = useState('');
+
+  /**
+   * Trocar a origem invalida um destino que acabou de virar a prÃ³pria origem.
+   *
+   * Sem isso o usuÃ¡rio escolhe "Matriz" como destino, depois troca a origem
+   * para "Matriz" â€” e a tela fica mostrando "Matriz â†’ Matriz", que o backend
+   * recusa. Pior: o select do drawer esconde a filial de origem das opÃ§Ãµes,
+   * entÃ£o um destino jÃ¡ selecionado sumiria da lista e o `<select>` cairia
+   * de volta no placeholder sem explicaÃ§Ã£o.
+   */
+  function trocarOrigem(nova: string): void {
+    setTOigem(nova);
+    if (nova !== 'ALL' && tDestino === nova) setTDestino('ALL');
+  }
+
+  /**
+   * Abre a transferÃªncia jÃ¡ com o destino escolhido na aba.
+   *
+   * O destino escolhido aqui Ã© prÃ©-preenchido no drawer â€” mas nunca quando
+   * ele coincide com a origem do item que estÃ¡ sendo aberto, pelo mesmo
+   * motivo do comentÃ¡rio acima: o `<select>` do drawer nÃ£o lista a filial de
+   * origem, entÃ£o receber um valor que nÃ£o estÃ¡ entre as opÃ§Ãµes deixaria o
+   * campo exibindo o placeholder com `transfer.destino` ainda preenchido, e o
+   * botÃ£o "Transferir estoque" apareceria habilitado sem destino real.
+   */
+  const abrirTransferencia = useCallback((item: EstoqueItem) => {
+    setSelected(item);
+    setAjusteError(null);
+    setTransferError(null);
+    setTransfer((v) => ({
+      ...v,
+      destino: tDestino !== 'ALL' && tDestino !== item.filialId ? tDestino : '',
+      quantidade: '1',
+      motivo: '',
+    }));
+  }, [tDestino]);
+
+  // `nomeFilial` Ã© declarado logo abaixo de `filiais` (que vem do useMemo),
+  // porque depende dele.
+  // Sessao de inventario. A folha nao vive mais no estado da tela: quem conta
+  // fecha o navegador no meio do deposito e volta amanha, e a contagem tem de
+  // estar la. O saldo do sistema vem CONGELADO do servidor, no instante em que
+  // a sessao foi aberta.
+  const [sessao, setSessao] = useState<SessaoInventario | null>(null);
+  const [historico, setHistorico] = useState<ResumoSessao[]>([]);
+  const [nova, setNova] = useState({ nome: '', filialId: '', cegas: true });
+  const [abrir, setAbrir] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erroInv, setErroInv] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  // Carrega a folha aberta (se houver) e o historico.
+  const carregarInventario = useCallback(async () => {
+    try {
+      const r = await api.get<any>("/estoque/inventarios");
+      const d = (r as any).data ?? r;
+      const lista: ResumoSessao[] = d.sessoes ?? [];
+      setHistorico(lista);
+      // Retoma a primeira folha ABERTA: e ela que o gestor deve continuar.
+      const aberta = lista.find((s) => s.status === "ABERTA");
+      if (aberta) {
+        const detalhe = await api.get<any>("/estoque/inventarios/" + aberta.id);
+        setSessao(((detalhe as any).data ?? detalhe)?.sessao ?? null);
+        setNova((n) => ({ ...n, cegas: aberta.cegas }));
+      } else {
+        setSessao(null);
+      }
+    } catch (e: any) {
+      setErroInv(e?.message ?? "NÃ£o foi possÃ­vel ler as contagens.");
+    }
+  }, []);
+
+  useEffect(() => { void carregarInventario(); }, [carregarInventario]);
+
+  const abrirSessao = useCallback(async () => {
+    if (!nova.nome.trim() || !nova.filialId) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.post<any>("/estoque/inventarios", {
+        nome: nova.nome.trim(), filialId: nova.filialId, cegas: nova.cegas,
+      });
+      const s = ((r as any).data ?? r)?.sessao;
+      setSessao(s);
+      setAbrir(false);
+      setNova({ nome: "", filialId: "", cegas: true });
+      await carregarInventario();
+    } catch (e: any) {
+      setErroInv(e?.message ?? "NÃ£o foi possÃ­vel abrir a contagem.");
+    } finally { setSalvando(false); }
+  }, [nova, carregarInventario]);
+
+  /** Grava as contagens alteradas e recarrega a folha. */
+  const gravarContagem = useCallback(async (contagensAlteradas: Array<{ estoqueId: string; quantidade: number | null }>) => {
+    if (!sessao) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.put<any>("/estoque/inventarios/" + sessao.id + "/contagens", { contagens: contagensAlteradas });
+      setSessao(((r as any).data ?? r)?.sessao ?? null);
+    } catch (e: any) {
+      setErroInv(e?.message ?? "NÃ£o foi possÃ­vel salvar a contagem.");
+    } finally { setSalvando(false); }
+  }, [sessao]);
+
+  const fecharSessao = useCallback(async (status: "CONCLUIDA" | "CANCELADA") => {
+    if (!sessao) return;
+    if (status === "CANCELADA" && typeof window !== "undefined" && !window.confirm(
+      "Cancelar a contagem?\n\nA folha continua no histÃ³rico, mas nÃ£o aceita mais lanÃ§amentos.",
+    )) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.post<any>("/estoque/inventarios/" + sessao.id + "/fechar", { status });
+      setSessao(((r as any).data ?? r)?.sessao ?? null);
+      setAviso(status === "CONCLUIDA" ? "Contagem concluÃ­da. O resultado fica no histÃ³rico â€” corrigir o saldo Ã© um movimento de inventÃ¡rio." : "Contagem cancelada.");
+      await carregarInventario();
+    } catch (e: any) {
+      setErroInv(e?.message ?? "NÃ£o foi possÃ­vel fechar a contagem.");
+    } finally { setSalvando(false); }
+  }, [sessao, carregarInventario]);
+
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get<EstoqueResponse>('/estoque', { params: { diasParado: DIAS_PARADO, diasGiro: 30 } });
+      setData(response.data);
+      const mov = await api.get<{ movimentacoes: Movimento[] }>('/estoque/movimentacoes', { params: { take: 100 } });
+      setMovs(mov.data.movimentacoes || []);
+    } catch (e: any) {
+      setError(e?.message || 'NÃ£o foi possÃ­vel carregar o estoque.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const items = data?.estoques || [];
+  // Filiais do cadastro, com as do estoque como reserva: uma filial recem-criada
+  // precisa aparecer antes do primeiro lancamento, senao nao ha como transferir
+  // estoque para ela.
+  const filiais = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const f of data?.filiais ?? []) mapa.set(f.id, f.nome);
+    for (const i of items) if (!mapa.has(i.filialId)) mapa.set(i.filialId, i.filial?.nome || i.filialId);
+    return Array.from(mapa.entries());
+  }, [data?.filiais, items]);
+
+  /** Nome legÃ­vel de uma filial, com queda para o id quando ela nÃ£o estÃ¡ no cadastro. */
+  const nomeFilial = useCallback((id: string): string => filiais.find(([fid]) => fid === id)?.[1] ?? id, [filiais]);
+
+  const categorias = useMemo(() => Array.from(new Set(items.map(i => i.produto?.categoria?.nome).filter(Boolean) as string[])).sort(), [items]);
+
+  const filtered = useMemo(() => items.filter(item => {
+    const text = query.trim().toLowerCase();
+    const matchesText = !text || [item.produto?.nome, item.produto?.sku, item.produto?.codigoBarras, item.lote, item.local].some(v => String(v || '').toLowerCase().includes(text));
+    const matchesFilial = filial === 'ALL' || item.filialId === filial;
+    const matchesCategoria = categoria === 'ALL' || item.produto?.categoria?.nome === categoria;
+    const matchesStatus = status === 'ALL' || statusOf(item).label === status;
+    return matchesText && matchesFilial && matchesCategoria && matchesStatus;
+  }), [items, query, filial, categoria, status]);
+
+  // O gate de custos Ã© do servidor. O total NÃƒO pode ser recalculado aqui a
+  // partir das linhas: antes essa era a linha `?? items.reduce(...)`, que
+  // refazia a mesma conta do backend e exibia o valor para quem nÃ£o tem
+  // `custos:visualizar`. Sem permissÃ£o, o KPI mostra "â€”" em vez de R$ 0,00,
+  // porque zero aqui significaria "vale zero", nÃ£o "nÃ£o pode ver".
+  const podeVerCusto = data?.indicadores?.podeVerCusto ?? false;
+  const totalValue = data?.indicadores?.valorTotal ?? 0;
+  // Ruptura e "abaixo do mÃ­nimo" saem do SERVIDOR, nao de um segundo calculo
+  // no cliente. A tela recalculava os dois com `items.filter(...)` enquanto o
+  // backend jÃ¡ mandava `qtdBaixo`/`qtdSemEstoque`: duas fontes de verdade
+  // para o mesmo numero. Se a regra mudar no servidor (ex.: tratar
+  // estoqueMinimo = 0 como "sem minimo"), a tela continuaria mentindo.
+  const ruptures = data?.indicadores?.qtdSemEstoque ?? 0;
+  const low = data?.indicadores?.qtdBaixo ?? 0;
+  const stopped = data?.indicadores?.produtosParados?.length ?? 0;
+  // Giro mÃ©dio: sÃ³ entra no cÃ¡lculo quem tem giro REALMENTE calculado.
+  //
+  // O `filter(Boolean)` antigo tambÃ©m removia os `giro: 0` (produto que nÃ£o
+  // vendeu no perÃ­odo Ã© o de maior valor parado), entÃ£o a mÃ©dia era enviesada
+  // para baixo â€” e o flag `aproximado` do backend, que existe justamente para
+  // separar giro real de aproximaÃ§Ã£o, era ignorado aqui.
+  const giro = (() => {
+    const itens = data?.indicadores?.giro?.porProduto || [];
+    const reais = itens.filter((g: any) => !g.aproximado && g.giro != null && Number(g.giro) > 0).map((g: any) => Number(g.giro));
+    if (!reais.length) return 'â€”';
+    return `${(reais.reduce((a: number, b: number) => a + b, 0) / reais.length).toFixed(1)}x`;
+  })();
+
+  /**
+   * Curva ABC por PRODUTO, nao por linha de estoque.
+   *
+   * items sao linhas de estoque (produto x filial). Um produto com saldo em
+   * tres filiais aparecia tres vezes, era contado tres vezes e o valor total
+   * da curva somava o mesmo dinheiro tres vezes - enquanto o cartao dizia
+   * "N SKUs". Aqui as linhas sao agrupadas por produto antes de qualquer conta.
+   */
+  const abc = useMemo(() => {
+    const porProduto = new Map<string, { produto: EstoqueItem['produto']; valor: number }>();
+    for (const i of items) {
+      const valor = Number(i.valorTotal || 0);
+      const anterior = porProduto.get(i.produtoId);
+      if (anterior) anterior.valor += valor;
+      else porProduto.set(i.produtoId, { produto: i.produto, valor });
+    }
+    const groups = Array.from(porProduto.entries()).map(([id, g]) => ({ id, produto: g.produto, valor: g.valor }));
+    groups.sort((a, b) => b.valor - a.valor);
+    const total = groups.reduce((s, g) => s + g.valor, 0) || 1;
+    let accumulated = 0;
+    return groups.map(g => {
+      accumulated += g.valor;
+      return { ...g, classe: accumulated / total <= 0.8 ? 'A' : accumulated / total <= 0.95 ? 'B' : 'C' };
+    });
+  }, [items]);
+
+  async function submitAdjustment() {
+    if (!selected) return;
+    // Quantidade tem de ser um inteiro de verdade. Antes o cÃ³digo fazia
+    // `Math.max(1, Number(...))`, e digitar 0 ou -5 registrava 1 sem aviso: o
+    // gestor acreditava ter lanÃ§ado a quantidade que digitou.
+    const qtd = Number(adjust.quantidade);
+    if (!Number.isInteger(qtd) || qtd < 0) {
+      setAjusteError('Informe um nÃºmero inteiro maior ou igual a zero.');
+      return;
+    }
+    setSaving(true); setAjusteError(null);
+    try {
+      await api.post('/estoque/movimentar', {
+        produtoId: selected.produtoId,
+        filialId: selected.filialId,
+        quantidade: qtd,
+        tipo: adjust.tipo,
+        motivo: adjust.motivo || undefined,
+        documento: adjust.documento || undefined,
+        origem: 'MANUAL',
+      });
+      setSelected(null);
+      await load();
+    } catch (e: any) {
+      setAjusteError(e?.message || 'NÃ£o foi possÃ­vel registrar o movimento.');
+    } finally { setSaving(false); }
+  }
+
+  async function submitTransfer() {
+    if (!selected || !transfer.destino) return;
+    const qtd = Number(transfer.quantidade);
+    if (!Number.isInteger(qtd) || qtd < 1) {
+      setTransferError('Informe um nÃºmero inteiro maior que zero.');
+      return;
+    }
+    if (qtd > Number(selected.quantidade || 0)) {
+      setTransferError(`A filial de origem tem ${selected.quantidade} ${selected.produto?.unidade || 'UN'}. NÃ£o dÃ¡ para transferir ${qtd}.`);
+      return;
+    }
+    setSaving(true); setTransferError(null);
+    try {
+      await api.post('/estoque/transferir', {
+        produtoId: selected.produtoId,
+        filialOrigemId: selected.filialId,
+        filialDestinoId: transfer.destino,
+        quantidade: qtd,
+        motivo: transfer.motivo || undefined,
+        origem: 'MANUAL',
+      });
+      setSelected(null);
+      await load();
+    } catch (e: any) {
+      setTransferError(e?.message || 'NÃ£o foi possÃ­vel transferir o estoque.');
+    } finally { setSaving(false); }
+  }
+
+  const tabs = [
+    ['overview', 'VisÃ£o Geral'], ['mov', 'MovimentaÃ§Ãµes'], ['inventory', 'InventÃ¡rio'], ['transfer', 'TransferÃªncias'], ['abc', 'Curva ABC'],
+  ] as const;
+
+  return (
+    <>
+      <style>{ESTOQUE_PRINT}</style>
+      {/* Sem `display: none` na impressÃ£o: este invÃ³lucro Ã© ANCESTRAL da folha
+          de inventÃ¡rio, e esconder um ancestral apaga a folha junto. */}
+      <div className="min-h-full bg-[var(--nexus-panel-2)] text-white -m-6 lg:-m-6">
+      <div className="estoque-print-hide border-b border-[var(--nexus-border)] px-5 sm:px-8 py-4 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3 mr-auto">
+          <div className="w-10 h-10 rounded-[12px] bg-[#8b5cf6] grid place-items-center font-bold">N</div>
+          <div><div className="text-[18px] font-bold">NEXUS OS <span className="text-[var(--nexus-muted)] font-normal">/ Estoque</span></div><div className="text-[10px] text-[var(--nexus-muted)] uppercase tracking-[0.16em]">Controle de estoque</div></div>
+        </div>
+        {/* O selo dizia "PDV baixa automatica", mas pdv.routes.ts nao importa
+          estoque nem chama aplicarMovimento em lugar nenhum: quem baixa e o
+          modulo de Vendas. O rotulo apontava para o sistema errado. */}
+        <span className="hidden xl:inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Venda baixa o estoque</span>
+        <span className="hidden xl:inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-[11px] text-violet-300"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />NF-e entrada automÃ¡tica</span>
+        <Link href="/compras" className="h-10 px-4 rounded-full border border-[var(--nexus-border)] bg-[var(--nexus-panel-2)] hover:bg-[var(--nexus-panel-2)] grid place-items-center text-[13px]">Ir para Compras â†’</Link>
+        <Link href="/pdv" className="h-10 px-4 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] grid place-items-center text-[13px] font-medium">Ir para PDV</Link>
+      </div>
+
+      <main className="px-5 sm:px-8 py-6 max-w-[1700px] mx-auto">
+        <div className="estoque-print-hide grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+          {/* Sem chip de variacao: o endpoint nao devolve historico de valor,
+          entao "+2,4%" seria um numero inventado que nao se move com os dados. */}
+          <Kpi title="Valor Total em Estoque" value={podeVerCusto ? money(totalValue) : 'â€”'} icon={<Boxes />} trend={podeVerCusto ? String(items.length) + ' SKUs' : 'sem permissÃ£o de custos'} />
+          <Kpi title="Produtos em Ruptura" value={String(ruptures)} icon={<AlertTriangle />} trend={`${ruptures ? ruptures : 0} agora`} tone="red" />
+          <Kpi title="Abaixo do MÃ­nimo" value={String(low)} icon={<TrendingDown />} trend="repor" tone="amber" />
+          <Kpi title={"Parados +" + DIAS_PARADO + " dias"} value={String(stopped)} icon={<Clock3 />} trend={DIAS_PARADO + " dias"} tone="amber" />
+          <Kpi title="Giro MÃ©dio" value={giro} icon={<RefreshCw />} trend="30 dias" />
+        </div>
+
+        <div className="estoque-print-hide flex items-center gap-1 p-1.5 rounded-[18px] bg-[var(--nexus-panel)] border border-[var(--nexus-border)] w-fit max-w-full overflow-x-auto mb-6">
+          {tabs.map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`h-9 px-5 rounded-full text-[13px] whitespace-nowrap transition ${tab === key ? 'bg-[var(--nexus-accent)] text-white font-medium' : 'text-[var(--nexus-muted)] hover:text-[var(--nexus-text)] hover:bg-[var(--nexus-panel-2)]'}`}>{label}</button>)}
+        </div>
+
+        {error && <div className="estoque-print-hide mb-4 rounded-[14px] border border-red-500/20 bg-red-500/10 p-4 text-[12px] text-red-200">{error}</div>}
+        {loading ? <div className="estoque-print-hide rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-10 text-center text-[13px] text-[var(--nexus-muted)]">Carregando estoque realâ€¦</div> : (
+          <>
+            {tab === 'overview' && <>
+              <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-4 mb-5">
+                <div className="flex flex-col xl:flex-row gap-3">
+                  <div className="relative flex-1"><Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--nexus-muted)]" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por nome, SKU ou EANâ€¦" className="w-full h-11 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] pl-11 pr-4 text-[13px] outline-none focus:border-violet-500/40" /></div>
+                  <Select value={filial} onChange={setFilial} options={[["ALL", "Todas filiais"], ...filiais.map(([id, name]) => [id, name] as [string, string])]} />
+                  <Select value={categoria} onChange={setCategoria} options={[["ALL", "Categoria"], ...categorias.map(c => [c, c] as [string, string])]} />
+                  <Select value={status} onChange={setStatus} options={[["ALL", "Todos"], ["OK", "OK"], ["BAIXO", "Baixo"], ["RUPTURA", "Ruptura"]]} />
+                  <div className="hidden 2xl:flex items-center gap-2 px-3 text-[11px] text-[var(--nexus-muted)]"><Filter className="w-3.5 h-3.5" />{filtered.length} SKUs{podeVerCusto ? ' â€¢ Valorizado a custo atual' : ''}</div>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1120px] text-left">
+                    <thead><tr className="border-b border-[var(--nexus-border)] text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]"><Th>{traduzir('produto', "Produto")}</Th><Th>SKU / EAN</Th><Th>Filial / Local</Th><Th>Saldo Atual</Th><Th>MÃ­n{podeVerCusto ? ' â€¢ Custo' : ''}</Th>{podeVerCusto && <Th>Valor Total</Th>}<Th>{traduzir('status', "Status")}</Th><Th>Validade / Lote</Th><Th>{traduzir('acoes', "AÃ§Ãµes")}</Th></tr></thead>
+                    <tbody>{filtered.map(item => {
+                      const s = statusOf(item); const qty = Number(item.quantidade); const min = Number(item.produto?.estoqueMinimo || 0); const max = Math.max(min, qty, 1); const pct = Math.min(100, Math.max(3, qty / max * 100));
+                      return <tr key={item.id} className="border-b border-[var(--nexus-border)] hover:bg-[var(--nexus-panel-2)] transition-colors">
+                        <td className="px-5 py-4"><div className="text-[14px] font-semibold">{item.produto?.nome || 'Produto'}</div><div className="text-[11px] text-[var(--nexus-muted)] mt-1">{item.produto?.categoria?.nome || 'Sem categoria'} â€¢ {item.produto?.fornecedor?.nome || 'Sem fornecedor'}</div></td>
+                        <td className="px-5 py-4"><div className="font-mono text-[12px] text-[var(--nexus-text)]">{item.produto?.sku || 'â€”'}</div><div className="font-mono text-[11px] text-[var(--nexus-muted)] mt-1">{item.produto?.codigoBarras || 'â€”'}</div></td>
+                        <td className="px-5 py-4"><div className="text-[12px] font-medium">{item.filial?.nome || 'â€”'}</div><div className="font-mono text-[11px] text-[var(--nexus-muted)] mt-1">{item.local || 'Sem local'}</div></td>
+                        <td className="px-5 py-4 min-w-[150px]"><div className="font-mono text-[15px] font-bold">{qty} <span className="text-[11px] font-normal text-[var(--nexus-muted)]">{item.produto?.unidade || 'UN'} /{min}</span></div><div className="h-2 bg-[var(--nexus-panel-2)] rounded-full overflow-hidden mt-2"><div className={`h-full rounded-full ${s.cls === 'red' ? 'bg-red-500' : s.cls === 'amber' ? 'bg-amber-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} /></div></td>
+                        <td className="px-5 py-4"><div className="text-[12px]">MÃ­n {min}</div>{podeVerCusto && <div className="font-mono text-[11px] text-[var(--nexus-muted)] mt-1">{money(Number(item.produto?.custo || 0))}</div>}</td>
+                        {podeVerCusto && <td className="px-5 py-4 font-mono text-[13px] font-semibold">{money(Number(item.valorTotal || 0))}</td>}
+                        <td className="px-5 py-4"><span className={`inline-flex px-2.5 py-1 rounded-full border text-[10px] font-bold ${s.cls === 'red' ? 'bg-red-500/10 text-red-300 border-red-500/20' : s.cls === 'amber' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'}`}>{s.label}</span></td>
+                        <td className="px-5 py-4"><div className={`text-[11px] font-medium ${item.produto?.validade && new Date(item.produto.validade) < new Date() ? 'text-red-300' : 'text-[var(--nexus-text)]'}`}>{item.produto?.validade ? (new Date(item.produto.validade) < new Date() ? 'VENCIDO' : date(item.produto.validade)) : 'Sem validade'}</div><div className="font-mono text-[11px] text-[var(--nexus-muted)] mt-1">{item.lote || 'Sem lote'}</div></td>
+                        <td className="px-5 py-4"><button type="button" onClick={() => { setSelected(item); setAjusteError(null); setTransferError(null); }} className="w-9 h-9 rounded-full bg-[var(--nexus-panel-2)] hover:bg-[var(--nexus-panel-2)] grid place-items-center" aria-label={`AÃ§Ãµes para ${item.produto?.nome}`}><MoreHorizontal className="w-4 h-4" /></button></td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+                {!filtered.length && <div className="p-10 text-center text-[13px] text-[var(--nexus-muted)]">Nenhum produto encontrado com os filtros atuais.</div>}
+              </div>
+            </>}
+
+            {tab === 'mov' && <MovementTable movs={movs} />}
+
+                        {tab === 'inventory' && (
+              <FolhaInventario
+                sessao={sessao}
+                filiais={filiais}
+                nova={nova}
+                setNova={setNova}
+                abrir={abrir}
+                setAbrir={setAbrir}
+                salvando={salvando}
+                erro={erroInv}
+                aviso={aviso}
+                onAbrir={abrirSessao}
+                onContar={gravarContagem}
+                onFechar={fecharSessao}
+              />            )}
+
+            {/* HistÃ³rico: quem contou, quando, e se a folha foi cega. A aba
+                vira o registro do que a empresa jÃ¡ inventariou â€” sem ele,
+                "inventÃ¡rio" Ã© sÃ³ um nÃºmero que ninguÃ©m consegue reconstituir. */}
+            {historico.length > 0 && !sessao && (
+              <div className="mt-4 rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5">
+                <h3 className="text-[14px] font-medium mb-3">HistÃ³rico de inventÃ¡rios</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-[11.5px]">
+                    <thead className="text-[10px] uppercase tracking-wide text-[var(--nexus-muted)]">
+                      <tr>
+                        <th className="py-2 pr-3 font-bold">Contagem</th>
+                        <th className="py-2 pr-3 font-bold">Filial</th>
+                        <th className="py-2 pr-3 font-bold">Tipo</th>
+                        <th className="py-2 pr-3 font-bold">Aberta por</th>
+                        <th className="py-2 pr-3 font-bold">Fechada por</th>
+                        <th className="py-2 pr-3 font-bold">Resultado</th>
+                        <th className="py-2 font-bold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[var(--nexus-text)]">
+                      {historico.map((h) => (
+                        <tr key={h.id} className="border-t border-[var(--nexus-border)]">
+                          <td className="py-2 pr-3">{h.nome}</td>
+                          <td className="py-2 pr-3">{h.filial?.nome ?? "â€”"}</td>
+                          <td className="py-2 pr-3">
+                            <span className={h.cegas ? "text-amber-300" : "text-[var(--nexus-muted)]"}>{h.cegas ? "Ã€s cegas" : "Com saldo"}</span>
+                          </td>
+                          <td className="py-2 pr-3 text-[var(--nexus-muted)]">
+                            {h.criadoPor ?? "â€”"}{h.criadoEm ? " â€¢ " + new Date(h.criadoEm).toLocaleString("pt-BR") : ""}
+                          </td>
+                          <td className="py-2 pr-3 text-[var(--nexus-muted)]">
+                            {h.concluidoPor ?? "â€”"}{h.concluidoEm ? " â€¢ " + new Date(h.concluidoEm).toLocaleString("pt-BR") : ""}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-[11px]">
+                            {h.resumo.contados}/{h.resumo.total}
+                            {h.resumo.faltaram > 0 && <span className="text-red-300"> â€¢ {h.resumo.faltaram} faltando</span>}
+                          </td>
+                          <td className="py-2">
+                            <span className={h.status === "CONCLUIDA" ? "text-emerald-300" : h.status === "CANCELADA" ? "text-[var(--nexus-muted)]" : "text-amber-300"}>
+                              {h.status === "CONCLUIDA" ? "ConcluÃ­da" : h.status === "CANCELADA" ? "Cancelada" : "Aberta"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {tab === 'transfer' && (
+              <TransferView
+                items={items}
+                filiais={filiais}
+                origem={tOrigem}
+                destino={tDestino}
+                busca={tBusca}
+                nomeFilial={nomeFilial}
+                onOrigem={trocarOrigem}
+                onDestino={setTDestino}
+                onBusca={setTBusca}
+                onSelect={abrirTransferencia}
+              />
+            )}
+
+            {tab === 'abc' && (!podeVerCusto ? (
+              // A curva ABC Ã© CLASSIFICAÃ‡ÃƒO POR VALOR: sem `custos:visualizar`
+              // ela nÃ£o tem o que classificar. Mostrar as classes com valor
+              // zerado seria pior que esconder â€” pareceria que a empresa nÃ£o
+              // tem nenhum valor em estoque.
+              <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-10 text-center text-[13px] text-[var(--nexus-muted)]">
+                A curva ABC Ã© calculada sobre o valor em estoque. Requer a permissÃ£o de custos para ser exibida.
+              </div>
+            ) : <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-4"><div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5"><h3 className="font-medium">Curva ABC â€¢ Valor em estoque</h3><p className="text-[11px] text-[var(--nexus-muted)] mt-1 mb-5">ClassificaÃ§Ã£o calculada sobre o valor atual de cada SKU. NÃ£o Ã© faturamento de vendas.</p><div className="space-y-2">{abc.slice(0, 12).map(i => <div key={i.id} className="flex items-center gap-3"><span className={`w-7 h-7 rounded-full grid place-items-center text-[11px] font-bold ${i.classe === 'A' ? 'bg-violet-500/15 text-violet-300' : i.classe === 'B' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-[var(--nexus-muted)]'}`}>{i.classe}</span><div className="min-w-0 flex-1"><div className="text-[12px] truncate">{i.produto?.nome}</div><div className="h-1.5 bg-[var(--nexus-panel-2)] rounded-full mt-1 overflow-hidden"><div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, Number(i.valor) / Math.max(...abc.map(x => Number(x.valor)), 1) * 100)}%` }} /></div></div><span className="font-mono text-[11px] text-[var(--nexus-muted)]">{money(i.valor)}</span></div>)}</div></div><div className="space-y-3">{(['A','B','C'] as const).map(cls => { const count = abc.filter(i => i.classe === cls).length; const value = abc.filter(i => i.classe === cls).reduce((s,i) => s + Number(i.valor), 0); return <div key={cls} className="rounded-[16px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-4 flex items-center justify-between"><div><div className="text-[13px] font-medium">Classe {cls}</div><div className="text-[11px] text-[var(--nexus-muted)] mt-1">{count} SKUs classificados</div></div><div className="font-mono text-[13px]">{money(value)}</div></div>; })}</div></div>)}
+          </>
+        )}
+      </main>
+
+      {selected && <div className="fixed inset-0 z-[80] flex justify-end"><button className="absolute inset-0 bg-black/65 backdrop-blur-sm cursor-default" aria-label={traduzir('fechar', "Fechar")} onClick={() => setSelected(null)} /><aside className="relative w-full max-w-[430px] h-full bg-[var(--nexus-panel)] border-l border-[var(--nexus-border)] p-6 overflow-auto shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-[16px] font-semibold">AÃ§Ãµes do estoque</h2><p className="text-[12px] text-[var(--nexus-muted)] mt-1">{selected.produto?.nome} â€¢ {selected.filial?.nome}</p></div><button onClick={() => setSelected(null)} className="w-9 h-9 rounded-full bg-[var(--nexus-panel-2)] grid place-items-center"><X className="w-4 h-4" /></button></div>
+        <div className="mt-6 rounded-[16px] bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] p-4"><div className="text-[11px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">Saldo atual</div><div className="text-3xl font-bold mt-1">{selected.quantidade} <span className="text-sm text-[var(--nexus-muted)] font-normal">{selected.produto?.unidade || 'UN'}</span></div><div className="text-[11px] text-[var(--nexus-muted)] mt-1">MÃ­nimo: {selected.produto?.estoqueMinimo ?? 0}{podeVerCusto ? ' â€¢ Custo: ' + money(Number(selected.produto?.custo || 0)) : ''}</div></div>
+        <div className="mt-6 space-y-4"><div><label className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">Tipo do movimento</label><select value={adjust.tipo} onChange={e => setAdjust(v => ({...v, tipo: e.target.value}))} className="mt-1.5 w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px]"><option value="ENTRADA">{traduzir('entrada', "Entrada")}</option><option value="SAIDA">{traduzir('saida', "SaÃ­da")}</option><option value="AJUSTE">Ajuste (saldo final)</option><option value="INVENTARIO">InventÃ¡rio (saldo final)</option><option value="PERDA">Perda</option><option value="AVARIA">Avaria</option><option value="DEVOLUCAO">DevoluÃ§Ã£o</option></select></div><div className="grid grid-cols-2 gap-3"><div><label className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">{tipoEhAbsoluto(adjust.tipo) ? 'Saldo final' : 'Quantidade a movimentar'}</label><input type="number" min="0" step="0.001" value={adjust.quantidade} onChange={e => setAdjust(v => ({...v, quantidade: e.target.value}))} className="mt-1.5 w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px] font-mono" /></div><div><label className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">Documento</label><input value={adjust.documento} onChange={e => setAdjust(v => ({...v, documento: e.target.value}))} placeholder="NF / pedido" className="mt-1.5 w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px]" /></div></div>{<PreviaSaldo tipo={adjust.tipo} atual={Number(selected.quantidade || 0)} quantidade={adjust.quantidade} unidade={selected.produto?.unidade || 'UN'} />}<div><label className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]">{traduzir('motivo', "Motivo")}</label><textarea value={adjust.motivo} onChange={e => setAdjust(v => ({...v, motivo: e.target.value}))} className="mt-1.5 w-full min-h-20 rounded-[14px] bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] p-3 text-[13px] resize-none" /></div>\{ajusteError && <div className="rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{ajusteError}</div>}<button disabled={saving} onClick={submitAdjustment} className="w-full h-11 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] disabled:opacity-50 font-medium text-[13px]">{saving ? 'Salvandoâ€¦' : 'Confirmar movimento'}</button></div>
+        <div className="mt-8 pt-5 border-t border-[var(--nexus-border)]"><h3 className="text-[12px] font-medium mb-1">Transferir para outra filial</h3>
+        {/* A origem Ã© o prÃ³prio item aberto â€” uma transferÃªncia sai de uma
+            posiÃ§Ã£o de estoque especÃ­fica (produto x filial). Dizer isso
+            evita que o gestor procure um seletor de origem que nÃ£o existe. */}
+        <p className="text-[11px] text-[var(--nexus-muted)] mb-3">Origem: <strong className="text-[var(--nexus-muted)]">{selected.filial?.nome ?? 'â€”'}</strong></p>
+        <div className="space-y-3">
+        {filiais.filter(([id]) => id !== selected.filialId).length === 0 ? (
+          /* Empresa com uma filial sÃ³: sem destino, o <select> ficava vazio e
+             o botÃ£o cinza e morto. A mensagem diz o motivo e onde resolver. */
+          <div className="rounded-[12px] bg-amber-500/10 border border-amber-500/20 p-3 text-[11px] text-amber-200">
+            NÃ£o hÃ¡ outra filial para receber. TransferÃªncia exige pelo menos duas filiais â€”
+            cadastre a segunda em <strong>Empresa â†’ Filiais</strong>.
+          </div>
+        ) : (
+          <select value={transfer.destino} onChange={e => setTransfer(v => ({...v, destino: e.target.value}))} className="w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px]"><option value="">Selecione a filial destino</option>{filiais.filter(([id]) => id !== selected.filialId).map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select>
+        )}
+        <input type="number" min="1" value={transfer.quantidade} onChange={e => setTransfer(v => ({...v, quantidade: e.target.value}))} className="w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px] font-mono" placeholder={'MÃ¡x. ' + selected.quantidade} /><input value={transfer.motivo} onChange={e => setTransfer(v => ({...v, motivo: e.target.value}))} className="w-full h-10 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 text-[13px]" placeholder="Motivo opcional" />
+        {/* Erro da transferÃªncia aparece AQUI, dentro do bloco de transferÃªncia.
+            Antes ele era mostrado sÃ³ no formulÃ¡rio de ajuste, lÃ¡ no topo: uma
+            transferÃªncia recusada pelo servidor (estoque insuficiente, filiais
+            iguais) deixava o botÃ£o voltando ao normal sem nenhuma mensagem, e o
+            usuÃ¡rio nÃ£o sabia se tinha dado certo. */}
+        {transferError && <div className="rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{transferError}</div>}
+        <button disabled={saving || !transfer.destino} onClick={submitTransfer} className="w-full h-10 rounded-full bg-[var(--nexus-panel-2)] hover:bg-[var(--nexus-panel-2)] disabled:opacity-40 text-[13px]">{saving ? 'Transferindoâ€¦' : 'Transferir estoque'}</button></div></div>
+      </aside></div>}
+    </div>
+    </>
+  );
+}
+
+function Kpi({ title, value, trend, icon, tone = 'neutral' }: { title: string; value: string; trend: string; icon: React.ReactNode; tone?: 'neutral' | 'red' | 'amber' }) {
+  return <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5"><div className="flex items-start justify-between"><div className="w-9 h-9 rounded-[11px] bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] grid place-items-center text-[var(--nexus-muted)]">{icon}</div><span className={`rounded-full px-3 py-1.5 text-[11px] font-mono border ${tone === 'red' ? 'text-red-300 bg-red-500/10 border-red-500/20' : tone === 'amber' ? 'text-amber-300 bg-amber-500/10 border-amber-500/20' : 'text-[var(--nexus-muted)] bg-[var(--nexus-panel-2)] border-[var(--nexus-border)]'}`}>{trend}</span></div><div className="text-[12px] text-[var(--nexus-muted)] mt-5">{title}</div><div className="text-[23px] font-bold mt-1">{value}</div></div>;
+}
+
+function Th({ children }: { children: React.ReactNode }) { return <th className="px-5 py-4 font-medium">{children}</th>; }
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string,string][] }) { return <div className="relative"><select value={value} onChange={e => onChange(e.target.value)} className="h-11 min-w-[145px] appearance-none rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] px-4 pr-9 text-[13px] outline-none focus:border-violet-500/40">{options.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--nexus-muted)]" /></div>; }
+
+function MovementTable({ movs }: { movs: Movimento[] }) { return <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] overflow-hidden"><div className="p-5 border-b border-[var(--nexus-border)]"><h2 className="text-[15px] font-medium">MovimentaÃ§Ãµes recentes</h2><p className="text-[11px] text-[var(--nexus-muted)] mt-1">Registros reais do histÃ³rico de estoque.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left"><thead><tr className="border-b border-[var(--nexus-border)] text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)]"><Th>{traduzir('tipo', "Tipo")}</Th><Th>{traduzir('produto', "Produto")}</Th><Th>Filial</Th><Th>{traduzir('quantidade', "Quantidade")}</Th><Th>Documento</Th><Th>{traduzir('usuario', "UsuÃ¡rio")}</Th><Th>{traduzir('data', "Data")}</Th></tr></thead><tbody>{movs.map(m => <tr key={m.id} className="border-b border-[var(--nexus-border)]"><td className="px-5 py-4"><span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] border ${m.quantidade >= 0 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-red-300 bg-red-500/10 border-red-500/20'}`}>{m.tipo}</span></td><td className="px-5 py-4"><div className="text-[12px] font-medium">{m.produto?.nome}</div><div className="text-[10px] text-[var(--nexus-muted)] font-mono">{m.produto?.sku || 'â€”'}</div></td><td className="px-5 py-4 text-[12px] text-[var(--nexus-muted)]">{m.filial?.nome || 'â€”'}</td><td className="px-5 py-4 font-mono text-[12px]">{m.quantidade > 0 ? '+' : ''}{m.quantidade}</td><td className="px-5 py-4 font-mono text-[11px] text-[var(--nexus-muted)]">{m.documento || 'â€”'}</td><td className="px-5 py-4 text-[11px] text-[var(--nexus-muted)]">{m.usuario?.nome || 'Sistema'}</td><td className="px-5 py-4 text-[11px] text-[var(--nexus-muted)]">{relativeTime(m.createdAt)}</td></tr>)}</tbody></table></div>{!movs.length && <div className="p-10 text-center text-[13px] text-[var(--nexus-muted)]">Nenhuma movimentaÃ§Ã£o registrada.</div>}</div>; }
+
+/** Quantos cartÃµes a grade mostra antes de resumir. Ver o rodapÃ©. */
+const LIMITE_CARDS = 60;
+
+/**
+ * TRANSFERÃŠNCIAS ENTRE FILIAIS
+ * ============================
+ *
+ * A tela pedida aqui Ã© "transferir de A para B". Antes ela nÃ£o tinha NENHUM
+ * controle de filial: o componente recebia sÃ³ `items` e `onSelect`, entÃ£o a
+ * aba listava as linhas de TODAS as filiais misturadas sem forma de separar a
+ * origem, e o Ãºnico seletor de destino ficava escondido dentro do drawer â€”
+ * dois cliques mais tarde. O sintoma era "nÃ£o tem botÃ£o pra escolher a filial".
+ *
+ * O que mudou:
+ *   1. `origem` filtra a grade â€” o filtro que faltava;
+ *   2. `destino` aparece no topo e JÃ VAI PREENCHIDO no drawer;
+ *   3. a lista nÃ£o Ã© mais truncada em silÃªncio: o rodapÃ© diz o total;
+ *   4. empresa com uma filial sÃ³ explica o motivo, em vez de mostrar um
+ *      botÃ£o "Transferir estoque" cinza e morto.
+ */
+function TransferView({
+  items, filiais, origem, destino, busca, nomeFilial, onOrigem, onDestino, onBusca, onSelect,
+}: {
+  items: EstoqueItem[];
+  filiais: Array<[string, string]>;
+  origem: string;
+  destino: string;
+  busca: string;
+  nomeFilial: (id: string) => string;
+  onOrigem: (v: string) => void;
+  onDestino: (v: string) => void;
+  onBusca: (v: string) => void;
+  onSelect: (item: EstoqueItem) => void;
+}) {
+  // SÃ³ existe transferÃªncia onde existem DUAS filiais. `filiais` vem do
+  // cadastro da empresa (com as linhas de estoque como reserva), entÃ£o este
+  // Ã© o nÃºmero real de destinos possÃ­veis â€” nÃ£o uma estimativa da tela.
+  const semDestinoPossivel = filiais.length < 2;
+
+  const texto = busca.trim().toLowerCase();
+  const transferiveis = useMemo(() => items.filter((i) => {
+    if (Number(i.quantidade) <= 0) return false;
+    if (origem !== 'ALL' && i.filialId !== origem) return false;
+    if (!texto) return true;
+    return [i.produto?.nome, i.produto?.sku, i.produto?.codigoBarras, i.local, i.lote]
+      .some((v) => String(v || '').toLowerCase().includes(texto));
+  }), [items, origem, texto]);
+
+  // Quanto o produto jÃ¡ vale no destino: o cartÃ£o mostra, porque "transferir
+  // 10 un. para uma filial que tinha 0" e "para uma que tinha 8" dÃ¡ em
+  // resultados diferentes, e quem decide precisa saber antes de confirmar.
+  const saldoNoDestino = useMemo(() => {
+    if (destino === 'ALL') return null;
+    const mapa = new Map<string, number>();
+    for (const i of items) {
+      if (i.filialId !== destino) continue;
+      mapa.set(i.produtoId, (mapa.get(i.produtoId) ?? 0) + Number(i.quantidade));
+    }
+    return mapa;
+  }, [items, destino]);
+
+  const visiveis = transferiveis.slice(0, LIMITE_CARDS);
+  const ocultos = transferiveis.length - visiveis.length;
+  const rota = origem !== 'ALL' && destino !== 'ALL' && origem !== destino
+    ? `${nomeFilial(origem)} â†’ ${nomeFilial(destino)}`
+    : null;
+if (semDestinoPossivel) {
+    return (
+      <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5">
+        <h2 className="text-[15px] font-medium flex items-center gap-2">
+          <ArrowLeftRight className="w-4 h-4 text-violet-300" />TransferÃªncias entre filiais
+        </h2>
+        <p className="text-[11px] text-[var(--nexus-muted)] mt-1">Selecione um saldo para abrir a transferÃªncia real.</p>
+        <div className="mt-5 rounded-[14px] border border-amber-500/20 bg-amber-500/10 p-4 text-[12px] text-amber-200">
+          TransferÃªncia exige <strong>pelo menos duas filiais</strong>.
+          {filiais.length === 1
+            ? ` Hoje a empresa tem uma sÃ³ (${filiais[0][1]}) â€” nÃ£o existe para onde transferir.`
+            : ' Nenhuma filial ativa foi encontrada.'}
+          {' '}Cadastre a segunda filial em <strong>Empresa â†’ Filiais</strong> para liberar esta aba.
+        </div>
+      </div>
+    );
+  }
+return (
+    <div className="rounded-[18px] border border-[var(--nexus-border)] bg-[var(--nexus-panel)] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-[15px] font-medium flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4 text-violet-300" />TransferÃªncias entre filiais
+          </h2>
+          <p className="text-[11px] text-[var(--nexus-muted)] mt-1">
+            Escolha a filial de <strong className="text-[var(--nexus-muted)]">origem</strong> e o{' '}
+            <strong className="text-[var(--nexus-muted)]">destino</strong>, e depois o saldo que vai mudar de lugar.
+          </p>
+        </div>
+        {rota && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-[11px] font-medium text-violet-200">
+            <ArrowLeftRight className="w-3.5 h-3.5" />{rota}
+          </span>
+        )}
+      </div>
+
+      {/* Os dois selects de filial: origem FILTRA a lista, destino define o
+          preenchimento do drawer. Ã‰ esta a peÃ§a que nÃ£o existia. */}
+      <div className="flex flex-col xl:flex-row gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--nexus-muted)]" />
+          <input
+            value={busca}
+            onChange={(e) => onBusca(e.target.value)}
+            placeholder="Buscar produto, SKU ou EANâ€¦"
+            className="w-full h-11 rounded-full bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] pl-11 pr-4 text-[13px] outline-none focus:border-violet-500/40"
+          />
+        </div>
+        <label className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)] shrink-0">Origem</span>
+          <Select
+            value={origem}
+            onChange={onOrigem}
+            options={[['ALL', 'Todas as filiais'], ...filiais.map(([id, n]): [string, string] => [id, n])]}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-[var(--nexus-muted)] shrink-0">Destino</span>
+          <Select
+            value={destino}
+            onChange={onDestino}
+            options={[
+              ['ALL', 'Escolher depois'],
+              // A filial de origem nÃ£o entra na lista: o backend recusa
+              // origem == destino, e oferecer a opÃ§Ã£o seria um beco sem saÃ­da.
+              ...filiais.filter(([id]) => id !== origem).map(([id, n]): [string, string] => [id, n]),
+            ]}
+          />
+        </label>
+      </div>
+<p className="text-[11px] text-[var(--nexus-muted)] mb-4">
+        {transferiveis.length === 0
+          ? 'Nenhum saldo disponÃ­vel com os filtros atuais.'
+          : <>
+              <strong className="text-[var(--nexus-muted)]">{transferiveis.length}</strong>{' '}
+              {transferiveis.length === 1 ? 'saldo pode' : 'saldos podem'} ser transferido
+              {transferiveis.length === 1 ? '' : 's'}
+              {rota ? <> de <strong className="text-[var(--nexus-muted)]">{rota}</strong></> : ' entre as filiais'}.
+            </>}
+      </p>
+
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {visiveis.map((i) => (
+          <button
+            key={i.id}
+            type="button"
+            onClick={() => onSelect(i)}
+            className="text-left rounded-[15px] bg-[var(--nexus-panel-2)] border border-[var(--nexus-border)] p-4 hover:border-violet-500/30 transition"
+          >
+            <div className="flex justify-between gap-3">
+              <span className="text-[13px] font-medium truncate">{i.produto?.nome}</span>
+              <span className="font-mono text-[11px] text-violet-300 shrink-0">
+                {i.quantidade} {i.produto?.unidade || 'UN'}
+              </span>
+            </div>
+            <div className="text-[11px] text-[var(--nexus-muted)] mt-2">{i.filial?.nome} â€¢ {i.local || 'Sem local'}</div>
+            {saldoNoDestino && (
+              <div className="text-[10.5px] text-[var(--nexus-muted)] mt-1 font-mono">
+                destino tem {saldoNoDestino.get(i.produtoId) ?? 0} {i.produto?.unidade || 'UN'}
+              </div>
+            )}
+            <div className="mt-3 text-[11px] text-[var(--nexus-muted)]">
+              {destino !== 'ALL' && destino !== i.filialId
+                ? `Transferir â†’ ${nomeFilial(destino)}`
+                : 'Escolher destino â†’'}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* O corte de 30 sem aviso escondia saldos transferÃ­veis: a mensagem de
+          vazio sÃ³ aparecia com zero itens, entÃ£o quem tinha 47 saldos via 30 e
+          nenhuma pista de que faltavam 17. */}
+      {ocultos > 0 && (
+        <p className="mt-4 rounded-[12px] border border-[var(--nexus-border)] bg-[var(--nexus-panel-2)] p-3 text-[11px] text-[var(--nexus-muted)]">
+          Mostrando {LIMITE_CARDS} de {transferiveis.length} saldos. Use a busca ou escolha uma
+          filial de origem para chegar aos outros {ocultos}.
+        </p>
+      )}
+
+      {!visiveis.length && (
+        <div className="p-10 text-center text-[13px] text-[var(--nexus-muted)]">
+          {origem !== 'ALL'
+            ? `A filial ${nomeFilial(origem)} nÃ£o tem saldo disponÃ­vel para transferir${texto ? ' com essa busca' : ''}.`
+            : texto
+              ? 'Nenhum produto encontrado com essa busca.'
+              : 'NÃ£o hÃ¡ saldos disponÃ­veis para transferÃªncia.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+

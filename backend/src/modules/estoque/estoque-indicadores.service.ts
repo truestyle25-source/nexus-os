@@ -78,7 +78,7 @@ export async function calcularGiroPorProduto(
   };
   const saidas = await prisma.estoqueMovimentacao.groupBy({ by: ['produtoId'], where: whereSaida, _sum: { quantidade: true } });
   const consumoPorProduto = new Map<string, number>(
-    saidas.map((s: { produtoId: string; _sum: { quantidade: number | null } }) => [s.produtoId, Math.abs(s._sum.quantidade ?? 0)]),
+    saidas.map((s) => [s.produtoId, Math.abs(Number(s._sum.quantidade ?? 0))]),
   );
 
   const whereSnapshot: Prisma.EstoqueSnapshotDiarioWhereInput = {
@@ -92,7 +92,7 @@ export async function calcularGiroPorProduto(
   for (const s of snapshots) {
     const porDia = porProduto.get(s.produtoId) ?? new Map<number, number>();
     const chave = s.data.getTime();
-    porDia.set(chave, (porDia.get(chave) ?? 0) + s.quantidade);
+    porDia.set(chave, (porDia.get(chave) ?? 0) + Number(s.quantidade));
     porProduto.set(s.produtoId, porDia);
   }
 

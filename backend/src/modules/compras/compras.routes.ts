@@ -8,28 +8,35 @@ import { temPermissao } from '../../lib/permissoes.js';
 import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { clean } from '../../lib/format.js';
 import { aplicarMovimento } from '../estoque/estoque.service.js';
+import { converterParaUnidadeBaseCompra } from '../estoque/conversao.service.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 
-function ocultarCustoUnico<T extends { valorUnit?: unknown }>(item: T): Omit<T, 'valorUnit'> {
-  const { valorUnit: _v, ...resto } = item;
-  return resto;
-}
-
 export async function comprasRoutes(app: FastifyInstance): Promise<void> {
   // ===================== Fornecedores (Seção 11) =====================
+  // Rotas legadas mantidas para a tela de Compras (GET/POST/PUT/PATCH em
+  // /fornecedores). A aba /fornecedores v2 usa /api/v1/fornecedores
+  // (fornecedores.routes.ts). Schema espelha o modelo v2 (status TEXT:
+  // Ativo/Crítico/Inativo; documento em `cnpj`, com alias legado `cnpjCpf`).
   app.get(
     '/fornecedores',
     { preHandler: [app.authenticate, await permissaoMiddleware('fornecedores', 'visualizar')] },
     async (req: FastifyRequest) => {
       const query = z
-        .object({ search: z.string().optional(), status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']).optional() })
+        .object({
+          search: z.string().optional(),
+          status: z.enum(['Ativo', 'Crítico', 'Inativo', 'ATIVO', 'INATIVO', 'ARQUIVADO']).optional(),
+        })
         .parse(req.query);
+      const statusNormalizado =
+        query.status === 'ATIVO' ? 'Ativo'
+        : query.status === 'INATIVO' || query.status === 'ARQUIVADO' ? 'Inativo'
+        : query.status;
       return prisma.fornecedor.findMany({
         where: {
           empresaId: req.user.empresaId,
           ...(query.search ? { nome: { contains: query.search, mode: 'insensitive' } } : {}),
-          ...(query.status ? { status: query.status } : { status: { in: ['ATIVO', 'INATIVO'] } }),
+          ...(statusNormalizado ? { status: statusNormalizado } : {}),
         },
         orderBy: { nome: 'asc' },
       });
@@ -55,7 +62,8 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
 
   const fornecedorSchema = z.object({
     nome: z.string().min(2),
-    cnpjCpf: z.string().optional(),
+    cnpj: z.string().optional(),
+    cnpjCpf: z.string().optional(), // alias legado (tela antiga) — persiste em `cnpj`
     contato: z.string().optional(),
     telefone: z.string().optional(),
     email: z.string().email().optional(),
@@ -68,12 +76,13 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate, await permissaoMiddleware('fornecedores', 'criar')] },
     async (req: FastifyRequest) => {
       const data = fornecedorSchema.parse(req.body);
-      const cnpjCpf = clean(data.cnpjCpf);
-      if (cnpjCpf) {
-        const existente = await prisma.fornecedor.findFirst({ where: { empresaId: req.user.empresaId, cnpjCpf } });
+      const cnpj = clean(data.cnpj ?? data.cnpjCpf);
+      if (cnpj) {
+        const existente = await prisma.fornecedor.findFirst({ where: { empresaId: req.user.empresaId, cnpj } });
         if (existente) throw Conflito('Já existe um fornecedor com este CNPJ/CPF nesta empresa.');
       }
-      const fornecedor = await prisma.fornecedor.create({ data: { empresaId: req.user.empresaId, ...data, cnpjCpf, origem: data.origem } });
+      const { cnpjCpf: _legado, ...paraGravar } = data;
+      const fornecedor = await prisma.fornecedor.create({ data: { empresaId: req.user.empresaId, ...paraGravar, cnpj, origem: data.origem } });
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -96,12 +105,13 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const data = fornecedorSchema.partial().parse(req.body);
       const anterior = await prisma.fornecedor.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!anterior) throw NaoEncontrado('Fornecedor não encontrado nesta empresa.');
-      const cnpjCpf = data.cnpjCpf !== undefined ? clean(data.cnpjCpf) : undefined;
-      if (cnpjCpf && cnpjCpf !== anterior.cnpjCpf) {
-        const existente = await prisma.fornecedor.findFirst({ where: { empresaId: req.user.empresaId, cnpjCpf, NOT: { id } } });
+      const cnpj = data.cnpj !== undefined || data.cnpjCpf !== undefined ? clean(data.cnpj ?? data.cnpjCpf) : undefined;
+      if (cnpj && cnpj !== anterior.cnpj) {
+        const existente = await prisma.fornecedor.findFirst({ where: { empresaId: req.user.empresaId, cnpj, NOT: { id } } });
         if (existente) throw Conflito('Já existe um fornecedor com este CNPJ/CPF nesta empresa.');
       }
-      const fornecedor = await prisma.fornecedor.update({ where: { id }, data: { ...data, cnpjCpf, updatedAt: new Date() } });
+      const { cnpjCpf: _legadoUpdate, ...dadosGravar } = data;
+      const fornecedor = await prisma.fornecedor.update({ where: { id }, data: { ...dadosGravar, cnpj, updatedAt: new Date() } });
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -122,8 +132,15 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
-      const { status } = z.object({ status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']) }).parse(req.body);
-      const acao = status === 'ARQUIVADO' ? 'excluir' : 'editar';
+      const { status: statusRawF } = z
+        .object({ status: z.enum(['Ativo', 'Crítico', 'Inativo', 'ATIVO', 'INATIVO', 'ARQUIVADO']) })
+        .parse(req.body);
+      // Normaliza valores legados para o vocabulário v2 (status TEXT).
+      const status =
+        statusRawF === 'ATIVO' ? 'Ativo'
+        : statusRawF === 'INATIVO' || statusRawF === 'ARQUIVADO' ? 'Inativo'
+        : statusRawF;
+      const acao = 'editar';
       if (!(await temPermissao(req.user.id, 'fornecedores', acao))) return reply.status(403).send({ error: `Sem permissão: fornecedores.${acao}` });
       const anterior = await prisma.fornecedor.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!anterior) throw NaoEncontrado('Fornecedor não encontrado nesta empresa.');
@@ -131,7 +148,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
-        acao: status === 'ARQUIVADO' ? 'EXCLUIR' : 'EDITAR',
+        acao: statusRawF === 'ARQUIVADO' ? 'EXCLUIR' : 'EDITAR',
         entidade: 'Fornecedor',
         entidadeId: id,
         valorAnterior: { status: anterior.status },
@@ -173,7 +190,20 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         }),
         prisma.compra.count({ where }),
       ]);
-      return { compras, total, take: query.take, skip: query.skip };
+
+      // Filiais e fornecedores vêm NO MESMO PAYLOAD, e não de `/filiais`.
+      // Dois motivos:
+      //  1) `/filiais` é gated por `empresa|estoque|pdv|vendas:visualizar` e
+      //     NÃO por `compras:visualizar`. Um usuário do compras que não tivesse
+      //     nenhuma das outras permissões receberia 403 ao montar a tela.
+      //  2) A lista precisa ser a do cadastro, independente de existirem compras
+      //     ou estoque — igual ao que a aba Estoque já faz.
+      const [filiais, fornecedores] = await Promise.all([
+        prisma.filial.findMany({ where: { empresaId: req.user.empresaId }, orderBy: { nome: 'asc' }, select: { id: true, nome: true } }),
+        prisma.fornecedor.findMany({ where: { empresaId: req.user.empresaId }, orderBy: { nome: 'asc' }, select: { id: true, nome: true, cnpj: true, status: true } }),
+      ]);
+
+      return { compras, total, take: query.take, skip: query.skip, filiais, fornecedores };
     },
   );
 
@@ -191,7 +221,13 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  const itensSchema = z.array(z.object({ produtoId: z.string(), quantidade: z.number().int().positive(), valorUnit: z.number().positive() })).min(1);
+  const itensSchema = z.array(z.object({
+    produtoId: z.string(),
+    quantidade: z.number().finite().positive().refine((n) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-8),
+    valorUnit: z.number().finite().positive(),
+    unidadeCompra: z.string().optional(),
+    fornecedorId: z.string().optional(),
+  })).min(1);
 
   app.post(
     '/compras',
@@ -207,13 +243,48 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const data = schema.parse(req.body);
       const filial = await prisma.filial.findFirst({ where: { id: data.filialId, empresaId: req.user.empresaId } });
       if (!filial) throw NaoEncontrado('Filial inválida para esta empresa.');
-      const fornecedor = await prisma.fornecedor.findFirst({ where: { id: data.fornecedorId, empresaId: req.user.empresaId, status: 'ATIVO' } });
+      const fornecedor = await prisma.fornecedor.findFirst({ where: { id: data.fornecedorId, empresaId: req.user.empresaId, status: 'Ativo' } });
       if (!fornecedor) throw NaoEncontrado('Fornecedor inválido para esta empresa (ou inativo).');
       for (const item of data.itens) {
         const produto = await prisma.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId } });
         if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} inválido para esta empresa.`);
       }
       const valorTotal = data.itens.reduce((soma: number, i: { quantidade: number; valorUnit: number }) => soma + i.quantidade * i.valorUnit, 0);
+
+      // Etapa 5 — converter cada item para a unidade base antes de gravar.
+      // Preserva o snapshot: unidade de compra, fator aplicado e quantidade base.
+      const itensComConversao = await Promise.all(data.itens.map(async (i) => {
+        const produto = await prisma.produto.findFirst({
+          where: { id: i.produtoId, empresaId: req.user.empresaId },
+          select: { id: true, nome: true, unidadeBaseId: true, tipoProdutoId: true },
+        });
+        if (!produto) throw NaoEncontrado(`Produto ${i.produtoId} inválido para esta empresa.`);
+        if (!produto.unidadeBaseId) {
+          // Unidade base não definida explicitamente; usa a unidade do produto como base
+          // O serviço de conversão usará o fatorCanonico do banco de dados
+          // A unidade de destino será a unidade do produto (simbolo)
+        }
+        // Determinar o símbolo da unidade base para conversão
+        // O serviço de conversão usa unidadeBaseId se fornecido,
+        // caso contrário usa a unidade do produto como base
+        const conversao = await converterParaUnidadeBaseCompra({
+          empresaId: req.user.empresaId,
+          produtoId: i.produtoId,
+          unidadeBaseId: produto.unidadeBaseId ?? undefined,
+          quantidadeCompra: i.quantidade,
+          unidadeCompraSimbolo: i.unidadeCompra ?? 'UN',
+          fornecedorId: i.fornecedorId ?? data.fornecedorId,
+        });
+        return {
+          produtoId: i.produtoId,
+          quantidade: i.quantidade,
+          unidadeCompra: i.unidadeCompra ?? 'UN',
+          fatorAplicado: conversao.fator.toNumber(),
+          quantidadeBase: conversao.quantidadeDestino.toNumber(),
+          valorUnit: i.valorUnit,
+        };
+      }));
+
       const compra = await prisma.compra.create({
         data: {
           empresaId: req.user.empresaId,
@@ -222,7 +293,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
           valorTotal,
           condPagamento: data.condPagamento,
           origem: data.origem,
-          itens: { create: data.itens.map((i: { produtoId: string; quantidade: number; valorUnit: number }) => ({ produtoId: i.produtoId, quantidade: i.quantidade, valorUnit: i.valorUnit })) },
+          itens: { create: itensComConversao },
         },
         include: { itens: true },
       });
@@ -336,15 +407,34 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
             produtoId: item.produtoId,
             usuarioId: req.user.id,
             tipo: 'COMPRA',
-            quantidade: item.quantidade,
+            quantidade: Number(item.quantidadeBase ?? item.quantidade),
             motivo: `Recebimento compra ${id}`,
             documento: id,
             origem: compra.origem,
           });
-          // Custo do produto passa a refletir o último valor pago — mesma
-          // decisão de "custo atual" (não custo médio ponderado) já
-          // documentada na Fase 2.
-          await tx.produto.update({ where: { id: produto.id }, data: { custo: item.valorUnit } });
+          // Etapa 4 — custo médio ponderado (política aprovada).
+          // preco por unidade base = valorUnit / fatorAplicado (se houver fator)
+          const fator = item.fatorAplicado && Number(item.fatorAplicado) > 0 ? Number(item.fatorAplicado) : 1;
+          const precoUnitarioBase = Number(item.valorUnit) / fator;
+
+          const estoqueAtual = await tx.estoque.findUnique({
+            where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
+            select: { quantidade: true, valorTotal: true },
+          });
+          const qtdAtual = Number(estoqueAtual?.quantidade ?? 0);
+          const valorAtual = Number(estoqueAtual?.valorTotal ?? 0);
+
+          const novaQtd = qtdAtual + Number(item.quantidadeBase ?? item.quantidade);
+          const novoValorTotal = valorAtual + (Number(item.quantidadeBase ?? item.quantidade) * precoUnitarioBase);
+          const novoCusto = novaQtd > 0 ? novoValorTotal / novaQtd : precoUnitarioBase;
+
+          await tx.produto.update({ where: { id: produto.id }, data: { custo: novoCusto } });
+          if (estoqueAtual) {
+            await tx.estoque.update({
+              where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
+              data: { quantidade: novaQtd, valorTotal: novoValorTotal },
+            });
+          }
         }
 
         const atualizada = await tx.compra.update({ where: { id }, data: { status: 'RECEBIDA', dataRecebimento: new Date() } });
@@ -413,8 +503,79 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     telefone: z.string().optional(),
     email: z.string().email().optional(),
     endereco: z.string().optional(),
+    // `status` passou a ser aceito aqui. Antes o schema não tinha o campo, o
+    // POST/PUT gravavam SEMPRE ATIVO e a aba corrigia o status numa segunda
+    // chamada (PATCH /clientes/:id/status). Essa segunda chamada podia falhar
+    // (usuário com `criar` e sem `editar`, ou queda de rede) DEPOIS do
+    // cadastro já gravado — a tela acusava erro, o modal continuava aberto e
+    // o retry criava um cliente DUPLICADO. Uma escrita só, atômica, elimina
+    // essa janela.
+    //
+    // ARQUIVADO continua exigindo `clientes.excluir` (ver guarda abaixo), o
+    // mesmo que o PATCH exige — aceitar `status` no PUT não pode virar uma
+    // porta paralela que burla a permissão de arquivar.
+    status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']).optional(),
     origem: origemSchema.default('MANUAL'),
   });
+
+  /** Arquivar é "excluir" no catálogo de permissões (mesma regra do PATCH). */
+  async function podeMudarStatus(
+    usuarioId: string,
+    status: string | undefined,
+  ): Promise<boolean> {
+    if (status !== 'ARQUIVADO') return true;
+    return temPermissao(usuarioId, 'clientes', 'excluir');
+  }
+
+  /**
+   * Números do cliente DERIVADOS de `Venda` (fonte da verdade), em vez de lidos
+   * das colunas `valorTotalComprado`/`frequencia`/`ticketMedio`/`ultimaCompra`.
+   *
+   * Motivo concreto: em `POST /vendas/:id/cancelar` o módulo Vendas recalcula
+   * essas colunas ANTES de marcar a venda como CANCELADA — a consulta filtra
+   * `status: 'FINALIZADA'` enquanto a venda ainda está FINALIZADA, então a venda
+   * cancelada continua sendo contada. Na prática, estornar uma venda NUNCA
+   * reduzia o valor do cliente: a aba Clientes mostrava para sempre o total da
+   * venda estornada.
+   *
+   * Não corrigi o módulo Vendas (pertence a outra aba). Aqui a conta é feita na
+   * leitura, então a aba mostra o número certo mesmo com essa falha lá — e os
+   * nomes dos campos devolvidos são os mesmos, sem breaking change.
+   *
+   * Só vendas FINALIZADA contam: criar já grava FINALIZADA e cancelar vira
+   * CANCELADA, então o filtro cobre exatamente os dois caminhos.
+   */
+  type NumerosCliente = { total: number; freq: number; ultima: Date | null };
+
+  async function numerosReais(empresaId: string): Promise<Map<string, NumerosCliente>> {
+    const grouped = await prisma.venda.groupBy({
+      by: ['clienteId'],
+      where: { empresaId, clienteId: { not: null }, status: 'FINALIZADA' },
+      _sum: { total: true },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    const mapa = new Map<string, NumerosCliente>();
+    for (const g of grouped) {
+      if (!g.clienteId) continue;
+      const total = Number(g._sum.total ?? 0);
+      const freq = g._count._all;
+      mapa.set(g.clienteId, { total, freq, ultima: g._max.createdAt ?? null });
+    }
+    return mapa;
+  }
+
+  /** Sobrescreve as colunas desnormalizadas pelos números reais. */
+  function comNumerosReais<T extends { id: string }>(cliente: T, mapa: Map<string, NumerosCliente>): T {
+    const n = mapa.get(cliente.id);
+    return {
+      ...cliente,
+      valorTotalComprado: n?.total ?? 0,
+      frequencia: n?.freq ?? 0,
+      ticketMedio: n && n.freq > 0 ? n.total / n.freq : 0,
+      ultimaCompra: n?.ultima ?? null,
+    };
+  }
 
   app.get(
     '/clientes',
@@ -423,14 +584,18 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const query = z
         .object({ search: z.string().optional(), status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']).optional() })
         .parse(req.query);
-      return prisma.cliente.findMany({
-        where: {
-          empresaId: req.user.empresaId,
-          ...(query.search ? { nome: { contains: query.search, mode: 'insensitive' } } : {}),
-          ...(query.status ? { status: query.status } : { status: { in: ['ATIVO', 'INATIVO'] } }),
-        },
-        orderBy: { nome: 'asc' },
-      });
+      const [clientes, mapa] = await Promise.all([
+        prisma.cliente.findMany({
+          where: {
+            empresaId: req.user.empresaId,
+            ...(query.search ? { nome: { contains: query.search, mode: 'insensitive' } } : {}),
+            ...(query.status ? { status: query.status } : { status: { in: ['ATIVO', 'INATIVO'] } }),
+          },
+          orderBy: { nome: 'asc' },
+        }),
+        numerosReais(req.user.empresaId),
+      ]);
+      return clientes.map((c) => comNumerosReais(c, mapa));
     },
   );
 
@@ -441,13 +606,16 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const cliente = await prisma.cliente.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!cliente) throw NaoEncontrado('Cliente não encontrado nesta empresa.');
-      const historicoVendas = await prisma.venda.findMany({
-        where: { clienteId: id, empresaId: req.user.empresaId },
-        orderBy: { createdAt: 'desc' },
-        take: 50,
-        select: { id: true, total: true, status: true, createdAt: true, filialId: true },
-      });
-      return { ...cliente, historicoVendas };
+      const [historicoVendas, mapa] = await Promise.all([
+        prisma.venda.findMany({
+          where: { clienteId: id, empresaId: req.user.empresaId },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          select: { id: true, total: true, status: true, createdAt: true, filialId: true },
+        }),
+        numerosReais(req.user.empresaId),
+      ]);
+      return { ...comNumerosReais(cliente, mapa), historicoVendas };
     },
   );
 
@@ -456,6 +624,9 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate, await permissaoMiddleware('clientes', 'criar')] },
     async (req: FastifyRequest) => {
       const data = clienteSchema.parse(req.body);
+      if (!(await podeMudarStatus(req.user.id, data.status))) {
+        throw new ErroDeNegocio('Sem permissão: clientes.excluir (necessário para cadastrar já arquivado).', 403);
+      }
       const documento = clean(data.documento);
       if (documento) {
         const existente = await prisma.cliente.findFirst({ where: { empresaId: req.user.empresaId, documento } });
@@ -482,6 +653,9 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
       const data = clienteSchema.partial().parse(req.body);
+      if (!(await podeMudarStatus(req.user.id, data.status))) {
+        throw new ErroDeNegocio('Sem permissão: clientes.excluir (necessário para arquivar).', 403);
+      }
       const anterior = await prisma.cliente.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!anterior) throw NaoEncontrado('Cliente não encontrado nesta empresa.');
       const documento = data.documento !== undefined ? clean(data.documento) : undefined;

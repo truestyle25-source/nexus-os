@@ -10,7 +10,7 @@ Seção 33 Relatórios: Filtros data, período, filial, setor, funcionário, pro
 
 Seção 34 Pesquisa Global: Produtos, Clientes, Funcionários, Fornecedores, Vendas, Documentos, Registros - respeita permissões
 
-Seção 35 Central Integrações: PDV, Ponto, OpenAI, APIs externas, Webhooks, Importações, Futuras - Nome, Status, Config, Última sync, Próxima sync, Erros, Histórico
+Seção 35 Central Integrações: PDV, Ponto, IA (Google Gemini), APIs externas, Webhooks, Importações, Futuras - Nome, Status, Config, Última sync, Próxima sync, Erros, Histórico
 
 Seção 36 API Pública: Arquitetura futura para ERPs, PDVs, e-commerce, apps, sistemas internos - JWT + API Key
 

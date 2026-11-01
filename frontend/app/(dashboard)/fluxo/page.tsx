@@ -1,0 +1,1045 @@
+'use client';
+
+/**
+ * NEXUS OS — /fluxo (melhoria V2 aplicada EM CIMA da tela que já existia).
+ *
+ * REGRA DE OURO: esta continua sendo a ÚNICA tela de Fluxo de Caixa do
+ * projeto — nada de backend novo, nada de página de configuração. Os números
+ * vêm de `GET /fluxo-caixa` (entradas/saídas PAGO + projeção dos PENDENTES)
+ * e de `GET /financeiro` (lançamentos do período): os mesmos dois endpoints
+ * que /financeiro já consome. Sem mock e sem delta inventado — a variação só
+ * aparece quando existe um período anterior real para comparar.
+ *
+ * O que mudou em relação à versão anterior (4 chips + uma <table> crua):
+ *  - hierarquia do layout de referência: header + 4 KPIs + gráfico (1.9fr)
+ *    + projeção (1fr) + tabela de lançamentos;
+ *  - vidro, raio 20px, lift no hover e entrada suave escalonada;
+ *  - skeleton de carregamento e estado vazio ilustrado;
+ *  - filtros de período/tipo, busca com debounce e exportação CSV;
+ *  - Recharts sob demanda (`next/dynamic`, ssr: false);
+ *  - handlers em useCallback, derivados em useMemo, cards em memo.
+ */
+
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+} from 'react';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronDown,
+  CircleAlert,
+  Clock3,
+  Download,
+  Info,
+  Search,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
+import api, { getToken } from '@/lib/api';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+import ModuleHeader from '@/components/ModuleHeader';
+import { EmptyState, SectionTitle } from '@/components/ui';
+import { formatBRL, formatDate } from '@/lib/format';
+import {
+  comFuso,
+  diaLocal,
+  intervaloDoPreset,
+  periodoAnterior,
+  type PresetKey,
+} from '@/lib/dashboard';
+import type { PontoGrafico, SerieVisivel } from './FluxoAreaChart';
+
+/* ============================================================================
+   1. CSS LOCAL DA TELA
+   Mesmo padrão de /vendas, /financeiro e /pdv: regras com escopo .fx-root
+   injetadas num <style>, sem espalhar especificidade desta tela em
+   globals.css. Mantém os tokens do Layout Mestre (#1A1A2E, #7C3AED) e soma
+   o acabamento pedido: vidro, raio 20px, lift, shimmer e entrada suave.
+   ========================================================================== */
+const fluxoCss = `
+/* 1.1 Superfícies — vidro fosco + raio 20px + lift no hover */
+.fx-root .fx-card{position:relative;min-width:0;border-radius:20px;border:1px solid var(--nx-border);background:linear-gradient(180deg,var(--nx-surface),var(--nx-surface-2));-webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);box-shadow:0 18px 40px -28px rgba(0,0,0,.18);transition:transform .25s cubic-bezier(.2,.8,.3,1),box-shadow .25s ease,border-color .25s ease}
+.fx-root .fx-card:hover{transform:translateY(-2px);border-color:var(--nx-accent);box-shadow:0 26px 54px -30px rgba(0,0,0,.22),0 0 0 1px color-mix(in srgb,var(--nx-accent) 10%,transparent)}
+.fx-root .fx-card::before{content:'';position:absolute;inset:0 0 auto;height:1px;border-radius:20px 20px 0 0;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--nx-ink) 18%,transparent),transparent);pointer-events:none}
+
+/* 1.2 Números alinhados — evita o "pulo" do valor ao trocar de período */
+.fx-root .fx-num{font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+/* 1.3 Chips de período/tipo */
+.fx-root .fx-chip{height:34px;padding:0 13px;border-radius:999px;font-size:12px;font-weight:500;color:var(--nx-ink-2);background:var(--nx-surface-2);border:1px solid var(--nx-border);transition:all .18s ease;white-space:nowrap}
+.fx-root .fx-chip:hover:not([aria-pressed='true']){color:var(--nx-ink);background:color-mix(in srgb,var(--nx-accent) 12%,transparent);border-color:var(--nx-accent)}
+.fx-root .fx-chip[aria-pressed='true']{background:var(--nx-accent);border-color:var(--nx-accent);color:var(--nx-accent-ink,var(--nx-ink));font-weight:600}
+
+/* 1.4 Campos (select de tipo, busca) */
+.fx-root .fx-field{height:34px;border-radius:10px;background:var(--nx-surface-3);border:1px solid var(--nx-border);color:var(--nx-ink);font-size:12px;padding:0 12px;outline:none;transition:border-color .18s ease,box-shadow .18s ease}
+.fx-root .fx-field:focus{border-color:var(--nx-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--nx-accent) 16%,transparent)}
+.fx-root .fx-field::placeholder{color:var(--nx-ink-3)}
+.fx-root select.fx-field{appearance:none;padding-right:28px;cursor:pointer}
+.fx-root select.fx-field option{background:var(--nx-surface);color:var(--nx-ink)}
+/* Controles do cabeçalho (select e Exportar) usam as duas classes: o
+   modificador vence e devolve a pílula, mantendo o grupo de filtros
+   visualmente uniforme. A busca da tabela usa só .fx-field (raio 10px). */
+.fx-root .fx-chip.fx-field{border-radius:999px}
+
+/* 1.5 Tooltip dos deltas (hover/focus, sem JS) */
+.fx-root .fx-tip{position:absolute;left:50%;top:calc(100% + 8px);transform:translateX(-50%) translateY(-4px);width:236px;padding:10px 12px;border-radius:12px;background:var(--nx-surface);border:1px solid var(--nx-border);box-shadow:0 18px 40px rgba(0,0,0,.18);color:var(--nx-ink-2);font-size:11px;line-height:1.45;text-transform:none;letter-spacing:normal;font-weight:400;opacity:0;pointer-events:none;transition:opacity .16s ease,transform .16s ease;z-index:30}
+.fx-root .fx-tip-g:hover .fx-tip,.fx-root .fx-tip-g:focus-within .fx-tip{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 1.6 Skeleton com shimmer */
+.fx-root .fx-skel{position:relative;overflow:hidden;background:color-mix(in srgb,var(--nx-ink) 5%,transparent);border-radius:10px}
+.fx-root .fx-skel::after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--nx-ink) 8%,transparent),transparent);animation:fxShimmer 1.4s infinite}
+@keyframes fxShimmer{to{transform:translateX(100%)}}
+
+/* 1.7 Entrada suave, com atraso controlado por índice */
+.fx-root .fx-in{animation:fxIn .45s cubic-bezier(.2,.8,.3,1) both}
+@keyframes fxIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* 1.8 Linha da tabela */
+.fx-root .fx-row{transition:background-color .15s ease}
+.fx-root .fx-row:hover{background:color-mix(in srgb,var(--nx-accent) 7%,transparent)}
+
+/* 1.9 Quem prefere menos movimento não vê animação */
+@media (prefers-reduced-motion:reduce){
+.fx-root .fx-card,.fx-root .fx-tip,.fx-root .fx-in,.fx-root .fx-skel::after{transition:none;animation:none}
+.fx-root .fx-card:hover{transform:none}
+}
+`;
+
+/* ============================================================================
+   2. CONTRATOS — espelham exatamente o que o backend já devolve
+   ========================================================================== */
+type PontoDiario = {
+  dia: string;
+  entradas: number;
+  saidas: number;
+  saldoDia: number;
+  saldoAcumulado: number;
+};
+
+type FluxoResposta = {
+  serie: PontoDiario[];
+  resumo: { totalEntradas: number; totalSaidas: number; saldo: number };
+  projecao30dias: { entradas: number; saidas: number; saldoProjetado: number };
+};
+
+type Lancamento = {
+  id: string;
+  tipo: 'RECEITA' | 'DESPESA';
+  categoria: string;
+  descricao: string;
+  valor: number | string;
+  vencimento?: string | null;
+  status: string;
+  centroCusto?: string | null;
+  createdAt: string;
+};
+
+type FinanceiroResposta = { lancamentos: Lancamento[] };
+
+type PeriodoKey = Extract<PresetKey, 'hoje' | '7d' | '30d' | 'mes'>;
+type TipoFiltro = 'todos' | 'receita' | 'despesa';
+type Tom = 'emerald' | 'amber' | 'accent' | 'sky';
+
+type Kpi = {
+  id: string;
+  label: string;
+  value: number;
+  delta: number | null;
+  hint: string;
+  tom: Tom;
+  icon: ComponentType<{ className?: string }>;
+  serie: number[];
+  /** "sobe" = subir é bom; "desce" = descer é bom (ex.: saídas). */
+  bomQuando: 'sobe' | 'desce';
+};
+
+const PERIODOS: Array<{ key: PeriodoKey; label: string }> = [
+  { key: 'hoje', label: 'Hoje' },
+  { key: '7d', label: '7 dias' },
+  { key: '30d', label: '30 dias' },
+  { key: 'mes', label: 'Mês atual' },
+];
+
+const TIPOS: Array<{ key: TipoFiltro; label: string }> = [
+  { key: 'todos', label: 'Entradas e saídas' },
+  { key: 'receita', label: 'Só entradas' },
+  { key: 'despesa', label: 'Só saídas' },
+];
+
+const TONS: Record<Tom, { chip: string; cor: string }> = {
+  emerald: { chip: 'bg-emerald-500/12 text-[var(--nx-green)]', cor: '#22C55E' },
+  amber: { chip: 'bg-amber-500/12 text-[var(--nx-amber)]', cor: '#F59E0B' },
+  accent: { chip: 'bg-[var(--nx-accent)]/15 text-[var(--nx-accent-2)]', cor: '#7C3AED' },
+  sky: { chip: 'bg-sky-500/12 text-[var(--info)]', cor: '#38BDF8' },
+};
+
+/* ============================================================================
+   3. HELPERS PUROS (sem React — testáveis e estáveis entre renders)
+   ========================================================================== */
+
+/** `2026-09-19` → `19/09`. O backend sempre manda ISO, então comparação de
+ *  string é segura e evita `new Date()` deslocando o dia por fuso. */
+function diaCurto(iso: string): string {
+  const partes = iso.split('-');
+  return partes.length === 3 ? `${partes[2]}/${partes[1]}` : iso;
+}
+
+/** Variação real vs. período anterior. `null` = não há base comparável —
+ *  nesse caso a tela diz "sem base comparativa" em vez de inventar número. */
+function deltaPct(atual: number, anterior: number | undefined): number | null {
+  if (anterior === undefined || !Number.isFinite(anterior) || anterior === 0)
+    return null;
+  return ((atual - anterior) / Math.abs(anterior)) * 100;
+}
+
+/** CSV: aspas quando o valor tem vírgula/ponto-e-vírgula/quebra de linha. */
+function campoCsv(valor: unknown): string {
+  const s = valor == null ? '' : String(valor);
+  return /[",;\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** BOM (\uFEFF) para o Excel abrir os acentos corretamente (mesma técnica do
+ *  botão de exportação de /vendas). */
+function baixarCsv(cabecalho: string[], linhas: string[][], nome: string): void {
+  const conteudo = [cabecalho, ...linhas].map((l) => l.map(campoCsv).join(';')).join('\r\n');
+  const url = URL.createObjectURL(
+    new Blob([`\uFEFF${conteudo}`], { type: 'text/csv;charset=utf-8' }),
+  );
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================================
+   4. COMPONENTES DE APRESENTAÇÃO
+   Todos `memo`: a página re-renderiza a cada tecla digitada na busca e na
+   troca de período, mas cartões não precisam refazer isso.
+   ========================================================================== */
+
+/** Gráfico de linha inline (SVG puro) — mesmo caminho do LineChart do kit.
+ *  Por que não Recharts aqui: são 4 sparklines de 36px; 4 instâncias do
+ *  ResponsiveContainer custariam mais que o gráfico principal. */
+const Sparkline = memo(function Sparkline({
+  id,
+  valores,
+  cor,
+}: {
+  id: string;
+  valores: number[];
+  cor: string;
+}) {
+  const d = useMemo(() => {
+    if (valores.length < 2) return null;
+    const max = Math.max(...valores);
+    const min = Math.min(...valores);
+    const amplitude = max - min || 1;
+    const pontos = valores.map((v, i) => {
+      const x = (i / (valores.length - 1)) * 100;
+      const y = 26 - ((v - min) / amplitude) * 22;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    return { linha: pontos.join(' '), area: `M0,28 L${pontos.join(' L')} L100,28 Z` };
+  }, [valores]);
+
+  if (!d) return <div className="h-9 w-full" aria-hidden="true" />;
+
+  return (
+    <svg
+      viewBox="0 0 100 28"
+      preserveAspectRatio="none"
+      className="h-9 w-full"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`fx-spark-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={cor} stopOpacity={0.35} />
+          <stop offset="100%" stopColor={cor} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={d.area} fill={`url(#fx-spark-${id})`} />
+      <polyline
+        points={d.linha}
+        fill="none"
+        stroke={cor}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+});
+
+const KpiCard = memo(function KpiCard({
+  kpi,
+  indice,
+}: {
+  kpi: Kpi;
+  indice: number;
+}) {
+  const { icon: Icon, tom, delta } = kpi;
+  const subiu = delta !== null && delta > 0;
+  const bom = delta === null ? null : kpi.bomQuando === 'sobe' ? subiu : !subiu;
+  const DeltaIcon = subiu ? ArrowUpRight : ArrowDownRight;
+
+  return (
+    <article
+      className="fx-card fx-in flex flex-col p-4 md:p-5"
+      style={{ animationDelay: `${indice * 60}ms` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--nx-ink-3)]">
+          {kpi.label}
+        </span>
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${TONS[tom].chip}`}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+
+      <div className="fx-num mt-2.5 truncate text-[22px] font-bold leading-none text-[var(--nx-ink)] md:text-[26px]">
+        {formatBRL(kpi.value)}
+      </div>
+
+      {/* `relative` no pai + `group` aqui: o tooltip é CSS puro. */}
+      <div className="fx-tip-g relative mt-2 flex items-center gap-2">
+        {delta === null ? (
+          <span className="text-[11px] text-[var(--nx-ink-3)]">Sem base comparativa</span>
+        ) : (
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              bom
+                ? 'bg-emerald-500/10 text-[var(--nx-green)]'
+                : 'bg-red-500/10 text-[var(--danger)]'
+            }`}
+          >
+            <DeltaIcon className="h-3 w-3" />
+            {Math.abs(delta).toFixed(1)}%
+          </span>
+        )}
+        <span className="truncate text-[11px] text-[var(--nx-ink-3)]">vs. período anterior</span>
+        <span className="fx-tip" role="tooltip">
+          {kpi.hint}
+        </span>
+      </div>
+
+      <div className="-mb-1 mt-3">
+        <Sparkline id={kpi.id} valores={kpi.serie} cor={TONS[tom].cor} />
+      </div>
+    </article>
+  );
+});
+
+/** Skeleton espelhando o layout real — evita o salto de altura no carregamento. */
+function EsqueletoFluxo() {
+  return (
+    <div className="space-y-4 lg:space-y-6" aria-busy="true" aria-live="polite">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="fx-card p-4 md:p-5">
+            <div className="fx-skel h-2.5 w-24" />
+            <div className="fx-skel mt-3 h-6 w-32" />
+            <div className="fx-skel mt-3 h-2.5 w-28" />
+            <div className="fx-skel mt-4 h-9 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.9fr_1fr]">
+        <div className="fx-card p-5">
+          <div className="fx-skel h-4 w-56" />
+          <div className="fx-skel mt-5 h-[320px] w-full md:h-[340px]" />
+        </div>
+        <div className="fx-card p-5">
+          <div className="fx-skel h-4 w-40" />
+          <div className="mt-4 space-y-2.5">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="fx-skel h-14 w-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="fx-card p-5">
+        <div className="fx-skel h-4 w-48" />
+        <div className="mt-4 space-y-2">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="fx-skel h-10 w-full" />
+          ))}
+        </div>
+      </div>
+      <span className="sr-only">Carregando fluxo de caixa…</span>
+    </div>
+  );
+}
+
+/** Coluna 1 do grid principal: série diária. O gráfico entra por
+ *  `next/dynamic` (ver `GraficoSerie` no fim do arquivo). */
+const ChartCard = memo(function ChartCard({
+  pontos,
+  serie,
+  rotuloTipo,
+}: {
+  pontos: PontoGrafico[];
+  serie: SerieVisivel;
+  rotuloTipo: string;
+}) {
+  return (
+    <section className="fx-card fx-in p-5" style={{ animationDelay: '240ms' }}>
+      <SectionTitle
+        kicker="Movimento realizado"
+        right={
+          <span className="rounded-full bg-[var(--nx-surface-2)] px-2.5 py-1 text-[10.5px] font-medium text-[var(--nx-ink-2)]">
+            {rotuloTipo}
+          </span>
+        }
+      >
+        Série diária ({pontos.length} dia{pontos.length === 1 ? '' : 's'} com movimento)
+      </SectionTitle>
+
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span className="flex items-center gap-1.5 text-[11px] text-[var(--nx-ink-2)]">
+          <span className="h-1.5 w-4 rounded-full bg-[var(--nx-green)]" />
+          Entradas
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] text-[var(--nx-ink-2)]">
+          <span className="h-1.5 w-4 rounded-full bg-[var(--nx-amber)]" />
+          Saídas
+        </span>
+      </div>
+
+      {pontos.length === 0 ? (
+        <EmptyState
+          className="mt-4"
+          icon={Wallet}
+          title="Nenhum lançamento pago no período."
+          description="Assim que houver um lançamento com status PAGO nesta janela, a curva de entradas e saídas aparece aqui."
+        />
+      ) : (
+        <div className="mt-2">
+          <GraficoSerie pontos={pontos} serie={serie} />
+        </div>
+      )}
+    </section>
+  );
+});
+
+/** Card interno de "saldo projetado" — destaque em vidro violeta. */
+function SaldoProjetado({ valor, entradas, saidas }: {
+  valor: number;
+  entradas: number;
+  saidas: number;
+}) {
+  return (
+    <div className="rounded-[16px] border border-[#7C3AED]/25 bg-gradient-to-br from-[#7C3AED]/20 to-sky-500/10 p-4">
+      <div className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--nx-accent-2)]">
+        <TrendingUp className="h-3.5 w-3.5" />
+        Saldo projetado (30 dias)
+      </div>
+      {/* O número é o saldo DO PERÍODO somado ao que vence (ou já venceu) nos
+          próximos 30 dias. O card mostra só as parcelas da projeção; o total
+          abaixo é esse saldo somado ao realizado. */}
+      <div
+        className={`fx-num mt-2 text-[24px] font-bold leading-none ${
+          valor < 0 ? 'text-[var(--danger)]' : 'text-[var(--nx-ink)]'
+        }`}
+      >
+        {formatBRL(valor)}
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--nx-ink-2)]">
+        <span title="Soma dos lançamentos PENDENTE do tipo RECEITA com vencimento nos próximos 30 dias (vencidos inclusos).">
+          A receber{' '}
+          <strong className="font-semibold text-[var(--nx-green)]">{formatBRL(entradas)}</strong>
+        </span>
+        <span title="Soma dos lançamentos PENDENTE do tipo DESPESA com vencimento nos próximos 30 dias (vencidos inclusos).">
+          A pagar{' '}
+          <strong className="font-semibold text-[var(--nx-amber)]">{formatBRL(saidas)}</strong>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Coluna 2 do grid principal: contas a receber/pagar em aberto (até +30 dias). */
+const ProjectionCard = memo(function ProjectionCard({
+  pendentes,
+  saldoProjetado,
+  projEntradas,
+  projSaidas,
+}: {
+  pendentes: Lancamento[];
+  saldoProjetado: number;
+  projEntradas: number;
+  projSaidas: number;
+}) {
+  return (
+    <section className="fx-card fx-in flex flex-col p-5" style={{ animationDelay: '300ms' }}>
+      {/* O recorte real é "em aberto até +30 dias", o que inclui o que JÁ está
+          vencido. Dizer "Próximos 30 dias" escondia as contas vencidas que
+          agora aparecem na lista. */}
+      <SectionTitle kicker="Em aberto • até 30 dias">Contas a receber / pagar</SectionTitle>
+
+      <div className="mt-4 flex-1 space-y-2.5">
+        <SaldoProjetado
+          valor={saldoProjetado}
+          entradas={projEntradas}
+          saidas={projSaidas}
+        />
+
+        {pendentes.length === 0 ? (
+          <EmptyState
+            className="mt-3"
+            icon={Clock3}
+            title="Nenhuma conta em aberto."
+            description="Não há lançamentos PENDENTE com vencimento nos próximos 30 dias nem em atraso."
+          />
+        ) : (
+          <ul className="mt-3 space-y-2.5">
+            {pendentes.map((p) => {
+              const entrada = p.tipo === 'RECEITA';
+              // "Vence" para o que ainda vai vencer; "Venceu em" para o que já
+              // passou — a palavra anterior deixava um item vencido exibido
+              // como "Vence 12/09", que parece futuro.
+              const atrasado = !!p.vencimento && diaLocal(new Date(p.vencimento)) < diaLocal(new Date());
+              return (
+                <li
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-[12px] border border-[var(--nx-border)] bg-[var(--nx-surface)] p-3 transition-colors hover:border-[#7C3AED]/30 hover:bg-[var(--nx-surface-2)]"
+                >
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                      entrada ? 'bg-emerald-500/12 text-[var(--nx-green)]' : 'bg-amber-500/12 text-[var(--nx-amber)]'
+                    }`}
+                  >
+                    {entrada ? (
+                      <ArrowUpRight className="h-4 w-4" />
+                    ) : (
+                      <ArrowDownRight className="h-4 w-4" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[12.5px] text-[var(--nx-ink)]">{p.descricao}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--nx-ink-3)]">
+                      <span>{atrasado ? 'Venceu em ' : 'Vence '}{formatDate(p.vencimento)}</span>
+                      {atrasado && (
+                        <span className="rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] text-[var(--danger)]">
+                          atrasado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={`fx-num shrink-0 text-[12.5px] font-semibold ${
+                      entrada ? 'text-[var(--nx-green)]' : 'text-[var(--nx-amber)]'
+                    }`}
+                  >
+                    {entrada ? '+' : '−'} {formatBRL(Number(p.valor))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+});
+
+/** Tabela de lançamentos pagos do período, com busca e filtro de tipo. */
+const LancamentosTable = memo(function LancamentosTable({
+  linhas,
+  busca,
+  onBusca,
+  rotuloTipo,
+}: {
+  linhas: Lancamento[];
+  busca: string;
+  onBusca: (v: string) => void;
+  rotuloTipo: string;
+}) {
+  return (
+    <section className="fx-card fx-in mt-5 overflow-hidden" style={{ animationDelay: '360ms' }}>
+      <div className="flex flex-col gap-3 border-b border-[var(--nx-border)] p-4 md:flex-row md:items-center md:justify-between md:p-5">
+        <SectionTitle kicker="Lançamentos com status PAGO">
+          {rotuloTipo} ({linhas.length})
+        </SectionTitle>
+
+        <div className="relative w-full md:w-[280px]">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nx-ink-3)]"
+            aria-hidden="true"
+          />
+          <input
+            value={busca}
+            onChange={(e) => onBusca(e.target.value)}
+            placeholder="Buscar descrição ou categoria"
+            aria-label="Buscar descrição ou categoria"
+            className="fx-field w-full pl-9"
+          />
+        </div>
+      </div>
+
+      {linhas.length === 0 ? (
+        <div className="p-5">
+          <EmptyState
+            icon={busca ? Search : Wallet}
+            title={busca ? 'Nenhum lançamento para esta busca.' : 'Nenhum lançamento pago no período.'}
+            description={
+              busca
+                ? 'Tente outro termo ou limpe o campo de busca.'
+                : 'A tabela lista os lançamentos com status PAGO dentro da janela selecionada.'
+            }
+          />
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto nx-scroll">
+            <table className="w-full min-w-[720px] text-left text-[13px]">
+              <thead className="bg-[var(--nx-surface-2)] text-[10.5px] uppercase tracking-[0.12em] text-[var(--nx-ink-3)]">
+                <tr>
+                  <th className="px-5 py-3 font-semibold">{traduzir('data', "Data")}</th>
+                  <th className="px-5 py-3 font-semibold">{traduzir('descricao', "Descrição")}</th>
+                  <th className="px-5 py-3 font-semibold">{traduzir('categoria', "Categoria")}</th>
+                  <th className="px-5 py-3 text-right font-semibold">{traduzir('valor', "Valor")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.05]">
+                {linhas.map((l) => {
+                  const entrada = l.tipo === 'RECEITA';
+                  return (
+                    <tr key={l.id} className="fx-row group">
+                      <td className="fx-num whitespace-nowrap px-5 py-3.5 text-[var(--nx-ink-2)]">
+                        {formatDate(l.createdAt)}
+                      </td>
+                      <td className="max-w-[320px] px-5 py-3.5">
+                        <span className="block truncate text-[var(--nx-ink)]">{l.descricao}</span>
+                        {l.centroCusto && (
+                          <span className="mt-0.5 block text-[11px] text-[var(--nx-ink-3)]">
+                            {l.centroCusto}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="rounded-full bg-[var(--nx-surface-2)] px-2.5 py-1 text-[11px] text-[var(--nx-ink)]/55">
+                          {l.categoria}
+                        </span>
+                      </td>
+                      <td
+                        className={`fx-num whitespace-nowrap px-5 py-3.5 text-right font-semibold ${
+                          entrada ? 'text-[var(--nx-green)]' : 'text-[var(--nx-amber)]'
+                        }`}
+                      >
+                        {entrada ? '+' : '−'} {formatBRL(Number(l.valor))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--nx-border)] bg-white/[0.015] px-4 py-3 text-[11.5px] text-[var(--nx-ink-3)] md:px-5">
+            <span>
+              {linhas.length} lançamento{linhas.length === 1 ? '' : 's'} ·{' '}
+              <span className="text-[var(--nx-green)]">
+                +{formatBRL(soma(linhas, 'RECEITA'))}
+              </span>{' '}
+              /{' '}
+              <span className="text-[var(--nx-amber)]">
+                −{formatBRL(soma(linhas, 'DESPESA'))}
+              </span>
+            </span>
+            <span>GET /fluxo-caixa + GET /financeiro</span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+});
+
+/** Soma os valores de um tipo — usado no rodapé da tabela. */
+function soma(linhas: Lancamento[], tipo: 'RECEITA' | 'DESPESA'): number {
+  return linhas
+    .filter((l) => l.tipo === tipo)
+    .reduce((acc, l) => acc + (Number(l.valor) || 0), 0);
+}
+
+/* ============================================================================
+   5. GRÁFICO SOB DEMANDA
+   `ssr: false` porque o Recharts mede o container no DOM: sem o browser não
+   há largura para desenhar. O `loading` mantém a altura reservada, então
+   trocar de período não causa salto de layout.
+   ========================================================================== */
+const GraficoSerie = dynamic(() => import('./FluxoAreaChart'), {
+  ssr: false,
+  loading: () => <div className="fx-skel h-[320px] w-full md:h-[340px]" />,
+});
+
+/* ============================================================================
+   6. PÁGINA
+   ========================================================================== */
+export default function FluxoCaixa() {
+  const router = useRouter();
+
+  const [periodo, setPeriodo] = useState<PeriodoKey>('30d');
+  const [tipo, setTipo] = useState<TipoFiltro>('todos');
+  const [busca, setBusca] = useState('');
+  const [dados, setDados] = useState<FluxoResposta | null>(null);
+  const [anterior, setAnterior] = useState<FluxoResposta | null>(null);
+  const [financeiro, setFinanceiro] = useState<FinanceiroResposta | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  /* --- Janelas: a atual e a imediatamente anterior, em datas locais --- */
+  const intervalo = useMemo(() => intervaloDoPreset(periodo, '', ''), [periodo]);
+  const janelaAnterior = useMemo(
+    () => periodoAnterior(intervalo.inicio, intervalo.fim),
+    [intervalo],
+  );
+
+  const params = useMemo(
+    () => ({
+      periodoInicio: comFuso(intervalo.inicio, '00:00'),
+      periodoFim: comFuso(intervalo.fim, '23:59'),
+    }),
+    [intervalo],
+  );
+  const paramsAnterior = useMemo(
+    () => ({
+      periodoInicio: comFuso(janelaAnterior.inicio, '00:00'),
+      periodoFim: comFuso(janelaAnterior.fim, '23:59'),
+    }),
+    [janelaAnterior],
+  );
+
+  /* --- Uma única função de carga; as 3 requisições saem em paralelo --- */
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [atual, prev, fin] = await Promise.all([
+        api.get<FluxoResposta>('/fluxo-caixa', { params }),
+        // O período anterior é o que dá base aos deltas: se ele falhar, a tela
+        // segue funcionando e mostra "sem base comparativa".
+        api
+          .get<FluxoResposta>('/fluxo-caixa', { params: paramsAnterior })
+          .catch(() => ({ data: null })),
+        api
+          .get<FinanceiroResposta>('/financeiro', { params })
+          .catch(() => ({ data: null })),
+      ]);
+      setDados(atual.data);
+      setAnterior(prev.data);
+      setFinanceiro(fin.data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Não foi possível carregar o fluxo de caixa.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [params, paramsAnterior]);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace('/');
+      return;
+    }
+    void carregar();
+  }, [router, carregar]);
+
+  /* --- Série filtrada pela janela (o backend já respeita o período; isto
+         é a rede de segurança para o dia virar por fuso) --- */
+  const serie = dados?.serie ?? [];
+  const pontos = useMemo<PontoGrafico[]>(
+    () =>
+      serie
+        .filter((p) => p.dia >= intervalo.inicio && p.dia <= intervalo.fim)
+        .map((p) => ({
+          dia: p.dia,
+          label: diaCurto(p.dia),
+          entradas: Number(p.entradas) || 0,
+          saidas: Number(p.saidas) || 0,
+        })),
+    [serie, intervalo],
+  );
+
+  /* --- Totais: `resumo` do backend é a fonte (mesma janela, já somado) --- */
+  const totals = useMemo(() => {
+    const resumo = dados?.resumo;
+    const entradas = Number(resumo?.totalEntradas) || 0;
+    const saidas = Number(resumo?.totalSaidas) || 0;
+    return { entradas, saidas, saldo: entradas - saidas };
+  }, [dados]);
+
+  const projecao = useMemo(() => {
+    const p = dados?.projecao30dias;
+    return {
+      entradas: Number(p?.entradas) || 0,
+      saidas: Number(p?.saidas) || 0,
+      saldoProjetado: Number(p?.saldoProjetado) || 0,
+    };
+  }, [dados]);
+
+  /* --- KPIs com variação real e sparkline vinda da própria série --- */
+  const kpis = useMemo<Kpi[]>(
+    () => [
+      {
+        id: 'entradas',
+        label: 'Entradas realizadas',
+        value: totals.entradas,
+        delta: deltaPct(totals.entradas, anterior?.resumo?.totalEntradas),
+        hint: 'Soma dos lançamentos com status PAGO e tipo RECEITA dentro da janela selecionada.',
+        tom: 'emerald',
+        icon: ArrowUpRight,
+        serie: pontos.map((p) => p.entradas),
+        bomQuando: 'sobe',
+      },
+      {
+        id: 'saidas',
+        label: 'Saídas realizadas',
+        value: totals.saidas,
+        delta: deltaPct(totals.saidas, anterior?.resumo?.totalSaidas),
+        hint: 'Soma dos lançamentos com status PAGO e tipo DESPESA dentro da janela selecionada.',
+        tom: 'amber',
+        icon: ArrowDownRight,
+        serie: pontos.map((p) => p.saidas),
+        bomQuando: 'desce',
+      },
+      {
+        id: 'saldo',
+        label: 'Saldo do período',
+        value: totals.saldo,
+        delta: deltaPct(totals.saldo, anterior?.resumo?.saldo),
+        hint: 'Entradas realizadas − Saídas realizadas no mesmo período. Fica vermelho quando negativo.',
+        tom: 'accent',
+        icon: Wallet,
+        serie: pontos.map((p) => p.entradas - p.saidas),
+        bomQuando: 'sobe',
+      },
+      {
+        id: 'projecao',
+        label: 'Projeção 30 dias',
+        value: projecao.saldoProjetado,
+        delta: null,
+        // A fórmula real: saldo realizado do PERÍODO escolhido + os PENDENTES
+        // que vencem (ou já venceram) nos próximos 30 dias. O texto anterior
+        // dizia "próximos 30 dias" sem dizer que o saldo do período entra na
+        // conta — dava para o gestor ler o número como se fosse só o futuro.
+        hint: 'Saldo realizado do período somado aos lançamentos PENDENTES que vencem nos próximos 30 dias, já vencidos inclusos. Não tem comparação temporal: um mesmo horizonte com base anterior não é comparável.',
+        tom: 'sky',
+        icon: TrendingUp,
+        serie: pontos.map((p) => p.entradas - p.saidas),
+        bomQuando: 'sobe',
+      },
+    ],
+    [totals, anterior, pontos, projecao.saldoProjetado],
+  );
+
+  /* --- Lançamentos: PAGO no período, com busca e tipo --- */
+  const lancamentos = useMemo<Lancamento[]>(
+    () => (financeiro?.lancamentos ?? []).filter((l) => l.status === 'PAGO'),
+    [financeiro],
+  );
+
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  // Debounce de 300ms: filtrar é local (barato), mas evitar re-render da
+  // tabela inteira a cada tecla ainda é o caminho mais barato.
+  useEffect(() => {
+    const t = window.setTimeout(() => setBuscaAplicada(busca), 300);
+    return () => window.clearTimeout(t);
+  }, [busca]);
+
+  const filtrados = useMemo<Lancamento[]>(() => {
+    const termo = buscaAplicada.trim().toLowerCase();
+    return lancamentos.filter((l) => {
+      if (tipo === 'receita' && l.tipo !== 'RECEITA') return false;
+      if (tipo === 'despesa' && l.tipo !== 'DESPESA') return false;
+      if (!termo) return true;
+      return `${l.descricao} ${l.categoria}`.toLowerCase().includes(termo);
+    });
+  }, [lancamentos, tipo, buscaAplicada]);
+
+  /* --- Contas a receber/pagar: PENDENTE com vencimento ATÉ +30 dias.
+         O backend usa `vencimento <= hoje+30` (sem `gte hoje`), ou seja, inclui
+         as JÁ VENCIDAS — o mesmo recorte de `GET /fluxo-caixa`. Aqui repetimos
+         a condição para que a lista da projeção bata com os números da projeção.
+         Sem isso a tela escondia justamente as contas vencidas, enquanto o
+         total da projeção (que vem do backend) já as contava. --- */
+  const pendentes = useMemo<Lancamento[]>(() => {
+    const limite = diaLocal(new Date(Date.now() + 30 * 86400000));
+    return (financeiro?.lancamentos ?? [])
+      .filter((l) => {
+        if (l.status !== 'PENDENTE' || !l.vencimento) return false;
+        const dia = diaLocal(new Date(l.vencimento));
+        // Só o limite superior: vencida entra, futura além de 30 dias não.
+        return dia <= limite;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.vencimento as string).getTime() -
+          new Date(b.vencimento as string).getTime(),
+      )
+      .slice(0, 6);
+  }, [financeiro]);
+
+  /* --- Rótulos derivados dos filtros (evita condicionais espalhados no JSX) --- */
+  const rotuloTipo = useMemo(
+    () => TIPOS.find((t) => t.key === tipo)?.label ?? 'Lançamentos',
+    [tipo],
+  );
+  const serieVisivel = useMemo<SerieVisivel>(
+    () => (tipo === 'receita' ? 'entradas' : tipo === 'despesa' ? 'saidas' : 'todas'),
+    [tipo],
+  );
+
+  const exportar = useCallback(() => {
+    baixarCsv(
+      ['Dia', 'Entradas', 'Saídas', 'Saldo do dia', 'Saldo acumulado'],
+      pontos.map((p) => {
+        const bruto = serie.find((s) => s.dia === p.dia);
+        return [
+          p.dia,
+          (Number(bruto?.entradas) || 0).toFixed(2),
+          (Number(bruto?.saidas) || 0).toFixed(2),
+          (Number(bruto?.saldoDia) || 0).toFixed(2),
+          (Number(bruto?.saldoAcumulado) || 0).toFixed(2),
+        ];
+      }),
+      `fluxo-de-caixa-${intervalo.inicio}_a_${intervalo.fim}.csv`,
+    );
+  }, [pontos, serie, intervalo]);
+
+  const onBusca = useCallback((v: string) => setBusca(v), []);
+
+  /* ======================================================================
+     7. RENDER
+     Hierarquia preservada do layout de referência:
+     header + 4 KPIs + gráfico(1.9fr)/projeção(1fr) + tabela.
+     ====================================================================== */
+  return (
+    <div className="fx-root">
+      <style>{fluxoCss}</style>
+
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-6 md:px-8 md:py-8">
+        <ModuleHeader
+          title="Fluxo de caixa"
+          kicker="Módulo Fluxo de Caixa · dados reais da empresa"
+          subtitle="Entradas e saídas realizadas (lançamentos pagos) no período, mais projeção dos pendentes com vencimento nos próximos 30 dias."
+          action={
+            loading ? null : (
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  className="flex flex-wrap items-center gap-1.5"
+                  role="group"
+                  aria-label={traduzir('periodo', "Período")}
+                >
+                  {PERIODOS.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      aria-pressed={periodo === p.key}
+                      onClick={() => setPeriodo(p.key)}
+                      className="fx-chip"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <select
+                    value={tipo}
+                    onChange={(e) => setTipo(e.target.value as TipoFiltro)}
+                    aria-label={traduzir('filtrar_por_tipo', "Filtrar por tipo")}
+                    className="fx-chip fx-field cursor-pointer pr-7"
+                  >
+                    {TIPOS.map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nx-ink-3)]"
+                    aria-hidden="true"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={exportar}
+                  disabled={pontos.length === 0}
+                  className="fx-chip fx-field inline-flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Exportar
+                </button>
+              </div>
+            )
+          }
+        />
+
+        {error && (
+          <div className="mb-4 flex items-start gap-2.5 rounded-[12px] border border-red-500/25 bg-red-500/10 px-4 py-3 text-[12.5px] text-red-200">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {loading ? (
+          <EsqueletoFluxo />
+        ) : (
+          <>
+            {/* Grade de KPIs — 1 / 2 / 4 colunas conforme a largura */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {kpis.map((kpi, i) => (
+                <KpiCard key={kpi.id} kpi={kpi} indice={i} />
+              ))}
+            </div>
+
+            {/* Gráfico 1.9fr + projeção 1fr */}
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.9fr_1fr]">
+              <ChartCard
+                pontos={pontos}
+                serie={serieVisivel}
+                rotuloTipo={rotuloTipo}
+              />
+              <ProjectionCard
+                pendentes={pendentes}
+                saldoProjetado={projecao.saldoProjetado}
+                projEntradas={projecao.entradas}
+                projSaidas={projecao.saidas}
+              />
+            </div>
+
+            <LancamentosTable
+              linhas={filtrados}
+              busca={busca}
+              onBusca={onBusca}
+              rotuloTipo={rotuloTipo}
+            />
+
+            <p className="mt-4 flex items-center gap-1.5 text-[11px] text-[var(--nx-ink)]/25">
+              <Info className="h-3.5 w-3.5" aria-hidden="true" />
+              Entradas e saídas consideram somente lançamentos com status PAGO. A projeção soma o
+              saldo do período com os PENDENTES que vencem nos próximos 30 dias — incluindo os
+              que já estão vencidos. Nenhum valor aqui é estimado.
+            </p>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+

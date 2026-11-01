@@ -1,0 +1,11 @@
+-- Adiciona COMPRA_PENDENTE ao enum TipoAlerta (Seção 29 — motor de
+-- automação passa a alertar compras paradas em SOLICITADA/PEDIDO).
+--
+-- Escrita à mão pelo mesmo motivo já documentado em DEBITO-TECNICO.md
+-- (itens 3 e 6): não há banco/rede neste ambiente para gerar isso via
+-- `prisma migrate dev`. ALTER TYPE ... ADD VALUE não pode rodar dentro
+-- de uma transação em versões antigas do Postgres (<12) nem junto com
+-- outros comandos na mesma transação em algumas versões — se a aplicação
+-- falhar por isso, rode este ALTER TYPE isoladamente antes de qualquer
+-- outra migração pendente.
+ALTER TYPE "TipoAlerta" ADD VALUE IF NOT EXISTS 'COMPRA_PENDENTE';

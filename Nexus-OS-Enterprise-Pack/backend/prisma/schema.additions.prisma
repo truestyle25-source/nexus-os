@@ -1,0 +1,57 @@
+// Mescle estes modelos no schema.prisma existente.
+// O modelo Empresa e o modelo Usuario são assumidos como existentes no Nexus OS.
+// Ajuste os nomes dos relacionamentos se o seu schema usar nomes diferentes.
+
+model NexusErpRecord {
+  id          String   @id @default(cuid())
+  empresaId   String
+  empresa     Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  module      String
+  title       String
+  status      String   @default("rascunho")
+  data        Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  approvals   NexusErpApproval[]
+  auditLogs   NexusErpAuditLog[]
+
+  @@index([empresaId, module, createdAt])
+  @@index([empresaId, status])
+  @@index([empresaId, title])
+}
+
+model NexusErpApproval {
+  id          String   @id @default(cuid())
+  empresaId   String
+  recordId    String
+  record      NexusErpRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  requestedBy String?
+  decidedBy   String?
+  status      String   @default("pendente")
+  comment     String?
+  createdAt   DateTime @default(now())
+  decidedAt   DateTime?
+
+  @@index([empresaId, status, createdAt])
+  @@index([recordId, status])
+}
+
+model NexusErpAuditLog {
+  id          String   @id @default(cuid())
+  empresaId   String
+  recordId    String?
+  record      NexusErpRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  actorId     String?
+  action      String
+  beforeData  Json?
+  afterData   Json?
+  createdAt   DateTime @default(now())
+
+  @@index([empresaId, createdAt])
+  @@index([recordId, createdAt])
+}
+
+// No modelo Empresa existente, adicione:
+// nexusErpRecords NexusErpRecord[]

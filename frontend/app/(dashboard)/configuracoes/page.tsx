@@ -1,0 +1,2856 @@
+'use client';
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { RefreshCw, X } from 'lucide-react';
+import api from '@/lib/api';
+import ModuleHeader from '@/components/ModuleHeader';
+import { definirIdioma, t as traduzir, tAba } from '@/lib/i18n';
+import PixSettingsTab from '@/components/PixSettingsTab';
+import { Badge, EmptyState, toneForStatus } from '@/components/ui';
+import { formatDate } from '@/lib/format';
+import {
+  CHAVE_PREFS as CHAVE_PREFS_COMPARTILHADA,
+  gravarPrefs as gravarPrefsCompartilhado,
+  lerPrefs as lerPrefsCompartilhado,
+  PREFS_PADRAO as PREFS_PADRAO_COMPARTILHADA,
+  normalizarPrefs,
+  type Prefs as PrefsCompartilhada,
+} from '@/lib/prefs';
+import {
+  APARENCIA_PADRAO,
+  CHAVE_APARENCIA,
+  COR_PRINCIPAL_POR_TEMA,
+  CORES_PRINCIPAIS,
+  salvarAparencia,
+  type Aparencia,
+} from '@/lib/theme';
+
+/**
+ * Configurações — estrutura do Layout Mestre (13 abas).
+ *
+ * Funcionais de verdade nesta fase: Idioma e Região e Aparência
+ * (persistência local por navegador), Empresa / Minha Conta / Usuários
+ * (dados reais da API), App & API (integrações e chaves reais) e
+ * PIX / Recebimentos (aba oficial do PIX no PDV).
+ *
+ * As abas de regras por módulo (Segurança, PDV, Estoque, Financeiro, RH,
+ * IA) mostram as regras previstas como estrutura — nada é aplicado sem
+ * backend real.
+ *
+ * Visual: tokens em :root, componentes Card/Row/BadgePrep extraídos e
+ * memoizados, tabs com role="tablist"/role="tab" + navegação por setas,
+ * toasts com barra de progresso e modais com focus trap + Esc.
+ */
+
+const TABS = [
+  'Idioma e Região',
+  'Empresa',
+  'Aparência',
+  'Minha Conta',
+  'Usuários e Permissões',
+  'Segurança',
+  'PDV',
+  'PIX / Recebimentos',
+  'Estoque',
+  'Financeiro',
+  'RH',
+  'IA',
+  'App & API',
+] as const;
+
+type Tab = (typeof TABS)[number];
+
+// `Prefs` e `PREFS_PADRAO` vêm de `@/lib/prefs` (fonte única compartilhada com
+// `lib/format`, que é quem realmente aplica moeda/data/hora no app inteiro).
+// Duplicar o tipo aqui era o que permitia a tela e o formatador divergirem.
+type Prefs = PrefsCompartilhada;
+const DEFAULT_PREFS = PREFS_PADRAO_COMPARTILHADA;
+
+// `Aparencia`, `APARENCIA_PADRAO` e `CORES_PRINCIPAIS` vêm de `@/lib/theme`
+// (fonte única, compartilhada com o ThemeScript/ThemeSync do layout raiz).
+
+const GRUPOS_IDIOMA: Array<{
+  label: string;
+  key: keyof Prefs;
+  opts: string[];
+}> = [
+  { label: 'Idioma', key: 'idioma', opts: ['pt-BR', 'en-US', 'es-ES'] },
+  { label: 'Moeda', key: 'moeda', opts: ['BRL', 'USD', 'EUR'] },
+  { label: 'Fuso horário', key: 'fuso', opts: ['America/Sao_Paulo'] },
+  {
+    label: 'Formato data',
+    key: 'formatoData',
+    opts: ['DD/MM/AAAA', 'MM/DD/AAAA', 'AAAA-MM-DD'],
+  },
+  { label: 'Formato hora', key: 'formatoHora', opts: ['24h', '12h'] },
+];
+
+/** Regras previstas (Layout Mestre) — exibidas como estrutura, sem ativar nada. */
+const REGRAS_MODULO: Record<string, string[]> = {
+  Segurança: [
+    'Sessão JWT com expiração e revogação de token',
+    'Senhas com hash bcrypt',
+    'Rate limit em login e recuperação de senha',
+    'Chaves de API nunca no frontend',
+  ],
+  Estoque: [
+    'Entrada/saída exige motivo',
+    'Permitir estoque negativo',
+    'Divergência máxima permitida (%)',
+    'Alerta em % do mínimo',
+    'Validade / lote obrigatório (perecíveis)',
+    'Custo médio automático',
+    'Fator conversão (CX/PCT → UN)',
+  ],
+  Financeiro: [
+    'Formas de pagamento com taxa e prazo de compensação',
+    'Juros e multa por atraso',
+    'Centro de custo obrigatório em despesas',
+    'Aprovação para despesas acima de um limite',
+    'Vencimento padrão (dias)',
+  ],
+  RH: [
+    'Advertência → Suspensão → Justa causa (fluxo CLT)',
+    'ID Ponto vinculado ao funcionário',
+    'Motivo obrigatório em advertências',
+    'Suspensão máxima de 30 dias (Art. 474)',
+  ],
+  IA: [
+    'IA respeita as permissões do usuário',
+    'IA usa apenas dados reais da empresa',
+    'Interações registradas com origem IA',
+  ],
+};
+
+/** Escopos oferecidos na criação de chave da API pública (padrão da casa). */
+const SCOPES_API = ['produtos:leitura', 'estoque:leitura', 'vendas:leitura', 'clientes:leitura'];
+
+/**
+ * Regras que o BACKEND já aplica de forma incondicional — não são
+ * preferência, é garantia. Mostradas como estado factual (sem switch),
+ * porque ligar/desligar o switch seria mentir: o backend não consulta
+ * nada. A coluna `fonte` diz exatamente onde a regra é imposta.
+ */
+const REGRAS_PDV_SERVIDOR: Array<{ label: string; fonte: string }> = [
+  {
+    label: 'Venda bloqueada quando o estoque é insuficiente',
+    fonte: 'estoque.service.ts — lança "Estoque insuficiente" e a movimentação é atômica',
+  },
+  {
+    label: 'Estorno de estoque no cancelamento da venda',
+    fonte: 'vendas.routes.ts — estorno automático junto do financeiro',
+  },
+  {
+    label: 'Estorno devolve o dinheiro à gaveta do turno',
+    fonte: 'vendas.routes.ts — só em venda finalizada em dinheiro',
+  },
+  {
+    label: 'Sangria nunca pode passar do dinheiro em gaveta',
+    fonte: 'pdv.routes.ts — 422 "supera o dinheiro em gaveta"',
+  },
+  {
+    label: 'Chave PIX validada por tipo no ato da cobrança',
+    fonte: 'pix.routes.ts — CPF/CNPJ/telefone/e-mail/aleatória conferidos',
+  },
+];
+
+/**
+ * Preferências que valem para ESTE navegador e que o PDV respeita.
+ * São salvas de verdade (chave `nexus_pdv` no localStorage) — antes o
+ * texto prometia isso e o código só fazia setState, perdendo tudo ao
+ * recarregar a página.
+ */
+const PDV_TOGGLES: Array<{ key: string; label: string; hint?: string }> = [
+  { key: 'descontoFechamento', label: 'Permitir desconto no fechamento', hint: 'motivo obrigatório' },
+  { key: 'bloquearSemEstoque', label: 'Avisar antes de finalizar venda sem estoque' },
+  { key: 'estornoAutomatico', label: 'Confirmar estorno de estoque ao cancelar' },
+  { key: 'imprimirAutomatico', label: 'Imprimir comprovante automaticamente' },
+  { key: 'abrirGavetaDinheiro', label: 'Abrir gaveta ao finalizar venda em dinheiro' },
+  { key: 'trocoAutomatico', label: 'Troco automático' },
+  { key: 'cancelamentoRestrito', label: 'Cancelamento restrito a supervisores' },
+  { key: 'multiplosCartoes', label: 'Permitir múltiplos cartões na mesma venda' },
+];
+
+/** Estado inicial dos toggles do PDV (também é o valor de "restaurar"). */
+const PDV_PADRAO: Record<string, boolean> = {
+  descontoFechamento: true,
+  bloquearSemEstoque: true,
+  estornoAutomatico: true,
+  imprimirAutomatico: false,
+  abrirGavetaDinheiro: true,
+  trocoAutomatico: true,
+  cancelamentoRestrito: true,
+  multiplosCartoes: true,
+};
+
+/**
+ * Filial da empresa. `GET /empresas` já vem com `include: { filiais: true }`,
+ * então a lista vem no mesmo request do cadastro — não é preciso endpoint
+ * separado para MOSTRAR as filiais.
+ */
+interface Filial {
+  id: string;
+  nome: string;
+  cnpj?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  status?: string;
+}
+
+interface Empresa {
+  id: string;
+  nome: string;
+  razaoSocial?: string | null;
+  cnpj?: string | null;
+  inscricaoEstadual?: string | null;
+  cep?: string | null;
+  endereco?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  responsavelCpf?: string | null;
+  responsavelRg?: string | null;
+  status?: string;
+  /** Data de cadastro devolvida pela API. */
+  createdAt?: string | null;
+  /** `GET /empresas` inclui as filiais (`include: { filiais: true }`). */
+  filiais?: Filial[];
+}
+
+interface UsuarioResumo {
+  id: string;
+  nome?: string;
+  email: string;
+  status?: string;
+  /** `GET /usuarios` devolve a data de criação do usuário. */
+  createdAt?: string | null;
+}
+
+interface IntegracaoCentral {
+  resumo?: { conectadas?: number; comErro?: number; naoConfiguradas?: number };
+  itens?: Array<{
+    categoria: string;
+    nome: string;
+    status: string;
+    ultimaSincronizacao?: string | null;
+  }>;
+}
+
+interface ChaveApi {
+  id: string;
+  nome: string;
+  prefixo: string;
+  escopos: string[];
+  status: string;
+}
+
+/**
+ * Resumo da chave PIX REAL da empresa.
+ *
+ * Antes existia aqui uma lista de três chaves inventadas (PIX_KEYS_INICIAIS)
+ * e um botão "Adicionar chave" que só mexia no estado da tela — nada ia
+ * para o servidor e a empresa nunca via aqueles dados. A chave PIX de
+ * verdade vive em `PixSettings` (criptografada) e é editada no
+ * `PixSettingsTab` acima; aqui só mostramos o que está gravado.
+ */
+interface ResumoPix {
+  enabled: boolean;
+  keyType: string;
+  pixKeyMasked: string;
+  merchantName: string;
+  merchantCity: string;
+  document: string;
+}
+
+interface ToastItem {
+  id: string;
+  type: 'success' | 'warning' | 'error';
+  message: string;
+}
+
+type ModalKey =
+  | 'modalUsuario'
+  | 'modalApiKey'
+  | 'modalEmpresa'
+  | 'modalFilial'
+  | 'modalRegra'
+  | 'modalExportLGPD';
+
+const MODAIS_FECHADOS: Record<ModalKey, boolean> = {
+  modalUsuario: false,
+  modalApiKey: false,
+  modalEmpresa: false,
+  modalFilial: false,
+  modalRegra: false,
+  modalExportLGPD: false,
+};
+
+/**
+ * Campos do formulário de filial — espelham o schema de `POST /filiais`.
+ *
+ * Só `nome` é obrigatório (`z.string().min(2)` no servidor); os outros três
+ * são opcionais e podem ir vazios. `empresaId` NÃO está aqui: sai do token,
+ * e a tela usa `empresa.id` — mandar id digitado seria permitir tentar criar
+ * filial em outra empresa (o servidor recusa com 403, mas nem precisa chegar lá).
+ */
+type FormFilial = { nome: string; cnpj: string; cidade: string; estado: string };
+
+const FORM_FILIAL_VAZIO: FormFilial = { nome: '', cnpj: '', cidade: '', estado: '' };
+
+/** id estável para aria-controls/aria-labelledby das abas. */
+function slugTab(valor: string): string {
+  return valor
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/** Campos editáveis do cadastro da empresa (espelham o schema do backend). */
+type FormEmpresa = {
+  nome: string;
+  razaoSocial: string;
+  cnpj: string;
+  inscricaoEstadual: string;
+  responsavelCpf: string;
+  responsavelRg: string;
+  cep: string;
+  endereco: string;
+  cidade: string;
+  estado: string;
+};
+
+const FORM_EMPRESA_VAZIO: FormEmpresa = {
+  nome: '',
+  razaoSocial: '',
+  cnpj: '',
+  inscricaoEstadual: '',
+  responsavelCpf: '',
+  responsavelRg: '',
+  cep: '',
+  endereco: '',
+  cidade: '',
+  estado: '',
+};
+
+/** Converte o registro da API no formulário (null -> string vazio). */
+function empresaParaFormulario(e: Empresa): FormEmpresa {
+  return {
+    nome: e.nome ?? '',
+    razaoSocial: e.razaoSocial ?? '',
+    cnpj: e.cnpj ?? '',
+    inscricaoEstadual: e.inscricaoEstadual ?? '',
+    responsavelCpf: e.responsavelCpf ?? '',
+    responsavelRg: e.responsavelRg ?? '',
+    cep: e.cep ?? '',
+    endereco: e.endereco ?? '',
+    cidade: e.cidade ?? '',
+    estado: e.estado ?? '',
+  };
+}
+
+/* --------------------------------------------------------------------------
+ * Componentes base (extraídos e memoizados — requisito de performance)
+ * -------------------------------------------------------------------------- */
+
+/** Card do Layout Mestre: sombra suave, hover de borda e blur de fundo. */
+const Card = React.memo(function Card({
+  children,
+  className = '',
+  span = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  span?: boolean;
+}) {
+  return (
+    <div
+      className={`${span ? 'lg:col-span-2 ' : ''}nx-card bg-[var(--card)] border border-[var(--border)] rounded-[16px] p-5 shadow-[0_8px_32px_rgba(0,0,0,0.25)] hover:border-[#3a3a6a] backdrop-blur-sm transition-all duration-200 ${className}`}
+    >
+      {children}
+    </div>
+  );
+});
+
+/** Cabeçalho padronizado do card (kicker 10px + título + ações à direita). */
+function CardHead({
+  kicker,
+  title,
+  right,
+  badge,
+}: {
+  kicker?: string;
+  title?: string;
+  right?: React.ReactNode;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div className="min-w-0">
+        {kicker && (
+          <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold">
+            {kicker}
+          </div>
+        )}
+        {title && <h3 className="text-[15px] font-semibold text-white mt-1">{title}</h3>}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {badge}
+        {right}
+      </div>
+    </div>
+  );
+}
+
+/** Linha interna do card: hover com borda esquerda no accent do mestre. */
+const Row = React.memo(function Row({
+  label,
+  value,
+  badge,
+  hint,
+  onClick,
+}: {
+  label: string;
+  value?: React.ReactNode;
+  badge?: React.ReactNode;
+  hint?: string;
+  onClick?: () => void;
+}) {
+  const base =
+    'nx-row group w-full bg-[var(--card2)] border border-[var(--border)] rounded-xl px-4 py-[14px] flex justify-between items-center gap-3 hover:bg-[var(--card)] hover:border-l-2 hover:border-l-[var(--primary)] transition-all duration-150';
+  const conteudo = (
+    <>
+      <span className="min-w-0">
+        <span className="block text-[13px] text-[var(--muted)] group-hover:text-white/85 transition-colors">
+          {label}
+        </span>
+        {hint && (
+          <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mt-1">
+            {hint}
+          </span>
+        )}
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        {value !== undefined && (
+          <span className="text-[13px] font-bold text-white text-right truncate max-w-[280px]">
+            {value}
+          </span>
+        )}
+        {badge}
+      </span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`${base} text-left cursor-pointer`}>
+        {conteudo}
+      </button>
+    );
+  }
+  return <div className={`${base} cursor-default`}>{conteudo}</div>;
+});
+
+/** Selo "em preparação" — estrutura pronta, sem backend ainda. */
+const BadgePrep = React.memo(function BadgePrep() {
+  return (
+    <span className="bg-[var(--card2)] border border-dashed border-[var(--border2)] text-[var(--muted)] rounded-lg px-2.5 py-1 text-[10px] uppercase tracking-[0.6px] font-semibold inline-flex items-center gap-1">
+      <span aria-hidden="true">⏳</span> em preparação
+    </span>
+  );
+});
+
+/** Switch acessível usado nas regras de PDV. */
+const Toggle = React.memo(function Toggle({
+  ativo,
+  label,
+  onChange,
+}: {
+  ativo: boolean;
+  label: string;
+  onChange: (valor: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ativo}
+      aria-label={label}
+      onClick={() => onChange(!ativo)}
+      className={`relative w-[42px] h-[22px] rounded-full border transition-colors duration-200 shrink-0 ${
+        ativo ? 'bg-[var(--primary)]/70 border-[var(--primary)]' : 'bg-[var(--card2)] border-[var(--border)]'
+      }`}
+    >
+      <span
+        className={`absolute top-[2px] h-[16px] w-[16px] rounded-full bg-white transition-all duration-200 ${
+          ativo ? 'left-[22px]' : 'left-[3px]'
+        }`}
+      />
+    </button>
+  );
+});
+
+/** Modal do mestre: backdrop com blur, focus trap, Esc e scroll interno. */
+function Modal({
+  open,
+  kicker,
+  title,
+  onClose,
+  children,
+  footer,
+  width = 'max-w-[520px]',
+}: {
+  open: boolean;
+  kicker?: string;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  width?: string;
+}) {
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // `onClose` chega como arrow inline do pai (`onClose={() => closeModal('x')}`),
+  // ou seja, uma função nova a cada render. Se o efeito dependesse dela, ele
+  // re-executaria a CADA TECLA e a linha `focaveis()[0]?.focus()` roubaria o
+  // foco de volta para o primeiro campo — exatamente o sintoma "o campo aceita
+  // a primeira letra e trava". Por isso o callback vai para um ref e o efeito
+  // depende só de `open`.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const node = ref.current;
+    if (!node) return;
+
+    const focaveis = () =>
+      Array.from(
+        node.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+    // Foca o primeiro campo UMA vez, quando o modal abre.
+    focaveis()[0]?.focus();
+
+    const aoTeclar = (evento: KeyboardEvent) => {
+      if (evento.key === 'Escape') {
+        evento.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (evento.key !== 'Tab') return;
+      const itens = focaveis();
+      if (itens.length === 0) return;
+      const primeiro = itens[0];
+      const ultimo = itens[itens.length - 1];
+      if (evento.shiftKey && document.activeElement === primeiro) {
+        evento.preventDefault();
+        ultimo.focus();
+      } else if (!evento.shiftKey && document.activeElement === ultimo) {
+        evento.preventDefault();
+        primeiro.focus();
+      }
+    };
+
+    node.addEventListener('keydown', aoTeclar);
+    return () => node.removeEventListener('keydown', aoTeclar);
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`animate-modal-in relative w-full ${width} bg-[var(--card)] border border-[var(--border)] rounded-[20px] p-6 md:p-7 shadow-[0_24px_70px_rgba(0,0,0,0.6)] max-h-[88vh] overflow-y-auto nx-scroll`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {kicker && (
+              <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold">
+                {kicker}
+              </div>
+            )}
+            <h3 className="text-[18px] font-bold text-white mt-1">{title}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={traduzir('fechar', "Fechar")}
+            className="w-8 h-8 rounded-[10px] border border-[var(--border)] text-white/50 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center justify-center shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="mt-5">{children}</div>
+        {footer && <div className="mt-6 flex flex-wrap justify-end gap-2">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+const TOAST_STYLE: Record<ToastItem['type'], { border: string; bar: string; icone: string }> = {
+  success: { border: 'border-[#22c55e]/30', bar: 'bg-[#22c55e]', icone: '✓' },
+  warning: { border: 'border-[#f59e0b]/30', bar: 'bg-[#f59e0b]', icone: '!' },
+  error: { border: 'border-[#ef4444]/35', bar: 'bg-[#ef4444]', icone: '×' },
+};
+
+/** Pilha de toasts com barra de progresso (2.8s) e slide-in. */
+const Toasts = React.memo(function Toasts({
+  toasts,
+  onRemove,
+}: {
+  toasts: ToastItem[];
+  onRemove: (id: string) => void;
+}) {
+  if (toasts.length === 0) return null;
+  return (
+    <div
+      className="fixed bottom-5 right-5 z-[60] flex w-[320px] flex-col gap-2"
+      role="status"
+      aria-live="polite"
+    >
+      {toasts.map((toast) => {
+        const estilo = TOAST_STYLE[toast.type];
+        return (
+          <button
+            key={toast.id}
+            type="button"
+            onClick={() => onRemove(toast.id)}
+            className={`animate-toast-slide relative overflow-hidden text-left rounded-[14px] border ${estilo.border} bg-[var(--card)] shadow-[0_16px_40px_rgba(0,0,0,0.55)] px-4 py-3`}
+          >
+            <span className="flex items-start gap-2.5">
+              <span className="text-[12px] font-bold text-white/70 mt-[1px]" aria-hidden="true">
+                {estilo.icone}
+              </span>
+              <span className="text-[12.5px] text-white/90 leading-snug flex-1">
+                {toast.message}
+              </span>
+            </span>
+            <span className={`absolute bottom-0 left-0 h-[3px] animate-toast-progress ${estilo.bar}`} />
+          </button>
+        );
+      })}
+    </div>
+  );
+});
+
+export default function ConfiguracoesPage() {
+  const [tab, setTab] = useState<Tab>('Idioma e Região');
+
+  /**
+   * Contador de render dos rotulos: ao trocar Idioma/Apareencia em outra tela,
+   * o evento `nexus:prefs`|`nexus:aparencia`|'storage' chega aqui e o titulo
+   * das abas e o cabecalho sao redesenhados na hora.
+   */
+  const [, forcarRender] = useState(0);
+  useEffect(() => {
+    const aoMudar = () => forcarRender((n) => n + 1);
+    window.addEventListener('nexus:prefs', aoMudar);
+    window.addEventListener('nexus:aparencia', aoMudar);
+    window.addEventListener('storage', aoMudar);
+    return () => {
+      window.removeEventListener('nexus:prefs', aoMudar);
+      window.removeEventListener('nexus:aparencia', aoMudar);
+      window.removeEventListener('storage', aoMudar);
+    };
+  }, []);
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [aparencia, setAparencia] = useState<Aparencia>(APARENCIA_PADRAO);
+  const [empresa, setEmpresa] = useState<Empresa | null>(null);
+  const [usuarios, setUsuarios] = useState<UsuarioResumo[]>([]);
+  const [integracoes, setIntegracoes] = useState<IntegracaoCentral | null>(null);
+  const [chaves, setChaves] = useState<ChaveApi[]>([]);
+  const [usuarioAtual, setUsuarioAtual] = useState<{ nome?: string; email?: string; id?: string }>({});
+  const [loading, setLoading] = useState(true);
+  const [atualizando, setAtualizando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  /**
+   * Erro por seção. Antes o único `erro` só aparecia se as QUATRO chamadas
+   * falhasse — se só o endpoint de chaves devolvesse 403, a tela dizia
+   * "nenhuma chave criada" em vez de "você não pode ver as chaves".
+   */
+  const [erros, setErros] = useState<Record<string, string>>({});
+
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [modais, setModais] = useState<Record<ModalKey, boolean>>(MODAIS_FECHADOS);
+
+  // Chave PIX real da empresa (montada pelo PixSettingsTab, nunca inventada).
+  const [pix, setPix] = useState<ResumoPix | null>(null);
+
+  // ---------------------------------------------------------------------------
+  //  Minha conta — edição do próprio perfil
+  //
+  //  A aba era só LEITURA: nome e e-mail apareciam em `Row`, sem como alterar.
+  //  `editandoConta` controla a troca entre visualização e formulário, para
+  //  que os campos não fiquem sempre montados à toa (e o foco não salte para
+  //  eles ao trocar de aba).
+  // ---------------------------------------------------------------------------
+  const [editandoConta, setEditandoConta] = useState(false);
+  const [nomeConta, setNomeConta] = useState('');
+  const [emailConta, setEmailConta] = useState('');
+  const [salvandoConta, setSalvandoConta] = useState(false);
+  const [erroConta, setErroConta] = useState<string | null>(null);
+  // Senha: nunca volta para a tela. Guardamos só o erro por campo.
+  const [senhaAtual, setSenhaAtual] = useState('');
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarSenha, setConfirmarSenha] = useState('');
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [erroSenha, setErroSenha] = useState<string | null>(null);
+
+  // Preferências do PDV — persistidas de verdade na chave `nexus_pdv`.
+  const [pdvToggles, setPdvToggles] = useState<Record<string, boolean>>(PDV_PADRAO);
+
+  const [regraSelecionada, setRegraSelecionada] = useState<string>('');
+  const [novoUsuario, setNovoUsuario] = useState({
+    nome: '',
+    email: '',
+    senha: '',
+    cargo: 'Operador',
+  });
+  const [novaApiKey, setNovaApiKey] = useState({ nome: '', escopos: 'vendas:leitura' });
+  /**
+   * Segredo da chave recém-criada, exibido UMA única vez.
+   *
+   * O backend devolve `chave` só nesta resposta — o banco guarda apenas o hash.
+   * Esta tela recebia o valor e o DESCARTAVA (`data.chave` só era usado numa
+   * condição de ternário), enquanto o toast dizia "copie agora: ela não é
+   * exibida novamente". Não havia nada para copiar: a chave nascia, o gestor
+   * via "sucesso", e nunca mais podia usá-la. Perder a chave exigia criar outra
+   * e deixar a órfã ativa no servidor.
+   *
+   * O mesmo modal que já existia passa a mostrar o segredo com botão de copiar —
+   * é o que a Central de Integrações já faz corretamente.
+   */
+  const [chaveGerada, setChaveGerada] = useState<string | null>(null);
+
+  // Formulário de edição do cadastro da empresa.
+  const [formEmpresa, setFormEmpresa] = useState<FormEmpresa>(FORM_EMPRESA_VAZIO);
+
+  // Formulário de filial — `salvandoFilial`/`erroFilial` separados do `erro`
+  // da empresa pelo mesmo motivo de `ajusteError`/`transferError` no Estoque:
+  // com um erro único, a falha da filial apareceria no cadastro da matriz e o
+  // gestor leria "nome inválido" no lugar errado.
+  const [formFilial, setFormFilial] = useState<FormFilial>(FORM_FILIAL_VAZIO);
+  const [salvandoFilial, setSalvandoFilial] = useState(false);
+  const [erroFilial, setErroFilial] = useState<string | null>(null);
+
+  // Filtros das listas (usados nos useMemo abaixo).
+  const [buscaUsuario, setBuscaUsuario] = useState('');
+  const [buscaIntegracao, setBuscaIntegracao] = useState('');
+  const [filtroChave, setFiltroChave] = useState('TODAS');
+
+  const [salvandoUsuario, setSalvandoUsuario] = useState(false);
+  const [salvandoChave, setSalvandoChave] = useState(false);
+  const [salvandoEmpresa, setSalvandoEmpresa] = useState(false);
+  const [exportando, setExportando] = useState(false);
+
+  /* ----------------------------- feedback ----------------------------- */
+
+  const addToast = useCallback((message: string, type: ToastItem['type'] = 'success') => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 2800);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const openModal = useCallback((modalKey: ModalKey) => {
+    setModais((prev) => ({ ...prev, [modalKey]: true }));
+  }, []);
+
+  const closeModal = useCallback((modalKey: ModalKey) => {
+    setModais((prev) => ({ ...prev, [modalKey]: false }));
+  }, []);
+
+  const fecharTodosModais = useCallback(() => {
+    setModais(MODAIS_FECHADOS);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') fecharTodosModais();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fecharTodosModais]);
+
+  /* --------------------- navegação das abas por teclado --------------------- */
+
+  const handleTablistKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const currentIndex = TABS.indexOf(tab);
+      if (currentIndex === -1) return;
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setTab(TABS[(currentIndex + 1) % TABS.length]);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setTab(TABS[(currentIndex - 1 + TABS.length) % TABS.length]);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        setTab(TABS[0]);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        setTab(TABS[TABS.length - 1]);
+      }
+    },
+    [tab],
+  );
+
+  /* ----------------------------- preferências ----------------------------- */
+
+  const CHAVE_PDV = 'nexus_pdv';
+
+  const gravarPrefs = useCallback((novas: Prefs) => {
+    // `gravarPrefs` (lib/prefs) grava no localStorage E atualiza o cache
+    // lido por `lib/format`. Sem isso, trocar "Moeda" na tela não mudaria
+    // nenhum valor até recarregar a página.
+    gravarPrefsCompartilhado(novas);
+  }, []);
+
+  const salvarPrefs = useCallback(
+    (novos: Partial<Prefs>) => {
+      setPrefs((atual) => {
+        const merged = { ...atual, ...novos };
+        gravarPrefs(merged);
+        return merged;
+      });
+    },
+    [gravarPrefs],
+  );
+
+  /**
+   * Grava a aparência e a APLICA no documento inteiro (não só nesta tela).
+   * `salvarAparencia` de `@/lib/theme` escreve no localStorage, escreve o
+   * `data-theme`/`--nx-accent` no <html> e avisa o ThemeSync do layout raiz.
+   */
+  const mudarAparencia = useCallback((novos: Partial<Aparencia>) => {
+    setAparencia((atual) => {
+      const merged = { ...atual, ...novos };
+      salvarAparencia(merged);
+      return merged;
+    });
+  }, []);
+
+  /** Alterna um switch do PDV e persiste — a chave `nexus_pdv` existe de fato. */
+  const togglePdv = useCallback((key: string, valor: boolean) => {
+    setPdvToggles((prev) => {
+      const merged = { ...prev, [key]: valor };
+      try {
+        localStorage.setItem(CHAVE_PDV, JSON.stringify(merged));
+      } catch {
+        /* sem storage: mantém só em memória */
+      }
+      return merged;
+    });
+  }, []);
+
+  const restaurarPdv = useCallback(() => {
+    setPdvToggles(PDV_PADRAO);
+    try {
+      localStorage.removeItem(CHAVE_PDV);
+    } catch {
+      /* ignora */
+    }
+  }, []);
+
+  const abrirRegra = useCallback(
+    (regra: string) => {
+      setRegraSelecionada(regra);
+      openModal('modalRegra');
+    },
+    [openModal],
+  );
+
+  /* -------------------------------- dados -------------------------------- */
+
+  /**
+   * Erro legível de uma chamada: preserva a mensagem que o backend devolveu
+   * (ex.: "Permissão negada") em vez de um "Erro HTTP 403" genérico.
+   */
+  const mensagemDe = (e: unknown, padrao: string) =>
+    e instanceof Error && e.message ? e.message : padrao;
+
+  const carregarUsuarios = useCallback(async () => {
+    try {
+      const { data } = await api.get<UsuarioResumo[]>('/usuarios');
+      setUsuarios(data ?? []);
+      setErros((atual) => ({ ...atual, usuarios: '' }));
+    } catch (e) {
+      setErros((atual) => ({ ...atual, usuarios: mensagemDe(e, 'Falha ao carregar usuários.') }));
+    }
+  }, []);
+
+  const carregarChaves = useCallback(async () => {
+    try {
+      const { data } = await api.get<ChaveApi[]>('/api-publica/chaves');
+      setChaves(data ?? []);
+      setErros((atual) => ({ ...atual, chaves: '' }));
+    } catch (e) {
+      setErros((atual) => ({ ...atual, chaves: mensagemDe(e, 'Falha ao carregar as chaves.') }));
+    }
+  }, []);
+
+  /**
+   * Carrega tudo que a tela mostra. Cada bloco é independente: um 403 nas
+   * chaves de API não pode impedir a empresa/usuários de aparecerem, e cada
+   * falha vira uma mensagem NA SUA seção em vez de um estado vazio que
+   * finge "não há nada cadastrado".
+   */
+  const carregarTudo = useCallback(async (silencioso = false) => {
+    if (!silencioso) setAtualizando(true);
+
+    const [rEmp, rUsu, rInt, rChv] = await Promise.allSettled([
+      api.get<Empresa[]>('/empresas'),
+      api.get<UsuarioResumo[]>('/usuarios'),
+      // ATENÇÃO: antes era `/integracoes/central`, que responde
+      // { pdv, ponto, gemini, apiPublica } — um formato diferente. A tela lia
+      // `resumo`/`itens`, que só existem em `/integracoes`, então a lista de
+      // integrações aparecia SEMPRE vazia mesmo havendo integrações.
+      api.get<IntegracaoCentral>('/integracoes'),
+      api.get<ChaveApi[]>('/api-publica/chaves'),
+    ]);
+
+    const proximosErros: Record<string, string> = {};
+
+    if (rEmp.status === 'fulfilled') {
+      setEmpresa(rEmp.value.data?.[0] ?? null);
+    } else {
+      proximosErros.empresa = mensagemDe(rEmp.reason, 'Falha ao carregar a empresa.');
+    }
+
+    if (rUsu.status === 'fulfilled') {
+      setUsuarios(rUsu.value.data ?? []);
+    } else {
+      proximosErros.usuarios = mensagemDe(rUsu.reason, 'Falha ao carregar usuários.');
+    }
+
+    if (rInt.status === 'fulfilled') {
+      setIntegracoes(rInt.value.data ?? null);
+    } else {
+      proximosErros.integracoes = mensagemDe(rInt.reason, 'Falha ao carregar integrações.');
+    }
+
+    if (rChv.status === 'fulfilled') {
+      setChaves(rChv.value.data ?? []);
+    } else {
+      proximosErros.chaves = mensagemDe(rChv.reason, 'Falha ao carregar as chaves de API.');
+    }
+
+    setErros(proximosErros);
+    setAtualizando(false);
+  }, []);
+
+  // Define o idioma ANTES de qualquer rotulo ser desenhado nesta tela.
+  useEffect(() => {
+    definirIdioma(lerPrefsCompartilhado().idioma);
+  }, []);
+
+  // Carregamento inicial: lê o que está salvo no navegador e busca a API.
+  useEffect(() => {
+    try {
+      // Passa por `normalizarPrefs`: storage corrompido ou de outra versão
+      // cai no padrão em vez de quebrar a tela inteira.
+      setPrefs(normalizarPrefs(JSON.parse(localStorage.getItem(CHAVE_PREFS_COMPARTILHADA) || 'null')));
+      const rawAparencia = localStorage.getItem(CHAVE_APARENCIA);
+      if (rawAparencia) setAparencia({ ...APARENCIA_PADRAO, ...JSON.parse(rawAparencia) });
+      const rawPdv = localStorage.getItem(CHAVE_PDV);
+      if (rawPdv) setPdvToggles({ ...PDV_PADRAO, ...JSON.parse(rawPdv) });
+      const rawUser = localStorage.getItem('nexus_user');
+      if (rawUser) setUsuarioAtual(JSON.parse(rawUser) || {});
+    } catch {
+      /* preferência inválida: usa o padrão, sem quebrar a tela */
+    }
+
+    let ativo = true;
+    carregarTudo().finally(() => {
+      if (ativo) setLoading(false);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [carregarTudo]);
+
+  /** Recarrega sob demanda (botão "Atualizar") e avisa o usuário. */
+  const atualizarDados = useCallback(async () => {
+    await carregarTudo();
+    const faltou = Object.values(erros).filter(Boolean);
+    if (faltou.length === 0) {
+      addToast('Dados atualizados.', 'success');
+    } else {
+      addToast('Atualizado, mas alguma seção não respondeu. Veja os avisos.', 'warning');
+    }
+  }, [addToast, carregarTudo, erros]);
+
+  /** Abre o modal de edição já preenchido com os dados atuais da empresa. */
+  const abrirEdicaoEmpresa = useCallback(() => {
+    if (!empresa) return;
+    setFormEmpresa(empresaParaFormulario(empresa));
+    setErro(null);
+    openModal('modalEmpresa');
+  }, [empresa, openModal]);
+
+  const exportarLGPD = useCallback(async () => {
+    setExportando(true);
+    try {
+      const { data } = await api.get<Record<string, unknown>>('/lgpd/minha-conta/exportar');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'nexus-meus-dados.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revogar DEPOIS do clique, nunca no mesmo tique: o navegador ainda está
+      // lendo o blob de forma assíncrona, e revogá-lo ali cancela o download em
+      // vários navegadores — sem erro, sem aviso. E a tela dizia "Exportação
+      // gerada" como se tivesse funcionado.
+      //
+      // Isto pesa mais aqui do que em qualquer outro download do sistema: é a
+      // exportação de dados do titular (LGPD), e um arquivo que não chega ao
+      // usuário é uma obrigação legal não cumprida em silêncio.
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      addToast('Exportação LGPD gerada em arquivo JSON.', 'success');
+      closeModal('modalExportLGPD');
+    } catch (err) {
+      const mensagem =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Não foi possível exportar os dados.';
+      setErro(mensagem);
+      addToast(mensagem, 'error');
+    } finally {
+      setExportando(false);
+    }
+  }, [addToast, closeModal]);
+
+  /* ---------------- Minha conta: salvar perfil e trocar senha ---------------- */
+
+  // Entra/sai do modo de edição devolvendo os campos ao valor gravado, para
+  // que cancelar nunca deixe um rascunho solto na tela.
+  const alternarEdicaoConta = useCallback(() => {
+    setEditandoConta((antes) => {
+      if (antes) {
+        setNomeConta(usuarioAtual?.nome ?? '');
+        setEmailConta(usuarioAtual?.email ?? '');
+        setErroConta(null);
+      }
+      return !antes;
+    });
+  }, [usuarioAtual?.nome, usuarioAtual?.email]);
+
+  const salvarPerfil = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      const nome = nomeConta.trim();
+      const email = emailConta.trim().toLowerCase();
+
+      if (nome.length < 2) {
+        setErroConta(traduzir('conta_nome_curto', 'O nome precisa de ao menos 2 caracteres.'));
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setErroConta(traduzir('conta_email_invalido', 'Informe um e-mail válido.'));
+        return;
+      }
+
+      setSalvandoConta(true);
+      setErroConta(null);
+      try {
+        // Só envia o que mudou: a rota devolve o registro inteiro sem tocar
+        // no campo que não foi tocado.
+        const corpo: { nome?: string; email?: string } = {};
+        if (nome !== (usuarioAtual?.nome ?? '').trim()) corpo.nome = nome;
+        if (email !== (usuarioAtual?.email ?? '').trim().toLowerCase()) corpo.email = email;
+
+        if (Object.keys(corpo).length === 0) {
+          addToast(traduzir('conta_nada_mudou', 'Nenhum dado alterado.'), 'warning');
+          return;
+        }
+
+        const { data } = await api.put<{ nome: string; email: string }>('/auth/me', corpo);
+
+        // `nexus_user` é o que o shell (topbar/sidebar) lê para mostrar o
+        // usuário. Sem reescrever aqui, a tela atualizaria mas o menu
+        // continuaria mostrando o e-mail antigo até o próximo login.
+        setUsuarioAtual((antes) => {
+          const proximo = { ...antes, nome: data.nome, email: data.email };
+          try {
+            localStorage.setItem('nexus_user', JSON.stringify(proximo));
+          } catch {
+            /* storage indisponível: a sessão continua válida */
+          }
+          return proximo;
+        });
+        // Reflete na lista de usuários (que alimenta "Conta criada em").
+        setUsuarios((lista) =>
+          lista.map((u) => (u.id === usuarioAtual.id ? { ...u, nome: data.nome, email: data.email } : u)),
+        );
+        setEditandoConta(false);
+        addToast(
+          traduzir('conta_perfil_salvo', 'Dados da conta atualizados.'),
+          'success',
+        );
+      } catch (err) {
+        const mensagem = err instanceof Error && err.message
+          ? err.message
+          : traduzir('conta_perfil_erro', 'Não foi possível salvar.');
+        setErroConta(mensagem);
+      } finally {
+        setSalvandoConta(false);
+      }
+    },
+    [nomeConta, emailConta, usuarioAtual, addToast],
+  );
+
+  const trocarSenha = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      if (novaSenha.length < 8) {
+        setErroSenha(traduzir('senha_curta', 'A nova senha precisa de ao menos 8 caracteres.'));
+        return;
+      }
+      if (novaSenha !== confirmarSenha) {
+        setErroSenha(traduzir('senha_nao_confere', 'A confirmação não é igual à nova senha.'));
+        return;
+      }
+
+      setTrocandoSenha(true);
+      setErroSenha(null);
+      try {
+        await api.post('/auth/alterar-senha', { senhaAtual, novaSenha });
+        // Limpa os campos: a senha não volta para a tela.
+        setSenhaAtual('');
+        setNovaSenha('');
+        setConfirmarSenha('');
+        addToast(traduzir('senha_trocada', 'Senha alterada. Entre novamente com a nova senha.'), 'success');
+        // O servidor revoga a sessão atual (TokenRevogado), então o próximo
+        // GET já volta 401 e o layout joga para o login. Aqui só limpamos o
+        // token guardado para não deixar credencial morta no navegador.
+        setTimeout(() => {
+          try {
+            localStorage.removeItem('nexus_token');
+            localStorage.removeItem('nexus_user');
+          } catch {
+            /* storage indisponível: o servidor já revogou a sessão */
+          }
+          window.location.href = '/login';
+        }, 1200);
+      } catch (err) {
+        setErroSenha(
+          err instanceof Error && err.message
+            ? err.message
+            : traduzir('senha_erro', 'Não foi possível alterar a senha.'),
+        );
+      } finally {
+        setTrocandoSenha(false);
+      }
+    },
+    [senhaAtual, novaSenha, confirmarSenha, addToast],
+  );
+
+  /* ---------------------- criação nos modais (API real) ---------------------- */
+
+  const salvarUsuario = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      if (
+        novoUsuario.nome.trim().length < 2 ||
+        !novoUsuario.email.includes('@') ||
+        novoUsuario.senha.length < 6
+      ) {
+        addToast('Informe nome, e-mail válido e senha com ao menos 6 caracteres.', 'warning');
+        return;
+      }
+      setSalvandoUsuario(true);
+      try {
+        await api.post('/usuarios', {
+          nome: novoUsuario.nome.trim(),
+          email: novoUsuario.email.trim(),
+          senha: novoUsuario.senha,
+          origem: 'MANUAL',
+        });
+        addToast('Usuário criado. As permissões são definidas em Administração.', 'success');
+        setNovoUsuario({ nome: '', email: '', senha: '', cargo: 'Operador' });
+        closeModal('modalUsuario');
+        await carregarUsuarios();
+      } catch (err) {
+        addToast(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Não foi possível criar o usuário.',
+          'error',
+        );
+      } finally {
+        setSalvandoUsuario(false);
+      }
+    },
+    [addToast, carregarUsuarios, closeModal, novoUsuario],
+  );
+
+  const salvarApiKey = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      const escopos = novaApiKey.escopos
+        .split(',')
+        .map((escopo) => escopo.trim())
+        .filter(Boolean);
+      if (!novaApiKey.nome.trim() || escopos.length === 0) {
+        addToast('Informe o nome da chave e ao menos um escopo.', 'warning');
+        return;
+      }
+      setSalvandoChave(true);
+      try {
+        const { data } = await api.post<{ chave?: string; prefixo?: string; aviso?: string }>(
+          '/api-publica/chaves',
+          { nome: novaApiKey.nome.trim(), escopos },
+        );
+
+        // O segredo NÃO pode ser descartado: é a única vez que ele existe.
+        // Antes ele caía fora e o modal fechava, deixando o gestor com uma
+        // chave ativa no servidor que ele jamais poderia ver.
+        if (data?.chave) {
+          setChaveGerada(data.chave);
+          setNovaApiKey({ nome: '', escopos: 'vendas:leitura' });
+          await carregarChaves();
+          addToast('Chave criada — copie agora abaixo: ela não é exibida novamente.', 'success');
+          return; // o modal FICA aberto, mostrando o segredo
+        }
+        addToast('Chave criada, mas o servidor não devolveu o segredo.', 'error');
+        setNovaApiKey({ nome: '', escopos: 'vendas:leitura' });
+        closeModal('modalApiKey');
+        await carregarChaves();
+      } catch (err) {
+        addToast(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Não foi possível criar a chave.',
+          'error',
+        );
+      } finally {
+        setSalvandoChave(false);
+      }
+    },
+    [addToast, carregarChaves, closeModal, novaApiKey],
+  );
+
+  /**
+   * Salva o cadastro da empresa em `PUT /empresas/:id`.
+   *
+   * O backend valida o CNPJ pelos dígitos verificadores, recusa UF inválida,
+   * bloqueia CNPJ já usado por outra empresa, normaliza documento/CEP e
+   * registra a mudança na auditoria. A tela só manda o que o usuário
+   * digitou — nada de montar objeto completo e sobrescrever campo vazio
+   * que o usuário não tocou.
+   */
+  const salvarEmpresa = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      if (!empresa) return;
+      if (formEmpresa.nome.trim().length < 2) {
+        addToast('O nome da empresa precisa de pelo menos 2 caracteres.', 'warning');
+        return;
+      }
+      setSalvandoEmpresa(true);
+      setErro(null);
+      try {
+        const { data } = await api.put<Empresa>(`/empresas/${empresa.id}`, {
+          nome: formEmpresa.nome.trim(),
+          razaoSocial: formEmpresa.razaoSocial.trim(),
+          cnpj: formEmpresa.cnpj.trim(),
+          inscricaoEstadual: formEmpresa.inscricaoEstadual.trim(),
+          responsavelCpf: formEmpresa.responsavelCpf.trim(),
+          responsavelRg: formEmpresa.responsavelRg.trim(),
+          cep: formEmpresa.cep.trim(),
+          endereco: formEmpresa.endereco.trim(),
+          cidade: formEmpresa.cidade.trim(),
+          estado: formEmpresa.estado.trim(),
+        });
+        // A API devolve a empresa já normalizada (CEP sem traço, UF maiúscula).
+        if (data?.id) setEmpresa(data);
+        addToast('Cadastro da empresa atualizado.', 'success');
+        closeModal('modalEmpresa');
+      } catch (err) {
+        const mensagem = mensagemDe(err, 'Não foi possível salvar o cadastro.');
+        setErro(mensagem);
+        addToast(mensagem, 'error');
+      } finally {
+        setSalvandoEmpresa(false);
+      }
+    },
+    [addToast, closeModal, empresa, formEmpresa],
+  );
+
+  /** Abre o cadastro de filial com o formulário limpo. */
+  const abrirNovaFilial = useCallback(() => {
+    setFormFilial(FORM_FILIAL_VAZIO);
+    setErroFilial(null);
+    openModal('modalFilial');
+  }, [openModal]);
+
+  /**
+   * Cadastra uma filial em `POST /filiais`.
+   *
+   * O backend exige `empresaId` no corpo e confere com o do token (403 se
+   * divergir), valida o nome (mínimo 2) e — o ponto que importa — chama
+   * `criarEstoqueParaFilial`, que abre uma linha de Estoque zerada para cada
+   * produto ativo já cadastrado. Sem isso a filial nova não apareceria em
+   * "ruptura" nem em nenhum indicador até a primeira movimentação.
+   *
+   * Depois de criar, recarrega a lista pelo MESMO caminho do carregamento
+   * inicial (`carregarTudo(true)`), em vez de empilhar a filial no estado
+   * local: `GET /empresas` é a fonte da verdade, e um push local mostraria
+   * um registro que a próxima leitura do servidor poderia não devolver
+   * (ex.: filtro de status do cadastro).
+   */
+  const salvarFilial = useCallback(
+    async (evento: React.FormEvent<HTMLFormElement>) => {
+      evento.preventDefault();
+      if (!empresa) return;
+      const nome = formFilial.nome.trim();
+      if (nome.length < 2) {
+        setErroFilial('O nome da filial precisa de pelo menos 2 caracteres.');
+        return;
+      }
+      const uf = formFilial.estado.trim().toUpperCase();
+      if (uf && uf.length !== 2) {
+        setErroFilial('A UF precisa ter exatamente 2 letras.');
+        return;
+      }
+      setSalvandoFilial(true);
+      setErroFilial(null);
+      try {
+        const { data } = await api.post<Filial>('/filiais', {
+          empresaId: empresa.id,
+          nome,
+          // Campos opcionais vão como `undefined`, nunca como string vazia:
+          // mandar "" gravaria uma filial com CNPJ/cidade vazios no banco em
+          // vez de "não informado".
+          cnpj: formFilial.cnpj.trim() || undefined,
+          cidade: formFilial.cidade.trim() || undefined,
+          estado: uf || undefined,
+          origem: 'MANUAL',
+        });
+        addToast(
+          `Filial ${data?.nome ?? nome} criada. Já aparece em Estoque → Transferências e em todos os filtros de filial.`,
+          'success',
+        );
+        closeModal('modalFilial');
+        await carregarTudo(true);
+      } catch (err) {
+        const mensagem = mensagemDe(err, 'Não foi possível criar a filial.');
+        setErroFilial(mensagem);
+        addToast(mensagem, 'error');
+      } finally {
+        setSalvandoFilial(false);
+      }
+    },
+    [addToast, carregarTudo, closeModal, empresa, formFilial],
+  );
+
+  /* --------------------------- listas derivadas --------------------------- */
+
+  /**
+   * O usuário logado dentro da lista de usuários da empresa.
+   * É daqui que sai a data de criação da CONTA (a empresa tem a dela própria).
+   */
+  const meuUsuario = useMemo(
+    () => usuarios.find((u) => u.id === usuarioAtual.id) ?? null,
+    [usuarios, usuarioAtual.id],
+  );
+
+  const usuariosFiltrados = useMemo(() => {
+    const termo = buscaUsuario.trim().toLocaleLowerCase('pt-BR');
+    if (!termo) return usuarios;
+    return usuarios.filter((usuario) =>
+      `${usuario.nome ?? ''} ${usuario.email}`.toLocaleLowerCase('pt-BR').includes(termo),
+    );
+  }, [buscaUsuario, usuarios]);
+
+  const itensIntegracao = useMemo(() => {
+    const termo = buscaIntegracao.trim().toLocaleLowerCase('pt-BR');
+    const itens = integracoes?.itens ?? [];
+    if (!termo) return itens;
+    return itens.filter((item) =>
+      `${item.categoria} ${item.nome}`.toLocaleLowerCase('pt-BR').includes(termo),
+    );
+  }, [buscaIntegracao, integracoes]);
+
+  const chavesFiltradas = useMemo(
+    () =>
+      filtroChave === 'TODAS'
+        ? chaves
+        : chaves.filter((chave) => (chave.status || '').toUpperCase() === filtroChave),
+    [chaves, filtroChave],
+  );
+
+  const regrasAtivas = useMemo(() => REGRAS_MODULO[tab] ?? [], [tab]);
+
+  const pdvAtivos = useMemo(
+    () => PDV_TOGGLES.filter((toggle) => pdvToggles[toggle.key]).length,
+    [pdvToggles],
+  );
+
+  /* ------------------------------ carregando ------------------------------ */
+
+  if (loading) {
+    return (
+      <main className="p-6 md:p-8 space-y-5 max-w-[1400px] mx-auto">
+        <ModuleHeader title={traduzir('title_configuracoes', 'Configurações')} />
+        <div className="h-10 w-full max-w-2xl rounded-[14px] bg-[#1A1A2E] border border-white/[0.06] animate-pulse" />
+        <div className="h-72 bg-[#1A1A2E] border border-white/[0.06] rounded-[16px] animate-pulse" />
+      </main>
+    );
+  }
+
+  return (
+    <div
+      className="configuracoes-root min-h-screen bg-[var(--bg)] text-white font-['Inter',sans-serif]"
+      data-densidade={aparencia.densidade}
+      style={{
+          '--primary': aparencia.corPrincipal,
+          '--bg': 'var(--nx-canvas)',
+          '--card': 'var(--nx-surface)',
+          '--card2': 'var(--nx-surface-2)',
+          '--border': 'var(--nx-border)',
+          '--border2': 'var(--nx-border-strong)',
+          '--muted': 'var(--nx-ink-2)',
+          '--label': 'var(--nx-ink-3)',
+        } as React.CSSProperties}
+    >
+      {/* 1. Tokens do Layout Mestre (uma fonte de verdade por tela) */}
+      <style jsx global>{`
+        @keyframes toastProgress {
+          from { width: 0%; }
+          to { width: 100%; }
+        }
+
+        @keyframes toastSlideIn {
+          from { transform: translateY(-14px) scale(0.97); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+
+        @keyframes modalIn {
+          from { transform: translateY(10px) scale(0.98); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+
+        .animate-toast-progress { animation: toastProgress 2.8s linear forwards; }
+        .animate-toast-slide { animation: toastSlideIn 0.22s ease-out forwards; }
+        .animate-modal-in { animation: modalIn 0.18s ease-out forwards; }
+
+        .nx-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .nx-scroll::-webkit-scrollbar-track { background: transparent; }
+        .configuracoes-root .nx-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }
+        .configuracoes-root .nx-scroll::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        .input-nexus {
+          height: 40px;
+          border-radius: 10px;
+          background-color: #0f0f24;
+          border: 1px solid #2f2f55;
+          color: #ffffff;
+          padding: 0 14px;
+          font-size: 12.5px;
+          width: 100%;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .input-nexus::placeholder { color: #6a6a8a; font-size: 12.5px; }
+        .input-nexus:focus {
+          outline: none;
+          border-color: var(--primary);
+          box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
+        }
+
+        .btn-nexus-primary {
+          background: linear-gradient(
+            135deg,
+            var(--primary) 0%,
+            color-mix(in srgb, var(--primary) 55%, var(--nx-surface)) 100%
+          );
+          box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 30%, transparent);
+          transition: filter 0.2s ease, transform 0.15s ease;
+        }
+        .btn-nexus-primary:hover { filter: brightness(1.1); }
+        .btn-nexus-primary:active { transform: scale(0.98); }
+
+        .nx-chip-ativo {
+          background: var(--primary);
+          border-color: var(--primary);
+          color: #ffffff;
+          box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 30%, transparent);
+        }
+
+        /* Densidade compacta alcanca Card/Row sem duplicar classes Tailwind. */
+        [data-densidade='compacta'] .nx-row { padding-top: 9px; padding-bottom: 9px; }
+        [data-densidade='compacta'] .nx-card { padding: 16px; }
+        [data-densidade='compacta'] .nx-stack { gap: 6px; }
+      `}</style>
+
+      <main className="p-6 md:p-8 space-y-5 max-w-[1400px] mx-auto">
+        <ModuleHeader
+          kicker={traduzir('kicker_sistema', 'Sistema')}
+          title={traduzir('cfg_titulo', 'Configurações')}
+          subtitle={traduzir('cfg_subtitulo', 'Preferências do ambiente, dados da empresa, conta, permissões e integrações — em um só lugar.')}
+          action={
+            <button
+              type="button"
+              onClick={() => void atualizarDados()}
+              disabled={atualizando}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 transition-colors inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${atualizando ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              {atualizando
+                ? traduzir('cfg_atualizando', 'Atualizando…')
+                : traduzir('cfg_atualizar_dados', 'Atualizar dados')}
+            </button>
+          }
+        />
+
+        {Object.values(erros).filter(Boolean).length > 0 && (
+          <div
+            role="alert"
+            className="rounded-[12px] bg-red-500/10 border border-red-500/20 text-red-300 text-[13px] px-4 py-3"
+          >
+            <p className="font-semibold mb-1">{traduzir('cfg_sections_failed', 'Uma ou mais seções não carregaram:')}</p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {Object.entries(erros)
+                .filter(([, mensagem]) => mensagem)
+                .map(([secao, mensagem]) => (
+                  <li key={secao}>
+                    <span className="text-white/60 capitalize">{secao}:</span> {mensagem}
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-2 text-red-200/70">
+              As seções acima não estão vazias — elas não responderam. Use “Atualizar dados” para tentar de novo.
+            </p>
+          </div>
+        )}
+
+        {/* 2. Abas acessíveis: role=tablist + setas do teclado + aria-controls */}
+        <div
+          role="tablist"
+          aria-label={traduzir('label_secoes_de_configuracao', 'Seções de configuração')}
+          onKeyDown={handleTablistKeyDown}
+          className="flex gap-1.5 overflow-x-auto nx-scroll p-1.5 rounded-[14px] bg-[var(--card2)] border border-[var(--border)]"
+        >
+          {TABS.map((item) => {
+            const ativo = tab === item;
+            return (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                id={`tab-${slugTab(item)}`}
+                aria-selected={ativo}
+                aria-controls={`panel-${slugTab(item)}`}
+                tabIndex={ativo ? 0 : -1}
+                onClick={() => setTab(item)}
+                className={`shrink-0 h-10 px-3.5 rounded-[10px] border border-transparent text-[12.5px] font-medium transition-all duration-200 ${
+                  ativo ? 'nx-chip-ativo' : 'text-white/50 hover:text-white hover:bg-white/[0.05]'
+                }`}
+              >
+                {tAba(item)}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 3. Painel da aba ativa */}
+        <div
+          role="tabpanel"
+          id={`panel-${slugTab(tab)}`}
+          aria-labelledby={`tab-${slugTab(tab)}`}
+          tabIndex={-1}
+          className="space-y-5 focus:outline-none"
+        >
+          {tab === 'Idioma e Região' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {GRUPOS_IDIOMA.map((grupo) => {
+                const alterado = prefs[grupo.key] !== DEFAULT_PREFS[grupo.key];
+                return (
+                  <Card key={grupo.key}>
+                    <CardHead
+                      kicker={traduzir('kicker_preferencia_regional', 'Preferência regional')}
+                      title={grupo.label}
+                      badge={
+                        alterado ? (
+                          <Badge tone="accent">alterado</Badge>
+                        ) : (
+                          <Badge tone="neutral">padrão</Badge>
+                        )
+                      }
+                    />
+                    <div role="radiogroup" aria-label={grupo.label} className="flex flex-wrap gap-2.5">
+                      {grupo.opts.map((opcao) => {
+                        const ativo = prefs[grupo.key] === opcao;
+                        return (
+                          <button
+                            key={opcao}
+                            type="button"
+                            role="radio"
+                            aria-checked={ativo}
+                            onClick={() => {
+                              salvarPrefs({ [grupo.key]: opcao } as Partial<Prefs>);
+                              addToast(`${grupo.label}: ${opcao}`, 'success');
+                            }}
+                            className={`h-10 px-3.5 rounded-[10px] border text-[12.5px] transition-all duration-200 ${
+                              ativo
+                                ? 'nx-chip-ativo font-semibold'
+                                : 'bg-[#121221] border-[var(--border)] text-white/60 hover:text-white hover:border-[var(--primary)]/40'
+                            }`}
+                          >
+                            {opcao}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                );
+              })}
+
+              <Card span>
+                <CardHead kicker={traduzir('kicker_persistencia', 'Persistência')} title={traduzir('title_onde_estas_preferencias_vivem', 'Onde estas preferências vivem')} />
+                <p className="text-[12.5px] text-white/40 leading-relaxed">
+                  As escolhas são salvas neste navegador (chave nexus_prefs no localStorage).
+                  Moeda e datas seguem pt-BR / BRL em toda a interface, aplicados por @/lib/format.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'Empresa' && (
+            <Card>
+              <CardHead
+                kicker={traduzir('kicker_empresa', 'Empresa')}
+                title={traduzir('title_dados_cadastrais', 'Dados cadastrais')}
+                right={
+                  <button
+                    type="button"
+                    onClick={abrirEdicaoEmpresa}
+                    disabled={!empresa}
+                    title={empresa ? undefined : 'Aguarde o carregamento da empresa'}
+                    className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Editar cadastro
+                  </button>
+                }
+              />
+              {erros.empresa ? (
+                <p className="mb-3 rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                  Não foi possível carregar a empresa: {erros.empresa}
+                </p>
+              ) : empresa ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {[
+                    { k: 'Nome', v: empresa.nome },
+                    { k: 'Razão Social', v: empresa.razaoSocial || '—' },
+                    { k: 'CNPJ', v: empresa.cnpj || '—' },
+                    { k: 'Inscrição Estadual', v: empresa.inscricaoEstadual || '—' },
+                    { k: 'CPF do responsável', v: empresa.responsavelCpf || '—' },
+                    { k: 'RG do responsável', v: empresa.responsavelRg || '—' },
+                    { k: 'CEP', v: empresa.cep || '—' },
+                    { k: 'Endereço', v: empresa.endereco || '—' },
+                    {
+                      k: 'Cidade / Estado',
+                      v: [empresa.cidade, empresa.estado].filter(Boolean).join(' / ') || '—',
+                    },
+                  ].map((linha) => (
+                    <Row key={linha.k} label={linha.k} value={linha.v} />
+                  ))}
+                  <Row label={traduzir('status', "Status")} badge={<Badge tone={toneForStatus(empresa.status)} dot>{empresa.status || '—'}</Badge>} />
+                </div>
+              ) : (
+                <EmptyState
+                  title={traduzir('title_nenhuma_empresa_carregada', 'Nenhuma empresa carregada')}
+                  description="Os dados cadastrais aparecem aqui assim que a API responder."
+                />
+              )}
+              <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                A edição grava em <code className="text-white/40">PUT /empresas/:id</code>: o servidor
+                valida o CNPJ pelos dígitos verificadores, recusa UF inválida e CNPJ já usado por outra
+                empresa, normaliza CEP/documento e registra valor anterior e novo na auditoria.
+              </p>
+            </Card>
+          )}
+
+          {/* ------------------------------------------------------------------
+              Filiais
+              ----------
+              Cartão separado do cadastro da matriz, porque é um recurso
+              diferente: a filial é o que dá sentido ao estoque por filial e à
+              transferência entre elas. Sem este cartão não havia NENHUMA
+              interface para criar filial em lugar nenhum do sistema — o
+              `POST /filiais` existia no backend desde a Seção 4 e nenhuma tela
+              o chamava.
+
+              A lista vem de `GET /empresas` (`include: { filiais: true }`), ou
+              seja, é a mesma fonte do cadastro: sem request extra.
+          ------------------------------------------------------------------ */}
+          {tab === 'Empresa' && (
+            <Card>
+              <CardHead
+                kicker={traduzir('kicker_filial', 'Filiais')}
+                title={traduzir('title_filiais', 'Filiais da empresa')}
+                badge={
+                  <Badge tone="accent">
+                    {(empresa?.filiais ?? []).length}{' '}
+                    {(empresa?.filiais ?? []).length === 1 ? 'filial' : 'filiais'}
+                  </Badge>
+                }
+                right={
+                  <button
+                    type="button"
+                    onClick={abrirNovaFilial}
+                    disabled={!empresa}
+                    title={empresa ? undefined : 'Aguarde o carregamento da empresa'}
+                    className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Adicionar filial
+                  </button>
+                }
+              />
+
+              {erros.empresa ? (
+                <p className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                  Não foi possível carregar as filiais: {erros.empresa}
+                </p>
+              ) : (empresa?.filiais ?? []).length === 0 ? (
+                <EmptyState
+                  title={traduzir('title_nenhuma_filial', 'Nenhuma filial cadastrada')}
+                  description="Cadastre a primeira filial para habilitar o estoque por filial, os filtros e as transferências entre filiais."
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {(empresa?.filiais ?? []).map((f) => (
+                    <Row
+                      key={f.id}
+                      label={f.nome}
+                      hint={[f.cidade, f.estado].filter(Boolean).join(' / ') || undefined}
+                      value={f.cnpj || undefined}
+                      badge={<Badge tone={toneForStatus(f.status ?? 'ATIVO')} dot>{f.status ?? 'ATIVO'}</Badge>}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                Grava em <code className="text-white/40">POST /filiais</code> (permissão{' '}
+                <code className="text-white/40">empresa:criar</code>). O servidor recusa empresa
+                diferente da do token, exige nome com 2+ caracteres e já abre uma linha de estoque
+                zerada para cada produto ativo — é o que faz a filial nova aparecer em ruptura e
+                nos filtros sem esperar a primeira movimentação.
+              </p>
+
+              {(empresa?.filiais ?? []).length === 1 && (
+                <p className="mt-3 rounded-[10px] border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-200 leading-relaxed">
+                  Só existe uma filial. Enquanto não houver uma segunda, a aba{' '}
+                  <strong>Estoque → Transferências</strong> fica desabilitada por falta de destino
+                  possível.
+                </p>
+              )}
+            </Card>
+          )}
+
+          {tab === 'Aparência' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_aparencia', 'Aparência')}
+                  title={traduzir('title_tema', 'Tema')}
+                  badge={<Badge tone="accent">{aparencia.theme}</Badge>}
+                />
+                <div className="flex flex-wrap gap-2.5">
+                  {(['escuro', 'claro'] as const).map((opcao) => {
+                    const ativo = aparencia.theme === opcao;
+                    return (
+                      <button
+                        key={opcao}
+                        type="button"
+                        aria-pressed={ativo}
+                        onClick={() => {
+                          mudarAparencia({ theme: opcao, corPrincipal: COR_PRINCIPAL_POR_TEMA[opcao] });
+                          addToast(`Tema ${opcao === 'escuro' ? 'escuro' : 'claro'} aplicado.`, 'success');
+                        }}
+                        className={`h-10 px-3.5 rounded-[10px] border text-[12.5px] transition-all duration-200 ${
+                          ativo
+                            ? 'nx-chip-ativo font-semibold'
+                            : 'bg-[#121221] border-[var(--border)] text-white/60 hover:text-white'
+                        }`}
+                      >
+                        {opcao === 'escuro' ? 'Escuro' : 'Claro'}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[11px] text-white/25 leading-relaxed">
+                  Os dois temas valem para o app inteiro (sidebar, telas e tabelas). A escolha é
+                  gravada neste navegador e aplicada antes da primeira pintura, então não há
+                  "flash" ao recarregar a página.
+                </p>
+              </Card>
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_aparencia', 'Aparência')}
+                  title={traduzir('title_densidade', 'Densidade')}
+                  badge={<Badge tone="accent">{aparencia.densidade}</Badge>}
+                />
+                <div className="flex flex-wrap gap-2.5">
+                  {(['confortavel', 'compacta'] as const).map((opcao) => {
+                    const ativo = aparencia.densidade === opcao;
+                    return (
+                      <button
+                        key={opcao}
+                        type="button"
+                        aria-pressed={ativo}
+                        onClick={() => {
+                          mudarAparencia({ densidade: opcao });
+                          addToast(`Densidade: ${opcao}`, 'success');
+                        }}
+                        className={`h-10 px-3.5 rounded-[10px] border text-[12.5px] transition-all duration-200 ${
+                          ativo
+                            ? 'nx-chip-ativo font-semibold'
+                            : 'bg-[#121221] border-[var(--border)] text-white/60 hover:text-white'
+                        }`}
+                      >
+                        {opcao === 'compacta' ? 'Compacta' : 'Confortável'}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[11px] text-white/25 leading-relaxed">
+                  A densidade compacta reduz o respiro das linhas e dos cards desta tela na hora.
+                </p>
+              </Card>
+
+              <Card span>
+                <CardHead
+                  kicker={traduzir('kicker_aparencia', 'Aparência')}
+                  title={traduzir('title_cor_principal', 'Cor principal')}
+                  badge={<Badge tone="neutral">identidade visual NEXUS</Badge>}
+                />
+                <div className="flex flex-wrap items-center gap-3">
+                  {CORES_PRINCIPAIS.map((cor) => {
+                    const ativo = aparencia.corPrincipal.toUpperCase() === cor.toUpperCase();
+                    return (
+                      <button
+                        key={cor}
+                        type="button"
+                        aria-pressed={ativo}
+                        aria-label={`Usar a cor ${cor}`}
+                        title={cor}
+                        onClick={() => {
+                          mudarAparencia({ corPrincipal: cor });
+                          addToast(`Cor principal: ${cor}`, 'success');
+                        }}
+                        className="h-10 w-10 rounded-[10px] border transition-transform duration-200 hover:scale-105"
+                        style={{
+                          backgroundColor: cor,
+                          borderColor: ativo ? '#ffffff' : 'transparent',
+                          boxShadow: ativo ? `0 0 0 2px ${cor}` : 'none',
+                        }}
+                      />
+                    );
+                  })}
+                  <span className="text-[12.5px] text-white/60 font-mono">
+                    {aparencia.corPrincipal}
+                  </span>
+                  {aparencia.corPrincipal.toUpperCase() !==
+                    COR_PRINCIPAL_POR_TEMA[aparencia.theme].toUpperCase() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        mudarAparencia({ corPrincipal: COR_PRINCIPAL_POR_TEMA[aparencia.theme] });
+                        addToast(`Cor principal restaurada para ${COR_PRINCIPAL_POR_TEMA[aparencia.theme]}.`, 'warning');
+                      }}
+                      className="h-10 px-3.5 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/60 hover:text-white transition-colors"
+                    >
+                      Restaurar padrão
+                    </button>
+                  )}
+                </div>
+                <p className="mt-3 text-[11px] text-white/25 leading-relaxed">
+                  A cor escolhida vira o accent (--primary) desta tela: chips ativos, foco dos campos e botões em gradiente.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'Minha Conta' && (
+            <div className="grid grid-cols-1 gap-4">
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_minha_conta', 'Minha Conta')}
+                  title={traduzir('title_seus_dados', 'Seus dados')}
+                  right={
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openModal('modalExportLGPD')}
+                        className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 transition-colors"
+                      >
+                        {traduzir('conta_exportar_lgpd', 'Exportar meus dados (LGPD)')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={alternarEdicaoConta}
+                        className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 transition-colors"
+                      >
+                        {editandoConta
+                          ? traduzir('conta_cancelar', 'Cancelar')
+                          : traduzir('conta_editar', 'Editar dados')}
+                      </button>
+                    </div>
+                  }
+                />
+
+                {editandoConta ? (
+                  <form onSubmit={salvarPerfil} className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mb-1.5">
+                        {traduzir('nome', 'Nome')}
+                      </span>
+                      <input
+                        className="input-nexus"
+                        value={nomeConta}
+                        onChange={(e) => setNomeConta(e.target.value)}
+                        autoComplete="name"
+                        disabled={salvandoConta}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mb-1.5">
+                        {traduzir('e_mail', 'E-mail')}
+                      </span>
+                      <input
+                        className="input-nexus"
+                        type="email"
+                        value={emailConta}
+                        onChange={(e) => setEmailConta(e.target.value)}
+                        autoComplete="email"
+                        disabled={salvandoConta}
+                      />
+                    </label>
+                    {erroConta && (
+                      <p className="md:col-span-2 text-[12px] text-[var(--red)]">{erroConta}</p>
+                    )}
+                    <p className="md:col-span-2 text-[11px] text-white/25 leading-relaxed">
+                      {traduzir(
+                        'conta_email_aviso',
+                        'O e-mail da conta é o mesmo usado na recuperação de senha — o link de redefinição passa a ser enviado para o novo endereço.',
+                      )}
+                    </p>
+                    <div className="md:col-span-2 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={salvandoConta}
+                        className="h-10 px-5 rounded-[10px] btn-nexus-primary text-white text-[12.5px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {salvandoConta
+                          ? traduzir('conta_salvando', 'Salvando…')
+                          : traduzir('conta_salvar', 'Salvar alterações')}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <Row label={traduzir('nome', "Nome")} value={usuarioAtual?.nome || '—'} />
+                    <Row label={traduzir('e_mail', "E-mail")} value={usuarioAtual?.email || '—'} />
+                    <Row
+                      label={traduzir('empresa', 'Empresa')}
+                      value={empresa?.nome || '—'}
+                    />
+                    <Row
+                      label={traduzir('conta_criada_em', 'Conta criada em')}
+                      // Data do USUÁRIO logado (vem de /usuarios, casada pelo id),
+                      // não da empresa — antes rotulava a data da empresa como se
+                      // fosse a da conta.
+                      value={meuUsuario?.createdAt ? formatDate(meuUsuario.createdAt) : '—'}
+                    />
+                    <Row
+                      label={traduzir('empresa_criada_em', 'Empresa criada em')}
+                      value={empresa?.createdAt ? formatDate(empresa.createdAt) : '—'}
+                    />
+                  </div>
+                )}
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  {traduzir(
+                    'conta_lgpd_nota',
+                    'A exportação usa o endpoint oficial de LGPD do backend e contém apenas os seus dados reais.',
+                  )}
+                </p>
+              </Card>
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('conta_seguranca', 'Segurança da conta')}
+                  title={traduzir('conta_sessao_credenciais', 'Senha e sessão')}
+                  badge={<Badge tone="emerald" dot>{traduzir('conta_jwt_ativo', 'JWT ativo')}</Badge>}
+                />
+                <form onSubmit={trocarSenha} className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <label className="block">
+                    <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mb-1.5">
+                      {traduzir('conta_senha_atual', 'Senha atual')}
+                    </span>
+                    <input
+                      className="input-nexus"
+                      type="password"
+                      value={senhaAtual}
+                      onChange={(e) => setSenhaAtual(e.target.value)}
+                      autoComplete="current-password"
+                      disabled={trocandoSenha}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mb-1.5">
+                      {traduzir('conta_nova_senha', 'Nova senha')}
+                    </span>
+                    <input
+                      className="input-nexus"
+                      type="password"
+                      value={novaSenha}
+                      onChange={(e) => setNovaSenha(e.target.value)}
+                      autoComplete="new-password"
+                      disabled={trocandoSenha}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] mb-1.5">
+                      {traduzir('conta_confirmar_senha', 'Confirmar senha')}
+                    </span>
+                    <input
+                      className="input-nexus"
+                      type="password"
+                      value={confirmarSenha}
+                      onChange={(e) => setConfirmarSenha(e.target.value)}
+                      autoComplete="new-password"
+                      disabled={trocandoSenha}
+                    />
+                  </label>
+                  {erroSenha && (
+                    <p className="md:col-span-3 text-[12px] text-[var(--red)]">{erroSenha}</p>
+                  )}
+                  <p className="md:col-span-3 text-[11px] text-white/25 leading-relaxed">
+                    {traduzir(
+                      'conta_senha_nota',
+                      'A troca exige a senha atual, grava o novo hash com bcrypt e encerra esta sessão — você entra de novo com a nova senha. Se não souber a senha atual, use a recuperação de senha na tela de login.',
+                    )}
+                  </p>
+                  <div className="md:col-span-3 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={trocandoSenha || !senhaAtual || !novaSenha}
+                      className="h-10 px-5 rounded-[10px] btn-nexus-primary text-white text-[12.5px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {trocandoSenha
+                        ? traduzir('conta_alterando', 'Alterando…')
+                        : traduzir('conta_alterar_senha', 'Alterar senha')}
+                    </button>
+                  </div>
+                </form>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'Usuários e Permissões' && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="search"
+                  value={buscaUsuario}
+                  onChange={(e) => setBuscaUsuario(e.target.value)}
+                  placeholder={traduzir('placeholder_buscar_por_nome_ou_e_mail', 'Buscar por nome ou e-mail')}
+                  aria-label={traduzir('label_buscar_usuarios', 'Buscar usuários')}
+                  className="input-nexus max-w-xs"
+                />
+                <Badge tone="neutral">{usuarios.length} usuário(s)</Badge>
+                <div className="ml-auto flex items-center gap-2">
+                  <Link
+                    href="/admin"
+                    className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 inline-flex items-center transition-colors"
+                  >
+                    Abrir Administração
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => openModal('modalUsuario')}
+                    className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold"
+                  >
+                    Novo usuário
+                  </button>
+                </div>
+              </div>
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_usuarios_e_permissoes', 'Usuários e Permissões')}
+                  title={traduzir('title_usuarios_da_empresa', 'Usuários da empresa')}
+                  badge={<Badge tone="accent">{usuariosFiltrados.length}</Badge>}
+                />
+                {erros.usuarios ? (
+                  <p className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                    Não foi possível carregar os usuários: {erros.usuarios}
+                  </p>
+                ) : usuarios.length === 0 ? (
+                  <EmptyState
+                    title={traduzir('title_nenhum_usuario_cadastrado_ainda', 'Nenhum usuário cadastrado ainda')}
+                    description="Usuários e permissões granulares são gerenciados na tela de Administração."
+                  />
+                ) : usuariosFiltrados.length === 0 ? (
+                  <EmptyState
+                    title={traduzir('title_nenhum_usuario_encontrado', 'Nenhum usuário encontrado')}
+                    description={`Nenhum resultado para "${buscaUsuario.trim()}".`}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2 nx-stack">
+                    {usuariosFiltrados.map((u) => (
+                      <Row
+                        key={u.id}
+                        label={u.nome || 'Usuário sem nome'}
+                        hint={u.email}
+                        badge={
+                          <Badge tone={toneForStatus(u.status)} dot>
+                            {u.status || '—'}
+                          </Badge>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  Modelo atual: permissões granulares por usuário (visualizar / criar / editar / excluir por módulo), aplicadas também à IA.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'PDV' && (
+            <div className="space-y-4">
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_pdv', 'PDV')}
+                  title={traduzir('title_garantias_do_servidor', 'Garantias do servidor')}
+                  badge={<Badge tone="emerald" dot>{REGRAS_PDV_SERVIDOR.length} em vigor</Badge>}
+                  right={
+                    <Link
+                      href="/pdv"
+                      className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white hover:border-[var(--primary)]/50 inline-flex items-center transition-colors"
+                    >
+                      Abrir PDV
+                    </Link>
+                  }
+                />
+                <div className="flex flex-col gap-2 nx-stack">
+                  {REGRAS_PDV_SERVIDOR.map((regra) => (
+                    <Row
+                      key={regra.label}
+                      label={regra.label}
+                      hint={regra.fonte}
+                      badge={<Badge tone="emerald">sempre ativa</Badge>}
+                    />
+                  ))}
+                </div>
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  Estas regras não são preferências: o backend aplica na venda, no cancelamento e na
+                  sangria, independentemente de qualquer configuração. Por isso não têm switch — ligar
+                  ou desligar aqui não mudaria nada no servidor.
+                </p>
+              </Card>
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_pdv', 'PDV')}
+                  title={traduzir('title_preferencias_deste_navegador', 'Preferências deste navegador')}
+                  badge={
+                    <Badge tone="accent">
+                      {pdvAtivos}/{PDV_TOGGLES.length} ativas
+                    </Badge>
+                  }
+                  right={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        restaurarPdv();
+                        addToast('Preferências do PDV restauradas.', 'warning');
+                      }}
+                      className="h-10 px-3.5 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/60 hover:text-white transition-colors"
+                    >
+                      Restaurar padrão
+                    </button>
+                  }
+                />
+                <div className="flex flex-col gap-2 nx-stack">
+                  {PDV_TOGGLES.map((item) => (
+                    <Row
+                      key={item.key}
+                      label={item.label}
+                      hint={item.hint}
+                      badge={
+                        <Toggle
+                          ativo={Boolean(pdvToggles[item.key])}
+                          label={item.label}
+                          onChange={(valor) => togglePdv(item.key, valor)}
+                        />
+                      }
+                    />
+                  ))}
+                </div>
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  Cada switch é gravado na hora na chave <code className="text-white/40">nexus_pdv</code>{' '}
+                  deste navegador e vale para o PDV desta máquina. São preferências de operação, não
+                  regras de servidor: outro dispositivo não recebe estas escolhas.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {tab === 'PIX / Recebimentos' && (
+            <div className="space-y-4">
+              {/* O PixSettingsTab carrega a chave real de /api/v1/settings/pix
+                  e devolve o resumo por aqui, para o card abaixo mostrar o que
+                  está gravado de verdade. */}
+              <PixSettingsTab aoCarregar={(resumo) => setPix(resumo)} />
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_pix_recebimentos', 'PIX / Recebimentos')}
+                  title={traduzir('title_chave_configurada', 'Chave configurada')}
+                  badge={
+                    pix ? (
+                      <Badge tone={pix.enabled ? 'emerald' : 'neutral'} dot>
+                        {pix.enabled ? 'ativa no PDV' : 'PIX desligado'}
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral">carregando…</Badge>
+                    )
+                  }
+                />
+                {pix ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <Row label={traduzir('label_tipo_da_chave', 'Tipo da chave')} value={pix.keyType} />
+                    <Row
+                      label={traduzir('label_chave', 'Chave')}
+                      value={pix.pixKeyMasked || '—'}
+                      hint={pix.pixKeyMasked ? 'mascarada pelo servidor' : undefined}
+                    />
+                    <Row label={traduzir('label_recebedor', 'Recebedor')} value={pix.merchantName || '—'} />
+                    <Row label={traduzir('cidade', "Cidade")} value={pix.merchantCity || '—'} />
+                    <Row label={traduzir('label_cpf_cnpj_titular', 'CPF/CNPJ titular')} value={pix.document || '—'} />
+                  </div>
+                ) : (
+                  <EmptyState
+                    title={traduzir('title_carregando_chave_pix', 'Carregando chave PIX')}
+                    description="A chave real da empresa é lida do servidor; a que aparece aqui nunca é um valor de exemplo."
+                  />
+                )}
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  O valor da chave é gravado criptografado (AES-256-GCM) e nunca é devolvido em texto
+                  puro pela API — por isso a tela mostra a versão mascarada. Para trocar a chave, use o
+                  formulário acima: ele valida a chave pelo tipo antes de salvar.
+                </p>
+              </Card>
+            </div>
+          )}
+
+          {(tab === 'Segurança' ||
+            tab === 'Estoque' ||
+            tab === 'Financeiro' ||
+            tab === 'RH' ||
+            tab === 'IA') && (
+            <Card>
+              <CardHead
+                kicker={`Configurações • ${tab}`}
+                title={traduzir('title_regras_do_modulo', 'Regras do módulo')}
+                badge={<BadgePrep />}
+                right={<Badge tone="neutral">{regrasAtivas.length} regra(s)</Badge>}
+              />
+              <div className="flex flex-col gap-2 nx-stack">
+                {regrasAtivas.map((regra) => (
+                  <Row
+                    key={regra}
+                    label={regra}
+                    badge={
+                      <button
+                        type="button"
+                        onClick={() => abrirRegra(regra)}
+                        className="text-[11px] text-white/40 hover:text-white transition-colors"
+                      >
+                        detalhar
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+              <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                Estrutura visual das regras previstas para {tab}. Cada regra só é ativada quando
+                existir backend real para aplicá-la — nada é simulado.
+              </p>
+            </Card>
+          )}
+
+          {tab === 'App & API' && (
+            <div className="space-y-4">
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_app_api', 'App & API')}
+                  title={traduzir('title_integracoes', 'Integrações')}
+                  badge={
+                    <Badge tone="neutral">
+                      {integracoes?.resumo?.conectadas ?? 0} conectada(s)
+                    </Badge>
+                  }
+                  right={
+                    <input
+                      type="search"
+                      value={buscaIntegracao}
+                      onChange={(e) => setBuscaIntegracao(e.target.value)}
+                      placeholder={traduzir('placeholder_buscar_integracao', 'Buscar integração')}
+                      aria-label={traduzir('label_buscar_integracao', 'Buscar integração')}
+                      className="input-nexus w-full sm:w-56"
+                    />
+                  }
+                />
+                {integracoes?.resumo && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <Badge tone="emerald" dot>
+                      {integracoes.resumo.conectadas ?? 0} conectadas
+                    </Badge>
+                    <Badge tone="amber" dot>
+                      {integracoes.resumo.comErro ?? 0} com erro
+                    </Badge>
+                    <Badge tone="neutral" dot>
+                      {integracoes.resumo.naoConfiguradas ?? 0} não configuradas
+                    </Badge>
+                  </div>
+                )}
+                {erros.integracoes ? (
+                  <p className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                    Não foi possível carregar as integrações: {erros.integracoes}
+                  </p>
+                ) : itensIntegracao.length === 0 ? (
+                  <EmptyState
+                    title={
+                      integracoes?.itens?.length ? 'Nenhuma integração encontrada' : 'Nenhuma integração cadastrada'
+                    }
+                    description={
+                      integracoes?.itens?.length
+                        ? `Nenhum resultado para "${buscaIntegracao.trim()}".`
+                        : 'A API respondeu sem nenhuma integração registrada para esta empresa.'
+                    }
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2 nx-stack">
+                    {itensIntegracao.map((item) => (
+                      <Row
+                        key={`${item.categoria}-${item.nome}`}
+                        label={item.nome}
+                        hint={item.categoria}
+                        value={
+                          item.ultimaSincronizacao
+                            ? `sync ${formatDate(item.ultimaSincronizacao)}`
+                            : 'nunca sincronizada'
+                        }
+                        badge={
+                          <Badge tone={toneForStatus(item.status)} dot>
+                            {item.status}
+                          </Badge>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  Status e última sincronização vêm da API central de integrações — esta tela apenas
+                  organiza a leitura.
+                </p>
+              </Card>
+
+              <Card>
+                <CardHead
+                  kicker={traduzir('kicker_app_api', 'App & API')}
+                  title={traduzir('title_chaves_da_api_publica', 'Chaves da API pública')}
+                  badge={<Badge tone="neutral">{chavesFiltradas.length}/{chaves.length}</Badge>}
+                  right={
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={filtroChave}
+                        onChange={(e) => setFiltroChave(e.target.value)}
+                        aria-label={traduzir('label_filtrar_chaves_por_status', 'Filtrar chaves por status')}
+                        className="input-nexus h-10 pr-8"
+                      >
+                        <option value="TODAS">Todas</option>
+                        <option value="ATIVA">Ativas</option>
+                        <option value="REVOGADA">Revogadas</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => openModal('modalApiKey')}
+                        className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold"
+                      >
+                        Nova chave
+                      </button>
+                    </div>
+                  }
+                />
+                {erros.chaves ? (
+                  <p className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                    Não foi possível carregar as chaves: {erros.chaves}
+                  </p>
+                ) : chaves.length === 0 ? (
+                  <EmptyState
+                    title={traduzir('title_nenhuma_chave_criada_ainda', 'Nenhuma chave criada ainda')}
+                    description="Crie a primeira chave para liberar a leitura dos dados por sistemas externos."
+                  />
+                ) : chavesFiltradas.length === 0 ? (
+                  <EmptyState
+                    title={traduzir('title_nenhuma_chave_neste_status', 'Nenhuma chave neste status')}
+                    description={`Não há chaves com status "${filtroChave}".`}
+                  />
+                ) : (
+                  <div className="flex flex-col gap-2 nx-stack">
+                    {chavesFiltradas.map((chave) => (
+                      <Row
+                        key={chave.id}
+                        label={chave.nome}
+                        hint={chave.escopos?.length ? chave.escopos.join(' • ') : 'sem escopos'}
+                        value={chave.prefixo}
+                        badge={
+                          <Badge tone={toneForStatus(chave.status)} dot>
+                            {chave.status}
+                          </Badge>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
+                  Por segurança, o valor completo da chave é exibido apenas no momento da criação —
+                  depois disso só o prefixo fica disponível.
+                </p>
+              </Card>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* 4. Modais do mestre: focus trap, Esc e backdrop com blur. */}
+
+      <Modal
+        open={modais.modalUsuario}
+        onClose={() => closeModal('modalUsuario')}
+        kicker={traduzir('kicker_usuarios_e_permissoes', 'Usuários e Permissões')}
+        title={traduzir('title_novo_usuario', 'Novo usuário')}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => closeModal('modalUsuario')}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+            >{traduzir('cancelar', "Cancelar")}</button>
+            <button
+              type="submit"
+              form="form-novo-usuario"
+              disabled={salvandoUsuario}
+              className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              {salvandoUsuario ? 'Criando...' : 'Criar usuário'}
+            </button>
+          </>
+        }
+      >
+        <form id="form-novo-usuario" onSubmit={salvarUsuario} className="space-y-3.5">
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+              Nome completo
+            </span>
+            <input
+              className="input-nexus"
+              value={novoUsuario.nome}
+              onChange={(e) => setNovoUsuario((prev) => ({ ...prev, nome: e.target.value }))}
+              placeholder="Maria Silva"
+              autoComplete="name"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">{traduzir('e_mail', "E-mail")}</span>
+            <input
+              type="email"
+              className="input-nexus"
+              value={novoUsuario.email}
+              onChange={(e) => setNovoUsuario((prev) => ({ ...prev, email: e.target.value }))}
+              placeholder="maria@empresa.com.br"
+              autoComplete="email"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+              Senha provisória
+            </span>
+            <input
+              type="password"
+              className="input-nexus"
+              value={novoUsuario.senha}
+              onChange={(e) => setNovoUsuario((prev) => ({ ...prev, senha: e.target.value }))}
+              placeholder={traduzir('placeholder_minimo_de_6_caracteres', 'mínimo de 6 caracteres')}
+              autoComplete="new-password"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+              Cargo de referência
+            </span>
+            <select
+              className="input-nexus"
+              value={novoUsuario.cargo}
+              onChange={(e) => setNovoUsuario((prev) => ({ ...prev, cargo: e.target.value }))}
+            >
+              <option value="Operador">Operador</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Financeiro">{traduzir('financeiro', "Financeiro")}</option>
+              <option value="Gestor">Gestor</option>
+            </select>
+          </label>
+          <p className="text-[11px] text-white/25 leading-relaxed">
+            O usuário nasce com o perfil padrão; visualizar / criar / editar / excluir por módulo é
+            definido na tela de Administração.
+          </p>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modais.modalApiKey}
+        onClose={() => { setChaveGerada(null); closeModal('modalApiKey'); }}
+        kicker={traduzir('kicker_app_api', 'App & API')}
+        title={
+          chaveGerada
+            ? traduzir('title_chave_criada', 'Chave criada — copie agora')
+            : traduzir('title_nova_chave_da_api_publica', 'Nova chave da API pública')
+        }
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => { setChaveGerada(null); closeModal('modalApiKey'); }}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+            >{chaveGerada ? traduzir('fechar', 'Fechar') : traduzir('cancelar', 'Cancelar')}</button>
+            {!chaveGerada && (
+              <button
+                type="submit"
+                form="form-nova-apikey"
+                disabled={salvandoChave}
+                className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-50"
+              >
+                {salvandoChave ? 'Gerando...' : 'Gerar chave'}
+              </button>
+            )}
+          </>
+        }
+      >
+        {/* Chave já criada: o segredo é exibido aqui e só aqui. Enquanto este
+            bloco estiver visível, "Gerar chave" some do rodapé — não faz sentido
+            gerar outra chave sem ter guardado esta. */}
+        {chaveGerada && (
+          <div className="space-y-3">
+            <div className="rounded-[10px] border border-[var(--border)] bg-[var(--card2)] p-3">
+              <code className="block break-all text-[12px] text-white select-all">{chaveGerada}</code>
+            </div>
+            <p className="text-[11px] leading-relaxed text-amber-300/80">
+              Esta é a única vez que a chave aparece por completo — o NEXUS guarda
+              apenas o hash. Se perder, revogue a chave na lista e gere outra.
+            </p>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(chaveGerada);
+                  addToast('Chave copiada.', 'success');
+                } catch {
+                  addToast('Não foi possível copiar automaticamente — selecione o texto e copie.', 'warning');
+                }
+              }}
+              className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold"
+            >
+              Copiar chave
+            </button>
+          </div>
+        )}
+        <form id="form-nova-apikey" onSubmit={salvarApiKey} className={chaveGerada ? 'hidden' : 'space-y-3.5'}>
+          <label className="block">
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+              Nome da chave
+            </span>
+            <input
+              className="input-nexus"
+              value={novaApiKey.nome}
+              onChange={(e) => setNovaApiKey((prev) => ({ ...prev, nome: e.target.value }))}
+              placeholder={traduzir('placeholder_integracao_e_commerce', 'Integração e-commerce')}
+            />
+          </label>
+
+          <div>
+            <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-2">
+              Escopos de leitura
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {SCOPES_API.map((escopo) => {
+                const ativo = novaApiKey.escopos.includes(escopo);
+                return (
+                  <button
+                    key={escopo}
+                    type="button"
+                    aria-pressed={ativo}
+                    onClick={() => {
+                      const atual = novaApiKey.escopos
+                        .split(',')
+                        .map((item) => item.trim())
+                        .filter(Boolean);
+                      const proximos = atual.includes(escopo)
+                        ? atual.filter((item) => item !== escopo)
+                        : [...atual, escopo];
+                      setNovaApiKey((prev) => ({ ...prev, escopos: proximos.join(',') }));
+                    }}
+                    className={`h-9 px-3 rounded-[10px] border text-[11.5px] transition-all duration-200 ${
+                      ativo
+                        ? 'nx-chip-ativo font-semibold'
+                        : 'bg-[#121221] border-[var(--border)] text-white/60 hover:text-white'
+                    }`}
+                  >
+                    {escopo}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-[11px] text-white/25 leading-relaxed">
+            O valor completo da chave aparece uma única vez, no toast de confirmação. Depois disso a
+            listagem mostra apenas o prefixo.
+          </p>
+        </form>
+      </Modal>
+
+      <Modal
+        open={modais.modalEmpresa}
+        onClose={() => closeModal('modalEmpresa')}
+        kicker={traduzir('kicker_empresa', 'Empresa')}
+        title={traduzir('title_editar_dados_cadastrais', 'Editar dados cadastrais')}
+        width="max-w-[680px]"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => closeModal('modalEmpresa')}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+            >{traduzir('cancelar', "Cancelar")}</button>
+            <button
+              type="submit"
+              form="form-empresa"
+              disabled={salvandoEmpresa}
+              className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              {salvandoEmpresa ? 'Salvando…' : 'Salvar cadastro'}
+            </button>
+          </>
+        }
+      >
+        <form id="form-empresa" onSubmit={salvarEmpresa} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {erro && (
+            <p className="md:col-span-2 rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+              {erro}
+            </p>
+          )}
+
+          {(
+            [
+              { campo: 'nome', rotulo: 'Nome', largura: 'md:col-span-2' },
+              { campo: 'razaoSocial', rotulo: 'Razão social', largura: 'md:col-span-2' },
+              { campo: 'cnpj', rotulo: 'CNPJ', dica: 'Só números ou com pontuação — o servidor confere o dígito verificador' },
+              { campo: 'inscricaoEstadual', rotulo: 'Inscrição estadual' },
+              { campo: 'responsavelCpf', rotulo: 'CPF do responsável', dica: '11 dígitos' },
+              { campo: 'responsavelRg', rotulo: 'RG do responsável' },
+              { campo: 'cep', rotulo: 'CEP', dica: '8 dígitos' },
+              { campo: 'estado', rotulo: 'UF', dica: '2 letras', maxLength: 2 },
+              { campo: 'cidade', rotulo: 'Cidade' },
+              { campo: 'endereco', rotulo: 'Endereço', largura: 'md:col-span-2' },
+            ] as const
+          ).map((item) => (
+            <label
+              key={item.campo}
+              className={`block ${'largura' in item ? item.largura : ''}`}
+            >
+              <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+                {item.rotulo}
+              </span>
+              <input
+                className="input-nexus"
+                value={formEmpresa[item.campo]}
+                maxLength={'maxLength' in item ? item.maxLength : 200}
+                onChange={(e) =>
+                  setFormEmpresa((prev) => ({ ...prev, [item.campo]: e.target.value }))
+                }
+                placeholder={item.campo === 'cnpj' ? '00.000.000/0001-00' : undefined}
+              />
+              {'dica' in item && (
+                <span className="mt-1 block text-[10.5px] text-white/25">{item.dica}</span>
+              )}
+            </label>
+          ))}
+        </form>
+      </Modal>
+
+      {/* Cadastro de filial — grava em `POST /filiais`. */}
+      <Modal
+        open={modais.modalFilial}
+        onClose={() => closeModal('modalFilial')}
+        kicker={traduzir('kicker_filial', 'Filiais')}
+        title={traduzir('title_nova_filial', 'Adicionar filial')}
+        width="max-w-[520px]"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => closeModal('modalFilial')}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+            >{traduzir('cancelar', "Cancelar")}</button>
+            <button
+              type="submit"
+              form="form-filial"
+              disabled={salvandoFilial}
+              className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              {salvandoFilial ? 'Criando…' : 'Criar filial'}
+            </button>
+          </>
+        }
+      >
+        <form id="form-filial" onSubmit={salvarFilial} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {erroFilial && (
+            <p className="md:col-span-2 rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+              {erroFilial}
+            </p>
+          )}
+
+          {(
+            [
+              { campo: 'nome', rotulo: 'Nome da filial', largura: 'md:col-span-2', dica: 'Obrigatório. Ex.: Centro, Matriz, Loja Shopping' },
+              { campo: 'cnpj', rotulo: 'CNPJ', dica: 'Opcional' },
+              { campo: 'estado', rotulo: 'UF', dica: '2 letras', maxLength: 2 },
+              { campo: 'cidade', rotulo: 'Cidade', largura: 'md:col-span-2' },
+            ] as const
+          ).map((item) => (
+            <label key={item.campo} className={`block ${'largura' in item ? item.largura : ''}`}>
+              <span className="block text-[10px] uppercase tracking-[0.14em] text-[var(--label)] font-semibold mb-1.5">
+                {item.rotulo}
+              </span>
+              <input
+                className="input-nexus"
+                value={formFilial[item.campo]}
+                maxLength={'maxLength' in item ? item.maxLength : 200}
+                onChange={(e) => setFormFilial((prev) => ({ ...prev, [item.campo]: e.target.value }))}
+                placeholder={item.campo === 'cnpj' ? '00.000.000/0001-00' : undefined}
+              />
+              {'dica' in item && (
+                <span className="mt-1 block text-[10.5px] text-white/25">{item.dica}</span>
+              )}
+            </label>
+          ))}
+        </form>
+      </Modal>
+
+      <Modal
+        open={modais.modalRegra}
+        onClose={() => closeModal('modalRegra')}
+        kicker={traduzir('kicker_regras_em_preparacao', 'Regras em preparação')}
+        title={regraSelecionada || 'Regra do módulo'}
+        width="max-w-[480px]"
+        footer={
+          <button
+            type="button"
+            onClick={() => closeModal('modalRegra')}
+            className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+          >{traduzir('fechar', "Fechar")}</button>
+        }
+      >
+        <div className="space-y-4">
+          <BadgePrep />
+          <p className="text-[12.5px] text-white/50 leading-relaxed">
+            Esta regra faz parte da estrutura do Layout Mestre e ainda não tem backend que a aplique.
+            Nada é simulado nesta tela: o comportamento só é ligado quando existir implementação real
+            no servidor.
+          </p>
+          <p className="text-[11px] text-white/25 leading-relaxed">
+            Contrato previsto: a regra é salva por empresa, com trilha de auditoria de quem alterou e
+            quando.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={modais.modalExportLGPD}
+        onClose={() => closeModal('modalExportLGPD')}
+        kicker={traduzir('kicker_minha_conta', 'Minha Conta')}
+        title={traduzir('title_exportar_meus_dados_lgpd', 'Exportar meus dados (LGPD)')}
+        width="max-w-[480px]"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => closeModal('modalExportLGPD')}
+              className="h-10 px-4 rounded-[10px] bg-[var(--card2)] border border-[var(--border)] text-[12.5px] text-white/70 hover:text-white transition-colors"
+            >{traduzir('cancelar', "Cancelar")}</button>
+            <button
+              type="button"
+              onClick={exportarLGPD}
+              disabled={exportando}
+              className="btn-nexus-primary h-10 px-4 rounded-[10px] text-white text-[12.5px] font-semibold disabled:opacity-50"
+            >
+              {exportando ? 'Gerando arquivo...' : 'Baixar JSON'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-[12.5px] text-white/50 leading-relaxed">
+            O download traz os seus dados cadastrais e o vínculo com a empresa, em JSON, usando o
+            endpoint oficial de LGPD do backend.
+          </p>
+          <p className="text-[11px] text-white/25 leading-relaxed">
+            Direito de acesso e portabilidade (Art. 18 da LGPD). A ação fica registrada no log do
+            servidor.
+          </p>
+        </div>
+      </Modal>
+
+      <Toasts toasts={toasts} onRemove={removeToast} />
+    </div>
+  );
+}
+
+
+
+
+
+
+
+

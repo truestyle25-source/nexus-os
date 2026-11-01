@@ -1,0 +1,10 @@
+{
+  "name": "nexus-dominio",
+  "version": "1.0.0",
+  "description": "Regras de negócio puras do Nexus OS: financeiro, contabilidade, patrimônio, produção, contratos, integração e fiscal (sem banco e sem rede).",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs"
+  }
+}

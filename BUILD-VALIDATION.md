@@ -171,3 +171,66 @@ npm run build
 O build só deve ser considerado aprovado depois que esses comandos terminarem sem erro no ambiente que possui as dependências e um `DATABASE_URL` válido para aplicar as migrations. Antes do `db:migrate`, rode também o `prisma migrate diff` descrito em `DEBITO-TECNICO.md` item 3 (e a mesma checagem para as migrações `202609121000_estoque_filial_produtos` e `202609121600_compra_filial_e_snapshot_estoque`) para confirmar as migrações escritas à mão.
 
 Depois do deploy, configure um cron externo (systemd timer, cron do provedor, GitHub Action agendado, etc.) chamando `npm run estoque:snapshot` ou `POST /estoque/snapshot/gerar` uma vez por dia — sem isso, o giro de estoque nunca sai do fallback aproximado (`DEBITO-TECNICO.md` item 8).
+## Fase: Aba Vendas fiel ao layout de referência (KPIs, filtros, detalhe e estorno)
+
+### O que mudou nesta fase
+
+Backend (`src/modules/vendas/`):
+
+- **`vendas.filtros.ts` (novo)** — regra de filtro pura, sem Prisma em
+  runtime (`montarWhereVendas`, `inicioDoDia`/`fimDoDia`,
+  `normalizarContagemPorStatus`, `contarCanceladasEstornos`,
+  `variacaoPercentual`).
+- **`GET /vendas`** — filtros novos: `formaPagamento`, `funcionarioId`,
+  `busca` (ID ou nome do cliente), `de`/`ate`; resposta ganhou
+  `vendedorNome` por venda.
+- **`GET /vendas/:id`** — mesmo `vendedorNome`, para o drawer de detalhe.
+- **`GET /vendas/dashboard?dias=1|7|30`** — janela selecionável, `porStatus`,
+  `porStatusAnterior`, `canceladasEstornos`, `faturamentoHoje`, ticket médio
+  do período e do período anterior e as variações. Nenhum campo antigo saiu.
+- **`POST /vendas/:id/cancelar`** — corpo opcional
+  (`motivo`, `estornarEstoque`, `estornarFinanceiro`); corpo vazio mantém o
+  comportamento anterior; 409 com mensagem correta quando já cancelada.
+- **`tests/vendas-filtros.test.ts` (novo)** — 14 casos sobre as funções puras.
+
+Frontend:
+
+- **`components/ui/KpiCard.tsx`** — props opcionais `icon`, `iconTone`,
+  `delta`, `deltaTone` (selo circular + variação do layout de referência).
+  Nenhuma tela existente passa essas props, então dashboard/indicadores/
+  plataforma seguem idênticos.
+- **`components/ui/DataTable.tsx`** — props opcionais `onRowClick` e
+  `rowClassName` (linha clicável).
+- **`app/(dashboard)/vendas/page.tsx`** — 4 KPIs, barra de filtros com
+  período/status/pagamento/vendedor/filial/busca, exportação CSV (8 colunas)
+  e Excel, tabela densa com badge de status e pílula de pagamento, paginação
+  server-side, drawer de detalhe, modal de estorno e impressão só do
+  detalhe. Também corrigiu o tratamento de erro (`lib/api.ts` é `fetch` e
+  lança `Error`, então `err.response?.data?.error` nunca existiu). O painel
+  "Nova venda" (registro manual) foi preservado.
+
+### Checagem executada neste ambiente
+
+```powershell
+cd backend
+npm run build                        # tsc -> sem erros (exit 0)
+npx tsx --test tests/*.test.ts       # 35 testes, 35 passando (14 novos)
+
+cd ../frontend
+npm run build                        # next build -> exit 0
+                                     # /vendas 16,8 kB (104 kB First Load)
+```
+
+### O que NÃO foi validado (depende de ambiente com banco/servidor)
+
+- Teste de integração real dos três endpoints alterados (`GET /vendas` com
+  todos os filtros, `GET /vendas/dashboard?dias=7` e
+  `POST /vendas/:id/cancelar` com e sem corpo). Não há `DATABASE_URL` nem
+  servidor rodando neste ambiente; a suíte do projeto é só de unidade pura.
+- Checklist de UI (drawer, impressão, modal de estorno, câmbio de filtros e
+  paginação) — precisa de navegador com sessão autenticada.
+- Regressão do PDV no cancelamento: o PDV envia `POST /vendas/:id/cancelar`
+  com corpo `{}`, e o corpo vazio foi mantido idêntico ao comportamento
+  anterior por construção (defaults `true/true`), mas o fluxo real precisa
+  ser exercitado manualmente no PDV.
+

@@ -20,25 +20,63 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
         .object({
           filialId: z.string().optional(),
           diasParado: z.coerce.number().int().min(1).max(365).default(30),
-          diasValidade: z.coerce.number().int().min(1).max(365).default(30),
           diasGiro: z.coerce.number().int().min(1).max(365).default(30),
         })
         .parse(req.query);
 
-      const where: Prisma.EstoqueWhereInput = { empresaId: req.user.empresaId, ...(query.filialId ? { filialId: query.filialId } : {}) };
-      const estoques = await prisma.estoque.findMany({ where, include: { produto: true, filial: true } });
+      // A permissão de custos é resolvida ANTES da consulta, porque ela muda
+      // o SELECT — não só o que sai na resposta.
+      //
+      // Antes o endpoint trazia `produto` inteiro (custo E precoVenda dentro)
+      // e o `valorTotal` de cada linha, e só omitia o subtotal
+      // `indicadores.valorTotal`. O frontend então recalculava o total a
+      // partir das linhas e mostrava custo/valor por produto nas colunas e no
+      // drawer: o gate de custos não segurava nada. Agora, sem a permissão,
+      // os campos de dinheiro não são lidos do banco.
+      const podeVerCusto = await temPermissao(req.user.id, 'custos', 'visualizar');
 
-      const valorTotal = estoques.reduce((soma: number, e) => soma + Number(e.valorTotal), 0);
-      const baixo = estoques.filter((e) => e.quantidade > 0 && e.quantidade <= e.produto.estoqueMinimo);
-      const semEstoque = estoques.filter((e) => e.quantidade === 0);
+      const where: Prisma.EstoqueWhereInput = { empresaId: req.user.empresaId, ...(query.filialId ? { filialId: query.filialId } : {}) };
+
+      // `select` explícito em vez de `include`: é o que permite desligar
+      // `custo`/`precoVenda`/`valorTotal` por permissão. A tela mostra
+      // "—" nesses campos quando o usuário não tem custos.
+      const estoques = await prisma.estoque.findMany({
+        where,
+        select: {
+          id: true,
+          filialId: true,
+          produtoId: true,
+          quantidade: true,
+          local: true,
+          lote: true,
+          updatedAt: true,
+          ...(podeVerCusto ? { valorTotal: true } : { valorTotal: false }),
+          filial: { select: { id: true, nome: true } },
+          produto: {
+            select: {
+              id: true,
+              nome: true,
+              sku: true,
+              codigoBarras: true,
+              unidade: true,
+              estoqueMinimo: true,
+              estoqueMaximo: true,
+              validade: true,
+              ...(podeVerCusto ? { custo: true, precoVenda: true } : { custo: false, precoVenda: false }),
+              categoria: { select: { id: true, nome: true } },
+              fornecedor: { select: { id: true, nome: true } },
+            },
+          },
+        },
+      });
+
+      const valorTotal = podeVerCusto
+        ? estoques.reduce((soma: number, e) => soma + Number(e.valorTotal ?? 0), 0)
+        : 0;
+      const baixo = estoques.filter((e) => Number(e.quantidade) > 0 && Number(e.quantidade) <= Number(e.produto.estoqueMinimo));
+      const semEstoque = estoques.filter((e) => Number(e.quantidade) === 0);
 
       const agora = new Date();
-      const limiteValidade = new Date(agora);
-      limiteValidade.setDate(limiteValidade.getDate() + query.diasValidade);
-      const proximosValidade = await prisma.produto.findMany({
-        where: { empresaId: req.user.empresaId, status: 'ATIVO', validade: { not: null, lte: limiteValidade } },
-        orderBy: { validade: 'asc' },
-      });
 
       // Produtos parados (Seção 9): ativos, com estoque > 0 em alguma
       // filial, sem nenhuma saída/venda nos últimos N dias.
@@ -51,7 +89,7 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
       });
       const idsMovimentados = new Set(movimentadosRecentemente.map((m) => m.produtoId));
       const produtosComEstoque = new Map<string, number>();
-      for (const e of estoques) produtosComEstoque.set(e.produtoId, (produtosComEstoque.get(e.produtoId) ?? 0) + e.quantidade);
+      for (const e of estoques) produtosComEstoque.set(e.produtoId, (produtosComEstoque.get(e.produtoId) ?? 0) + Number(e.quantidade));
       const idsParados = [...produtosComEstoque.entries()].filter(([id, qtd]) => qtd > 0 && !idsMovimentados.has(id)).map(([id]) => id);
       const produtosParados = idsParados.length
         ? await prisma.produto.findMany({ where: { id: { in: idsParados }, empresaId: req.user.empresaId } })
@@ -63,16 +101,35 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
       // (ver estoque-indicadores.service.ts e DEBITO-TECNICO.md item 8).
       const giroPorProduto = await calcularGiroPorProduto(req.user.empresaId, { filialId: query.filialId, diasPeriodo: query.diasGiro });
 
-      const podeVerCusto = await temPermissao(req.user.id, 'custos', 'visualizar');
+      // Lista de filiais da empresa, INDEPENDENTE de ter estoque.
+      //
+      // A tela derivava a lista de filiais das linhas de `estoques`, e uma
+      // filial sem nenhuma linha não aparecia — nem no filtro (justamente o
+      // caso que se quer consultar) nem na lista de destino da transferência
+      // (que tornava impossivel transferir para ela). A lista de filiais é um
+      // dado cadastral da empresa, e nao do estoque.
+      const filiais = await prisma.filial.findMany({
+        where: { empresaId: req.user.empresaId, status: { not: 'INATIVO' } },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      });
+
       return {
         estoques,
+        filiais,
         indicadores: {
+          // O frontend NÃO pode inferir isto da existência do valor: sem a
+          // permissão o número é omitido, e adivinhar "se veio, pode mostrar"
+          // é exatamente o que abria o bypass antes.
+          podeVerCusto,
           valorTotal: podeVerCusto ? valorTotal : undefined,
+          // Só as CONTAGENS vão na resposta. `baixo` e `semEstoque` iam antes como
+          // arrays completos (cada linha com filial, produto, categoria e
+          // fornecedor dentro) e a tela nunca os renderizou — ela recalcula
+          // os dois números a partir de `estoques`, que já veio inteiro.
+          // Eram milhares de linhas de payload duplicadas por request.
           qtdBaixo: baixo.length,
           qtdSemEstoque: semEstoque.length,
-          baixo,
-          semEstoque,
-          proximosValidade,
           produtosParados,
           giro: { diasConsiderados: query.diasGiro, porProduto: giroPorProduto },
         },
@@ -88,11 +145,16 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
         .object({
           produtoId: z.string(),
           filialId: z.string(),
-          quantidade: z.number().int().positive(),
+          quantidade: z.number().finite().min(0).refine((n) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-8, 'Use no máximo 3 casas decimais.'),
           tipo: tipoMovimento,
           motivo: z.string().optional(),
           documento: z.string().optional(),
           origem: origemMovimento.default('MANUAL'),
+        })
+        .superRefine((data, contexto) => {
+          if (data.tipo !== 'AJUSTE' && data.tipo !== 'INVENTARIO' && data.quantidade <= 0) {
+            contexto.addIssue({ code: z.ZodIssueCode.too_small, origin: 'number', minimum: 1, inclusive: true, path: ['quantidade'], message: 'A quantidade deve ser maior que zero para este tipo de movimentação.' });
+          }
         })
         .parse(req.body);
 
@@ -126,7 +188,7 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
       return {
         estoque: result.estoque,
         movimentacao: result.movimentacao,
-        alerta: result.qtdNova <= result.estoqueMinimo ? { tipo: 'ESTOQUE_BAIXO', atual: result.qtdNova, minimo: result.estoqueMinimo } : null,
+        alerta: result.qtdNova <= Number(result.estoqueMinimo) ? { tipo: 'ESTOQUE_BAIXO', atual: result.qtdNova, minimo: Number(result.estoqueMinimo) } : null,
       };
     },
   );
@@ -141,7 +203,7 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
           produtoId: z.string(),
           filialOrigemId: z.string(),
           filialDestinoId: z.string(),
-          quantidade: z.number().int().positive(),
+          quantidade: z.number().finite().positive().refine((n) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-8, 'Use no máximo 3 casas decimais.'),
           motivo: z.string().optional(),
           origem: origemMovimento.default('MANUAL'),
         })

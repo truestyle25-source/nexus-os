@@ -5,16 +5,20 @@ import type { Origem, Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { hashSenha, verificarSenha } from '../../lib/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
-import { createRateLimiter } from '../../middleware/rateLimiter.js';
+import { createRateLimiter, createLoginRateLimiter, registrarLoginSucesso } from '../../middlewares/rateLimiter.js';
 import { todasPermissoes } from '../../lib/permissoes.js';
 import { clean } from '../../lib/format.js';
+import { enviarEmailRecuperacaoSenha } from '../../lib/email.js';
+import { isValidCnpj } from '../../domain/cnpj.js';
+import { ErroDeNegocio } from '../../lib/erros.js';
 
 // Tempo de validade de um token de recuperação de senha (Seção 5).
 const VALIDADE_TOKEN_RECUPERACAO_MS = 60 * 60 * 1000; // 1 hora
 const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
 
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  const loginLimiter = createRateLimiter(10, 60_000);
+  const loginLimiter = createLoginRateLimiter(10, 60_000);
   const registerLimiter = createRateLimiter(5, 60_000);
   const recuperacaoLimiter = createRateLimiter(5, 60_000);
 
@@ -41,6 +45,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(409).send({ error: 'E-mail já cadastrado.' });
     }
     const cnpj = clean(d.cnpj);
+    // `isValidCnpj` (domain/cnpj.ts) já existia e tinha testes passando
+    // desde sempre (tests/cnpj.test.ts), mas nunca tinha sido plugado
+    // aqui — o cadastro só checava tamanho mínimo. Um CNPJ com dígito
+    // verificador errado (ou "11111111111111") passava sem problema.
+    if (cnpj && !isValidCnpj(cnpj)) {
+      return reply.status(400).send({ error: 'CNPJ inválido — confira os dígitos verificadores.' });
+    }
     if (cnpj && (await prisma.empresa.findUnique({ where: { cnpj } }))) {
       return reply.status(409).send({ error: 'CNPJ já cadastrado.' });
     }
@@ -132,6 +143,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       ip: req.ip,
       contexto: `Login ${usuario.email}`,
     });
+    await registrarLoginSucesso(req.ip, usuario.email);
+
     return { token, usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email, empresaId: usuario.empresaId } };
   });
 
@@ -148,11 +161,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // Seção 5: recuperação de senha, parte 1 — gera e persiste o token.
-  // O envio do token ao usuário depende de um provedor de e-mail, que ainda
-  // não está integrado nesta base (ver PENDÊNCIAS no relatório da fase).
-  // A resposta é deliberadamente idêntica exista ou não o e-mail, para não
-  // permitir enumeração de contas cadastradas.
+  // Seção 5: recuperação de senha — gera o token, persiste o hash e envia
+  // o token bruto por e-mail real via lib/email.ts (API HTTP da Resend).
+  // A resposta ao usuário é deliberadamente idêntica exista ou não o
+  // e-mail, para não permitir enumeração de contas cadastradas — inclusive
+  // quando o envio falha, para não vazar esse detalhe a quem está testando
+  // e-mails ao acaso.
   app.post('/auth/recuperar-senha', { preHandler: recuperacaoLimiter }, async (req: FastifyRequest) => {
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } });
@@ -165,6 +179,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
           expiraEm: new Date(Date.now() + VALIDADE_TOKEN_RECUPERACAO_MS),
         },
       });
+      // O token bruto nunca é logado nem retornado pela API — só o hash
+      // fica em banco. Ele só existe em memória neste request, para ir
+      // direto para o e-mail.
+      const resultado = await enviarEmailRecuperacaoSenha({ para: usuario.email, nome: usuario.nome, tokenBruto });
       await registrarAuditoria({
         usuarioId: usuario.id,
         empresaId: usuario.empresaId,
@@ -173,14 +191,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         entidadeId: usuario.id,
         origem: 'MANUAL',
         ip: req.ip,
-        contexto: 'Solicitação de recuperação de senha',
+        contexto: resultado.enviado ? 'Solicitação de recuperação de senha — e-mail enviado' : 'Solicitação de recuperação de senha — FALHA NO ENVIO DO E-MAIL',
       });
-      // O token bruto nunca é logado nem retornado pela API — só o hash
-      // fica em banco. Sem um provedor de e-mail configurado, ele é
-      // inacessível ao usuário nesta base; isso é uma pendência real,
-      // não um recurso concluído.
     }
-    return { message: 'Se o e-mail existir, as instruções de recuperação devem ser enviadas pelo serviço de e-mail configurado.' };
+    return { message: 'Se o e-mail existir, as instruções de recuperação foram enviadas.' };
   });
 
   // Seção 5: recuperação de senha, parte 2 — consome o token e troca a senha.
@@ -207,5 +221,165 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       contexto: 'Redefinição de senha via token',
     });
     return { ok: true };
+  });
+
+  // ==========================================================================
+  //  Minha conta — Seção 5
+  //
+  //  Antes a aba "Minha Conta" da tela de Configurações era só LEITURA: nome,
+  //  e-mail e empresa apareciam em `Row`, sem botão de edição. O usuário que
+  //  precisasse trocar o próprio e-mail (e usa-lo na recuperação de senha)
+  //  tinha que pedir a um administrador. Estas rotas devolvem esse controle
+  //  ao próprio dono da conta — sem depender de permissão de admin, e sempre
+  //  auditadas.
+  // ==========================================================================
+
+  const perfilSchema = z.object({
+    nome: z.string().min(2).max(160).optional(),
+    email: z.string().email().max(180).optional(),
+  });
+
+  /**
+   * Atualiza nome e/ou e-mail do usuário LOGADO.
+   *
+   * O e-mail é a chave de recuperação de senha (`POST /auth/recuperar-senha`
+   * busca por `email`), então trocar o e-mail muda para onde o link de
+   * recuperação é enviado. Por isso:
+   *   • a unicidade é checada no banco (índice `Usuario.email_key`) e
+   *     devolvida como 409 legível, sem stacktrace;
+   *   • a troca de e-mail é registrada na auditoria com o valor anterior;
+   *   • a senha NÃO é alterada aqui — troca de credencial tem rota própria.
+   *
+   * `app.authenticate` já garante que o usuário existe e o token é válido.
+   */
+  app.put('/auth/me', { preHandler: [app.authenticate] }, async (req: FastifyRequest, reply: FastifyReply) => {
+    const dados = perfilSchema.parse(req.body ?? {});
+    const { id: usuarioId, empresaId } = req.user as any;
+
+    const anterior = await prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: { nome: true, email: true, status: true },
+    });
+    if (!anterior) throw new ErroDeNegocio('Usuário não encontrado.', 404);
+    if (anterior.status !== 'ATIVO') throw new ErroDeNegocio('Conta inativa — não é possível editar o perfil.', 403);
+
+    const atualizacoes: Record<string, unknown> = {};
+    if (dados.nome !== undefined) atualizacoes.nome = dados.nome.trim();
+    if (dados.email !== undefined) {
+      const email = dados.email.toLowerCase().trim();
+      if (email !== anterior.email) {
+        const dono = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
+        if (dono && dono.id !== usuarioId) {
+          return reply.status(409).send({ error: 'Este e-mail já está em uso por outra conta.' });
+        }
+        atualizacoes.email = email;
+      }
+    }
+
+    if (Object.keys(atualizacoes).length === 0) {
+      return { id: usuarioId, nome: anterior.nome, email: anterior.email, status: anterior.status };
+    }
+
+    const usuario = await prisma.usuario.update({ where: { id: usuarioId }, data: atualizacoes });
+
+    await registrarAuditoria({
+      usuarioId,
+      empresaId,
+      acao: 'EDITAR',
+      entidade: 'Usuario',
+      entidadeId: usuarioId,
+      valorAnterior: { nome: anterior.nome, email: anterior.email },
+      valorNovo: { nome: usuario.nome, email: usuario.email },
+      origem: 'MANUAL',
+      ip: req.ip,
+      contexto: dados.email !== undefined && atualizacoes.email
+        ? 'E-mail da conta alterado — a recuperação de senha passa a usar o novo e-mail.'
+        : 'Nome da conta alterado pelo próprio usuário.',
+    });
+
+    return { id: usuario.id, nome: usuario.nome, email: usuario.email, status: usuario.status };
+  });
+
+  /**
+   * Troca de senha do usuário logado, exigindo a senha ATUAL.
+   *
+   * Pedir a senha atual é o que impede que alguém com a sessão aberta
+   * (computador compartilhado, token roubado) troque a senha sem ser o dono.
+   * Sem o e-mail ou o token de recuperação, a troca é impossível — que é
+   * exatamente o caminho de "esqueci minha senha".
+   *
+   * O que muda aqui:
+   *   • a senha é gravada com hash bcrypt (nunca em texto puro);
+   *   • a sessão atual é revogada de verdade, via `TokenRevogado` (o
+   *     `authenticate` consulta essa tabela), para que a troca encerre a
+   *     sessão aberta e o usuário entre de novo com a nova senha;
+   *   • a troca é auditada.
+   */
+  app.post('/auth/alterar-senha', { preHandler: [app.authenticate, loginLimiter] }, async (req: FastifyRequest, reply: FastifyReply) => {
+    const { senhaAtual, novaSenha } = z
+      .object({
+        senhaAtual: z.string().min(1),
+        novaSenha: z.string().min(8, 'A nova senha precisa de ao menos 8 caracteres.'),
+      })
+      .parse(req.body);
+    const { id: usuarioId, empresaId, jti, exp } = req.user as any;
+
+    const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId }, select: { senhaHash: true } });
+    if (!usuario) throw new ErroDeNegocio('Usuário não encontrado.', 404);
+    if (!(await verificarSenha(senhaAtual, usuario.senhaHash))) {
+      return reply.status(401).send({ error: 'Senha atual incorreta.' });
+    }
+
+    const senhaHash = await hashSenha(novaSenha);
+    await prisma.usuario.update({ where: { id: usuarioId }, data: { senhaHash } });
+
+    if (jti && exp) {
+      await prisma.tokenRevogado.upsert({
+        where: { jti },
+        update: { expiraEm: new Date(exp * 1000) },
+        create: { jti, expiraEm: new Date(exp * 1000) },
+      });
+    }
+
+    await registrarAuditoria({
+      usuarioId,
+      empresaId,
+      acao: 'ALTERAR_CONFIG',
+      entidade: 'Usuario',
+      entidadeId: usuarioId,
+      origem: 'MANUAL',
+      ip: req.ip,
+      contexto: 'Senha da conta alterada pelo próprio usuário — sessão revogada.',
+    });
+
+    return { ok: true, mensagem: 'Senha alterada. Entre novamente com a nova senha.' };
+  });
+
+  app.get('/auth/me', { preHandler: [app.authenticate] }, async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.user as any;
+    const usuario = await prisma.usuario.findUnique({
+      where: { id },
+      include: { empresa: true },
+    });
+    if (!usuario) {
+      return reply.status(404).send({ error: 'Usuário não encontrado' });
+    }
+    const permissoes = await prisma.permissao.findMany({
+      where: { usuarioId: id, permitido: true },
+    });
+
+    return {
+      id: usuario.id,
+      name: usuario.nome,
+      email: usuario.email,
+      status: usuario.status,
+      company: {
+        id: usuario.empresa.id,
+        nome: usuario.empresa.nome,
+        cnpj: usuario.empresa.cnpj,
+        status: usuario.empresa.status,
+      },
+      permissions: permissoes.map((p: any) => `${p.modulo}:${p.acao}`),
+    };
   });
 }

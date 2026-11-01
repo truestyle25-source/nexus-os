@@ -1,10 +1,11 @@
 # NEXUS OS PARTE 6 - IA NEXUS (Seções 22 a 29) - 100% FIEL
 
 ## Seção 22 IA NEXUS - Arquitetura fiel:
-NEXUS OS -> NEXUS BACKEND -> OPENAI API -> NEXUS BACKEND -> NEXUS AI
+NEXUS OS -> NEXUS BACKEND -> GOOGLE GEMINI API -> NEXUS BACKEND -> NEXUS AI
 - Chave API nunca no frontend - Seção 39
-- Backend usa fetch para https://api.openai.com/v1/chat/completions com Authorization Bearer OPENAI_API_KEY do .env
-- Nunca inventa endpoint OpenAI
+- Backend usa fetch para https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent com a chave GEMINI_API_KEY do .env
+- O nome do modelo vem da variável GEMINI_MODEL (nunca hardcoded): modelos descontinuados pela Google retornam 404, então o valor é ajustável sem mexer no código
+- Nunca inventa endpoint de IA
 
 ## Seção 23 Funções IA:
 - ASSISTENTE: Quanto vendemos hoje? Qual produto vendeu mais? Qual setor? Ticket médio? Quanto temos em estoque?

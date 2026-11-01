@@ -1,0 +1,122 @@
+{
+  "financeiro": {
+    "tipo": "pagar",
+    "valor": 1250.5,
+    "vencimento": "2026-11-10",
+    "situacao": "aberto",
+    "fornecedorCliente": "Fornecedor Exemplo",
+    "centroCusto": "Administrativo",
+    "formaPagamento": "PIX"
+  },
+  "contabilidade": {
+    "data": "2026-10-27",
+    "contaDebito": "1.1.01 Caixa",
+    "contaCredito": "2.1.01 Fornecedores",
+    "valor": 1250.5,
+    "historico": "Pagamento de fornecedor"
+  },
+  "fiscal": {
+    "tipoDocumento": "NFE",
+    "numero": "RASCUNHO-001",
+    "serie": "1",
+    "situacao": "rascunho",
+    "provedor": ""
+  },
+  "patrimonio": {
+    "descricao": "Notebook administrativo",
+    "numeroPatrimonio": "PAT-0001",
+    "valorAquisicao": 3500,
+    "dataAquisicao": "2026-10-01",
+    "vidaUtilMeses": 36,
+    "valorResidual": 350
+  },
+  "compras": {
+    "solicitante": "Usuário solicitante",
+    "itens": [
+      {
+        "descricao": "Papel A4",
+        "quantidade": 10
+      }
+    ],
+    "valorEstimado": 250,
+    "dataNecessidade": "2026-11-15",
+    "cotacoes": [
+      {
+        "fornecedor": "Fornecedor A",
+        "valor": 250
+      }
+    ],
+    "justificativa": "Reposição de estoque"
+  },
+  "producao": {
+    "produto": "Kit exemplo",
+    "quantidadePlanejada": 100,
+    "quantidadeProduzida": 0,
+    "inicioPrevisto": "2026-11-01",
+    "fimPrevisto": "2026-11-05",
+    "materiais": []
+  },
+  "contratos": {
+    "parte": "Fornecedor Exemplo",
+    "inicio": "2026-11-01",
+    "fim": "2027-10-31",
+    "valor": 12000,
+    "renovacaoAutomatica": false
+  },
+  "servicos": {
+    "solicitante": "Equipe interna",
+    "descricao": "Manutenção preventiva",
+    "prioridade": "media",
+    "prazo": "2026-11-05",
+    "responsavel": "Técnico"
+  },
+  "orcamentos": {
+    "centroCusto": "Marketing",
+    "periodo": "2026-11",
+    "valorPrevisto": 5000,
+    "valorRealizado": 0
+  },
+  "recrutamento": {
+    "vaga": "Assistente administrativo",
+    "candidato": "Candidato Exemplo",
+    "etapa": "triagem",
+    "responsavel": "RH"
+  },
+  "medicina_trabalho": {
+    "colaborador": "ID interno do colaborador",
+    "tipoRegistro": "exame_periodico",
+    "data": "2026-10-27",
+    "validade": "2027-10-27",
+    "statusAptidao": "pendente"
+  },
+  "cargos_salarios": {
+    "cargo": "Analista",
+    "nivel": "Júnior",
+    "salarioMinimo": 2500,
+    "salarioMaximo": 3500,
+    "faixaReferencia": "JR-01",
+    "vigencia": "2026-11-01"
+  },
+  "aprovacoes": {
+    "solicitante": "Usuário",
+    "motivo": "Compra extraordinária",
+    "valor": 1800,
+    "aprovadores": [
+      "gestor"
+    ]
+  },
+  "relatorios": {
+    "nome": "Contas a vencer",
+    "configuracao": {
+      "modulo": "financeiro",
+      "filtros": {
+        "situacao": "aberto"
+      },
+      "colunas": [
+        "title",
+        "valor",
+        "vencimento"
+      ]
+    }
+  }
+}

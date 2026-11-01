@@ -1,0 +1,670 @@
+'use client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import api, { getToken } from '@/lib/api';
+
+import { Target, DollarSign, Package, TrendingUp, Clock, Gift, Search, Plus, Download, SlidersHorizontal, Pencil, Eye, MoreVertical, X, Sparkles, Copy, Pause, Trash2, Share2, CheckCircle2, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { formatBRL, formatNumber, formatDate } from '@/lib/format';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+type StatusMeta = 'Em Andamento' | 'Em Risco' | 'Atingida' | 'Quase Atingida' | 'Atrasada' | 'Ativa' | 'Pausada';
+interface Meta { id: string; nome: string; equipe: string; colaborador?: string; tipo: string; valorMeta: number; valorAtual: number; progresso: number; prazo: string; prazoFim?: string; prazoInicio?: string; responsavel: string; avatar: string; premiacao: string; premiacaoValor?: number; status: StatusMeta; descricao?: string; unidade?: string; }
+interface Toast { id: number; msg: string; kind: 'ok' | 'warn' | 'err'; }
+interface FormState { nome: string; equipe: string; colaborador: string; tipo: string; valorMeta: string; valorAtual: string; prazoInicio: string; prazoFim: string; responsavel: string; premiacaoTipo: string; valor: string; condicao: string; descricao: string; }
+type TabKey = 'Todas' | 'Vendas' | 'Producao' | 'Financeiro' | 'RH' | 'TI' | 'Individuais' | 'Atingidas' | 'Em Risco';
+type OrdemKey = 'Maior Progresso' | 'Menor Progresso' | 'Prazo Proximo' | 'Maior Valor' | 'A-Z';
+const TABS: TabKey[] = ['Todas', 'Vendas', 'Producao', 'Financeiro', 'RH', 'TI', 'Individuais', 'Atingidas', 'Em Risco'];
+const EQUIPES = ['Todas Equipes', 'Vendas', 'Producao', 'Logistica', 'Financeiro', 'RH', 'TI'];
+const TIPOS = ['Todos Tipos', 'Receita', 'Quantidade', 'Ticket Medio', 'Margem', 'Qualidade', 'Treinamento', 'Satisfacao'];
+const STATUS_LIST = ['Todas', 'Ativa', 'Atingida', 'Em Risco', 'Atrasada'];
+
+/** Cor da barra de progresso conforme o percentual atingido. */
+function getProgressColor(p: number): string {
+  if (p >= 90) return 'var(--nx-green)';
+  if (p >= 75) return 'var(--nx-amber)';
+  return 'var(--nx-red)';
+}
+function calcDias(prazo: string): number { const m = prazo.match(/(\d{2})\/(\d{2})\/(\d{4})/); if (!m) return 0; const f = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime(); return Math.max(0, Math.ceil((f - Date.now()) / 86400000)); }
+function calcMedia(m: Meta): number { return Math.max(0, (m.valorMeta - m.valorAtual) / Math.max(1, calcDias(m.prazo))); }
+function calcProj(m: Meta): number { const d = calcDias(m.prazo); const r = m.progresso / Math.max(1, 30 - d); return Math.min(130, Math.round(m.progresso + r * d * 0.9)); }
+/**
+ * Formata o valor da meta conforme a SUA unidade: percentual, pontos,
+ * unidades ou moeda. A parte monetária usa a moeda escolhida em
+ * Configurações (antes era BRL fixo, então USD/EUR não aparecia aqui).
+ */
+function maskBRL(v: number, u?: string): string {
+  if (u === '%') return v + '%';
+  if (u === 'pts') return v + ' pts';
+  if (u === 'un') return formatNumber(v) + ' un';
+  return formatBRL(v, { maxFractionDigits: v < 100 ? 2 : 0 });
+}
+
+/** Data da meta no formato escolhido em Configurações. */
+function maskData(iso: string): string {
+  if (!iso) return '';
+  return formatDate(iso);
+}
+const EMPTY_FORM: FormState = { nome: '', equipe: 'Vendas', colaborador: '', tipo: 'Receita', valorMeta: '', valorAtual: '', prazoInicio: '', prazoFim: '', responsavel: '', premiacaoTipo: 'Valor fixo', valor: '', condicao: 'Atingir 100%', descricao: '' };
+const ORDENS: OrdemKey[] = ['Maior Progresso', 'Menor Progresso', 'Prazo Proximo', 'Maior Valor', 'A-Z'];
+const PERIODOS = ['Todos', 'Setembro 2026', 'Outubro 2026', 'Novembro 2026', 'Q3 2026', 'Q4 2026'];
+const EVOLUCAO = [{ mes: 'Abr', ating: 62 }, { mes: 'Mai', ating: 71 }, { mes: 'Jun', ating: 68 }, { mes: 'Jul', ating: 79 }, { mes: 'Ago', ating: 83 }, { mes: 'Set', ating: 84 }];
+
+export default function Metas() {
+  const router = useRouter();
+  const [baseMetas, setBaseMetas] = useState<Meta[]>([]);
+  const [query, setQuery] = useState('');
+  const [queryDeb, setQueryDeb] = useState('');
+  const [tab, setTab] = useState<TabKey>('Todas');
+  const [periodoF, setPeriodoF] = useState('Todos');
+  const [equipeF, setEquipeF] = useState('Todas Equipes');
+  const [tipoF, setTipoF] = useState('Todos Tipos');
+  const [statusF, setStatusF] = useState('Todas');
+  const [ordem, setOrdem] = useState<OrdemKey>('Maior Progresso');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showNew, setShowNew] = useState(false);
+  const [editing, setEditing] = useState<Meta | null>(null);
+  const [detail, setDetail] = useState<Meta | null>(null);
+  const [showProgress, setShowProgress] = useState<Meta | null>(null);
+  const [showRanking, setShowRanking] = useState(false);
+  const [toastList, setToastList] = useState<Toast[]>([]);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [progForm, setProgForm] = useState({ atual: '', novo: '', incremento: '', motivo: '', obs: '' });
+  const [advOpen, setAdvOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const toastId = useRef(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const addToast = useCallback((msg: string, kind: Toast['kind'] = 'ok') => {
+    const id = ++toastId.current;
+    setToastList((t) => [...t, { id, msg, kind }]);
+    setTimeout(() => setToastList((t) => t.filter((x) => x.id !== id)), 3000);
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get('/metas');
+      const arr = data.metas ?? data.ranking ?? [];
+      if (Array.isArray(arr)) {
+        const mapped: Meta[] = arr.map((x: any, i: number) => {
+          const vm = Number(x.metaValor ?? 0);
+          const va = Number(x.realizado ?? 0);
+          const prog = Number(x.percentual ?? (vm > 0 ? Math.round((va / vm) * 100) : 0));
+          const rawSt = String(x.status ?? 'EM_ANDAMENTO').toUpperCase();
+          let st: StatusMeta = 'Em Andamento';
+          if (rawSt === 'ATINGIDA' || prog >= 100) st = 'Atingida';
+          else if (rawSt === 'QUASE_ATINGIDA' || prog >= 90) st = 'Quase Atingida';
+          else if (rawSt === 'EM_RISCO' || (prog < 75 && rawSt !== 'PAUSADA')) st = 'Em Risco';
+          else if (rawSt === 'ATRASADA') st = 'Atrasada';
+          else if (rawSt === 'PAUSADA') st = 'Pausada';
+          else if (rawSt === 'ATIVA') st = 'Ativa';
+
+          return {
+            id: String(x.id ?? 'api-' + i),
+            nome: String(x.nome ?? (x.tipo ? `Meta ${x.tipo}` : 'Meta')),
+            equipe: String(x.equipe ?? 'Vendas'),
+            colaborador: x.funcionarioId || x.colaborador || undefined,
+            tipo: String(x.tipo ?? 'Receita'),
+            valorMeta: vm,
+            valorAtual: va,
+            progresso: prog,
+            prazo: String(x.periodo ?? ''),
+            prazoFim: String(x.periodo ? (x.periodo.length === 7 ? x.periodo + '-28' : x.periodo) : ''),
+            prazoInicio: x.prazoInicio || '',
+            responsavel: x.funcionarioId ? 'Funcionário ' + String(x.funcionarioId).slice(0, 6) : (x.responsavel || 'Equipe'),
+            avatar: 'EQ',
+            premiacao: x.premiacaoValor ? 'R$ ' + x.premiacaoValor : (x.premiacao || 'R$ 0'),
+            premiacaoValor: Number(x.premiacaoValor ?? 0),
+            status: st,
+            descricao: x.descricao ?? '',
+            unidade: 'R$',
+          };
+        });
+        setBaseMetas(mapped);
+      }
+    } catch (err: any) {
+      addToast(err instanceof Error ? err.message : 'Erro ao carregar metas', 'err');
+      setBaseMetas([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace('/');
+      return;
+    }
+    void load();
+  }, [router, load]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQueryDeb(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const filteredMetas = useMemo(() => {
+    let r = [...baseMetas];
+    const q = queryDeb.trim().toLowerCase();
+    if (q) r = r.filter((m) => (m.nome + ' ' + m.equipe + ' ' + m.responsavel + ' ' + m.tipo).toLowerCase().includes(q));
+    if (tab === 'Atingidas') r = r.filter((m) => m.status === 'Atingida' || m.progresso >= 100);
+    else if (tab === 'Em Risco') r = r.filter((m) => m.status === 'Em Risco' || m.progresso < 75);
+    else if (tab === 'Individuais') r = r.filter((m) => !!m.colaborador);
+    else if (tab !== 'Todas') r = r.filter((m) => m.equipe === tab || (tab === 'Producao' && m.equipe === 'Producao'));
+    if (equipeF !== 'Todas Equipes') r = r.filter((m) => m.equipe === equipeF);
+    if (tipoF !== 'Todos Tipos') r = r.filter((m) => m.tipo === tipoF);
+    if (statusF === 'Ativa') r = r.filter((m) => m.status === 'Em Andamento' || m.status === 'Quase Atingida');
+    else if (statusF !== 'Todas') r = r.filter((m) => m.status === statusF);
+    if (ordem === 'Maior Progresso') r.sort((a, b) => b.progresso - a.progresso);
+    if (ordem === 'Menor Progresso') r.sort((a, b) => a.progresso - b.progresso);
+    if (ordem === 'Maior Valor') r.sort((a, b) => b.valorMeta - a.valorMeta);
+    if (ordem === 'A-Z') r.sort((a, b) => a.nome.localeCompare(b.nome));
+    return r;
+  }, [baseMetas, queryDeb, tab, equipeF, tipoF, statusF, ordem]);
+
+  const kpis = useMemo(() => {
+    const ativas = baseMetas.filter((m) => m.status !== 'Atingida').length;
+    const emAndamento = baseMetas.filter((m) => m.status === 'Em Andamento');
+    const geral = emAndamento.length
+      ? Math.round(
+          emAndamento.reduce((s, m) => s + m.progresso, 0) / emAndamento.length,
+        )
+      : 0;
+    const receita = baseMetas.filter((m) => m.tipo.toUpperCase() === 'RECEITA' || m.tipo.toUpperCase() === 'VENDAS');
+    const receitaMeta = receita.reduce((s, m) => s + (m.valorMeta ?? 0), 0);
+    const receitaReal = receita.reduce((s, m) => s + (m.valorAtual ?? 0), 0);
+    const risco = baseMetas.filter(
+      (m) => m.status === 'Em Risco' || (m.progresso < 75 && m.status !== 'Atingida'),
+    ).length;
+    const prem = baseMetas.reduce((s, m) => s + (m.premiacaoValor ?? 0), 0);
+    return { ativas, geral, receitaMeta, receitaReal, risco, prem };
+  }, [baseMetas]);
+
+  const ranking = useMemo(() => [...baseMetas].sort((a, b) => b.progresso - a.progresso).slice(0, 5), [baseMetas]);
+
+  const porEquipe = useMemo(() => {
+    const counts: Record<string, { count: number; sumProg: number }> = {};
+    for (const m of baseMetas) {
+      const eq = m.equipe || 'Geral';
+      if (!counts[eq]) counts[eq] = { count: 0, sumProg: 0 };
+      counts[eq].count++;
+      counts[eq].sumProg += m.progresso;
+    }
+    const entries = Object.entries(counts).map(([equipe, data]) => ({
+      nome: equipe,
+      qtd: data.count,
+      ating: data.count ? Math.round(data.sumProg / data.count) : 0,
+    }));
+    return entries.length > 0 ? entries : [
+      { nome: 'Vendas', qtd: 0, ating: 0 },
+      { nome: 'Producao', qtd: 0, ating: 0 },
+      { nome: 'Financeiro', qtd: 0, ating: 0 },
+    ];
+  }, [baseMetas]);
+
+  const porTipo = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of baseMetas) {
+      const t = m.tipo || 'Geral';
+      counts[t] = (counts[t] || 0) + 1;
+    }
+    const entries = Object.entries(counts).map(([tipo, qtd]) => ({ tipo, qtd }));
+    return entries.length > 0 ? entries : [{ tipo: 'Receita', qtd: 0 }];
+  }, [baseMetas]);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setShowNew(false); setDetail(null); setShowProgress(null); setShowRanking(false); setEditing(null); }
+      const tag = (document.activeElement?.tagName ?? '').toUpperCase();
+      if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); searchRef.current?.focus(); }
+      if ((e.key === 'n' || e.key === 'N') && tag !== 'INPUT' && tag !== 'TEXTAREA' && !showNew) { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [showNew]);
+
+  useEffect(() => {
+    const anyM = showNew || detail || showProgress || showRanking || editing;
+    document.body.style.overflow = anyM ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [showNew, detail, showProgress, showRanking, editing]);
+
+  function toggleSel(id: string) { setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+  function toggleAll() { setSelected((s) => (s.size === filteredMetas.length ? new Set<string>() : new Set(filteredMetas.map((m) => m.id)))); }
+
+  async function criarMeta(e: React.FormEvent) {
+    e.preventDefault();
+    if (saving) return;
+    if (!form.nome.trim()) { addToast('Informe o nome da meta', 'warn'); return; }
+    const vm = Number(String(form.valorMeta).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    const va = Number(String(form.valorAtual).replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+    if (vm <= 0) { addToast('Valor da meta deve ser maior que zero', 'warn'); return; }
+
+    setSaving(true);
+    try {
+      if (editing) {
+        await api.put(`/metas/${editing.id}`, {
+          tipo: form.tipo.toUpperCase(),
+          metaValor: vm,
+          realizado: va,
+          periodo: form.prazoFim ? form.prazoFim.slice(0, 7) : new Date().toISOString().slice(0, 7),
+        });
+        addToast('Meta atualizada');
+      } else {
+        await api.post('/metas', {
+          tipo: form.tipo.toUpperCase(),
+          metaValor: vm,
+          realizado: va,
+          periodo: form.prazoFim ? form.prazoFim.slice(0, 7) : new Date().toISOString().slice(0, 7),
+          origem: 'MANUAL',
+        });
+        addToast('Meta criada');
+      }
+      await load();
+      setShowNew(false);
+      setEditing(null);
+      setForm(EMPTY_FORM);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Erro ao salvar meta', 'err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function duplicar(m: Meta) {
+    try {
+      await api.post('/metas', {
+        tipo: m.tipo.toUpperCase(),
+        metaValor: m.valorMeta,
+        realizado: 0,
+        periodo: m.prazoFim ? m.prazoFim.slice(0, 7) : new Date().toISOString().slice(0, 7),
+        origem: 'MANUAL',
+      });
+      addToast('Meta duplicada com sucesso');
+      await load();
+      setDetail(null);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Erro ao duplicar meta', 'err');
+    }
+  }
+
+  async function excluir(id: string) {
+    try {
+      await api.delete(`/metas/${id}`);
+      addToast('Meta excluída');
+      await load();
+      setDetail(null);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Erro ao excluir meta', 'err');
+    }
+  }
+
+  async function pausar(m: Meta) {
+    try {
+      const novoStatus = m.status === 'Pausada' ? 'EM_ANDAMENTO' : 'PAUSADA';
+      await api.put(`/metas/${m.id}`, { status: novoStatus });
+      addToast(novoStatus === 'PAUSADA' ? 'Meta pausada' : 'Meta reativada', 'warn');
+      await load();
+      if (detail && detail.id === m.id) {
+        setDetail((d) => d ? { ...d, status: novoStatus === 'PAUSADA' ? 'Pausada' : 'Em Andamento' } : null);
+      }
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Erro ao alterar status da meta', 'err');
+    }
+  }
+
+  async function confirmarProgresso() {
+    if (!showProgress) return;
+    try {
+      const novoVal = progForm.novo ? Number(progForm.novo.replace(/[^\d.,]/g, '').replace(',', '.')) : undefined;
+      const incVal = progForm.incremento ? Number(progForm.incremento.replace(/[^\d.,]/g, '').replace(',', '.')) : undefined;
+      await api.patch(`/metas/${showProgress.id}/progresso`, {
+        novoValor: novoVal,
+        incremento: incVal,
+        motivo: progForm.motivo || undefined,
+        obs: progForm.obs || undefined,
+      });
+      addToast('Progresso atualizado com sucesso');
+      await load();
+      setShowProgress(null);
+      setProgForm({ atual: '', novo: '', incremento: '', motivo: '', obs: '' });
+      setDetail(null);
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : 'Erro ao atualizar progresso', 'err');
+    }
+  }
+  function exportCSV() {
+    const csv = ['nome;equipe;tipo;meta;atual;progresso;prazo;responsavel;status'].concat(filteredMetas.map((m) => m.nome + ';' + m.equipe + ';' + m.tipo + ';' + m.valorMeta + ';' + m.valorAtual + ';' + m.progresso + '%;' + m.prazo + ';' + m.responsavel + ';' + m.status)).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'metas.csv'; a.click(); addToast('Exportado CSV');
+  }
+
+  function Badge({ s }: { s: StatusMeta }) {
+    const map: Record<string, { bg: string; fg: string; bd: string }> = {
+      Atingida: { bg: 'var(--successBg)', fg: 'var(--success)', bd: 'var(--successBorder)' },
+      'Quase Atingida': { bg: 'var(--successBg)', fg: 'var(--success)', bd: 'var(--successBorder)' },
+      'Em Andamento': { bg: 'var(--infoBg)', fg: 'var(--info)', bd: 'var(--infoBorder)' },
+      'Em Risco': { bg: 'var(--warningBg)', fg: 'var(--warning)', bd: 'var(--warningBorder)' },
+      Atrasada: { bg: 'var(--dangerBg)', fg: 'var(--danger)', bd: 'var(--dangerBorder)' },
+    };
+    const c = map[s] ?? map['Em Andamento'];
+    return <span style={{ background: c.bg, color: c.fg, border: '1px solid ' + c.bd, borderRadius: 20, padding: '4px 10px', fontSize: 10, whiteSpace: 'nowrap' }}>{s}</span>;
+  }
+  const lbl: React.CSSProperties = { fontSize: 10, textTransform: 'uppercase', fontWeight: 700, color: 'var(--label2)', letterSpacing: 0.8 };
+  const inp: React.CSSProperties = { background: 'var(--card3)', border: '1px solid var(--border3)', borderRadius: 12, height: 44, padding: '0 14px', fontSize: 12, color: 'var(--text)', width: '100%', outline: 'none' };
+  const btnP: React.CSSProperties = { background: 'linear-gradient(135deg,var(--primary),var(--primary2))', boxShadow: 'var(--shadowPrimary)', borderRadius: 12, height: 44, padding: '0 20px', color: 'var(--text)', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 };
+  const btnG: React.CSSProperties = { background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 12, height: 44, padding: '0 16px', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 };
+  if (loading) return <main style={{ padding: 24, background: 'var(--nx-canvas)', minHeight: '100vh', color: 'var(--nx-ink)' }}><p>Carregando...</p></main>;
+  return (
+    <main className='metas-root' style={{ background: 'var(--bg)', minHeight: '100vh', padding: 24, fontFamily: 'Inter,system-ui,sans-serif', color: 'var(--text)' }}>
+      <style>{'.metas-root{--bg:var(--nx-canvas);--bg2:var(--nx-surface-2);--card:var(--nx-surface);--card2:var(--nx-surface-2);--card3:var(--nx-surface-3);--border:var(--nx-border);--border2:var(--nx-border);--border3:var(--nx-border-strong);--primary:var(--nx-accent);--primary2:var(--nx-accent-2);--text:var(--nx-ink);--muted:var(--nx-ink-2);--label:var(--nx-ink-3);--label2:var(--nx-ink-3);--success:var(--nx-green);--successBg:color-mix(in srgb,var(--nx-green) 12%,var(--nx-surface));--successBorder:color-mix(in srgb,var(--nx-green) 35%,var(--nx-border));--warning:var(--nx-amber);--warningBg:color-mix(in srgb,var(--nx-amber) 12%,var(--nx-surface));--warningBorder:color-mix(in srgb,var(--nx-amber) 35%,var(--nx-border));--danger:var(--nx-red);--dangerBg:color-mix(in srgb,var(--nx-red) 12%,var(--nx-surface));--dangerBorder:color-mix(in srgb,var(--nx-red) 35%,var(--nx-border));--info:#3b82f6;--infoBg:color-mix(in srgb,var(--info) 12%,var(--nx-surface));--infoBorder:color-mix(in srgb,var(--info) 35%,var(--nx-border));--shadow:0 8px 32px var(--nx-shadow-pop);--shadowPrimary:0 4px 16px color-mix(in srgb,var(--nx-accent) 30%,transparent);--primary-ink:#fff} [data-theme=claro] .metas-root{--primary-ink:var(--nx-ink)} .metas-root .metas-card{transition:all .2s;backdrop-filter:blur(4px)} .metas-root .metas-card:hover{border-color:var(--nx-accent)!important} .metas-root .metas-row{transition:all .2s;cursor:pointer} .metas-root .metas-row:hover{background:var(--bg2)!important;border-left:2px solid var(--primary)} .metas-root .metas-input:focus{border-color:var(--primary)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 20%,transparent)} .metas-root .metas-btn-p:hover{filter:brightness(1.1)} .metas-root .metas-btn-p:active{transform:scale(.98)} @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}} @keyframes shrink{from{width:100%}to{width:0%}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}'}</style>
+      <button type="button" onClick={() => router.push('/')} aria-label="Voltar ao Dashboard" style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 20, padding: '6px 14px', fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>Voltar Dashboard</button>
+      <div style={{ fontSize: 10, color: 'var(--label2)', letterSpacing: 1.5, marginTop: 12 }}>GESTAO - METAS</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div>
+          <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)', margin: '4px 0 0' }}>{traduzir('metas', "Metas")}</h1>
+          <div style={{ width: 80, height: 3, background: 'linear-gradient(90deg,var(--primary),var(--primary2))', borderRadius: 2, margin: '8px 0' }} />
+          <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5 }}>{kpis.ativas} metas ativas - {kpis.geral}% atingimento geral</p>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 12, top: 14, color: 'var(--label)' }}><Search size={14} /></span>
+            <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar meta... (/ foca)" aria-label="Buscar metas" className="metas-input" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, height: 44, padding: '0 14px 0 34px', fontSize: 12, color: 'var(--text)', width: 340, outline: 'none' }} />
+          </div>
+          <button type="button" style={btnG} onClick={() => setAdvOpen((v) => !v)}><SlidersHorizontal size={14} /> Filtros Avancados</button>
+          <button type="button" style={btnG} onClick={exportCSV}><Download size={14} /> Exportar</button>
+          <button type="button" className="metas-btn-p" style={btnP} onClick={() => { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }}><Plus size={14} /> Nova Meta</button>
+        </div>
+      </div>
+      <div role="tablist" aria-label="Categorias de metas" style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 14, padding: 6, gap: 6, width: 'fit-content', margin: '20px 0', display: 'flex', flexWrap: 'wrap' }}>
+        {TABS.map((t, i) => {
+          const active = tab === t;
+          return (
+            <button key={t} role="tab" aria-selected={active} tabIndex={active ? 0 : -1} className="metas-tab" style={{ background: active ? 'var(--primary)' : 'transparent', color: active ? 'var(--primary-ink)' : 'var(--muted)', boxShadow: active ? '0 2px 8px color-mix(in srgb,var(--primary) 25%,transparent)' : 'none', borderRadius: 10, padding: '9px 18px', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer' }}
+              onClick={() => setTab(t)}
+              onKeyDown={(e) => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const n = (i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length; setTab(TABS[n]); } }}>
+              {t}{t === 'Todas' ? ` (${baseMetas.length})` : ''}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Periodo</span><select value={periodoF} onChange={(e) => setPeriodoF(e.target.value)} aria-label="Periodo" className="metas-input" style={{ ...inp, height: 40, minWidth: 160 }}>{PERIODOS.map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('equipe', "Equipe")}</span><select value={equipeF} onChange={(e) => setEquipeF(e.target.value)} aria-label={traduzir('equipe', "Equipe")} className="metas-input" style={{ ...inp, height: 40, minWidth: 150 }}>{EQUIPES.map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('tipo', "Tipo")}</span><select value={tipoF} onChange={(e) => setTipoF(e.target.value)} aria-label={traduzir('tipo', "Tipo")} className="metas-input" style={{ ...inp, height: 40, minWidth: 140 }}>{TIPOS.map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('status', "Status")}</span><select value={statusF} onChange={(e) => setStatusF(e.target.value)} aria-label={traduzir('status', "Status")} className="metas-input" style={{ ...inp, height: 40, minWidth: 140 }}>{STATUS_LIST.map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Ordenar</span><select value={ordem} onChange={(e) => setOrdem(e.target.value as OrdemKey)} aria-label="Ordenar" className="metas-input" style={{ ...inp, height: 40, minWidth: 160 }}>{ORDENS.map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+        <div style={{ display: 'flex', alignItems: 'flex-end' }}><button type="button" style={{ ...btnG, height: 40, borderRadius: 10, fontSize: 11 }} onClick={() => setAdvOpen((v) => !v)}>Filtros Avancados</button></div>
+      </div>
+      {advOpen && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, marginBottom: 16, fontSize: 12, color: 'var(--muted)' }}>Filtros avancados ativos: periodo {periodoF}. Atalhos: / buscar, N nova meta, Esc fechar.</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 20 }}>
+        {[
+          { icon: Target, label: 'Metas Ativas', value: String(kpis.ativas), delta: `${baseMetas.length} no total`, c: '#22c55e' },
+          { icon: TrendingUp, label: 'Atingimento Geral', value: kpis.geral + '%', delta: 'média em andamento', c: '#22c55e' },
+          { icon: DollarSign, label: 'Receita Meta', value: formatBRL(kpis.receitaMeta, { maxFractionDigits: 0 }), delta: 'soma das metas de receita', c: '#3b82f6' },
+          { icon: Package, label: 'Receita Realizada', value: formatBRL(kpis.receitaReal, { maxFractionDigits: 0 }), delta: `${kpis.geral}% da meta`, c: '#22c55e' },
+          { icon: Clock, label: 'Em Risco', value: String(kpis.risco), delta: 'abaixo de 75%', c: '#f59e0b' },
+          { icon: Gift, label: 'Premiacoes', value: formatBRL(kpis.prem, { maxFractionDigits: 0 }), delta: 'a pagar', c: 'var(--primary)' },
+        ].map((k) => (
+          <div key={k.label} className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 14, boxShadow: 'var(--shadow)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--label)', textTransform: 'uppercase', letterSpacing: 0.8 }}>{k.label}</span>
+              <span style={{ background: 'var(--successBg)', borderRadius: 8, padding: 4, display: 'inline-flex' }}><k.icon size={16} color={k.c} /></span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)', marginTop: 6 }}>{k.value}</div>
+            <span style={{ fontSize: 11, background: 'var(--successBg)', color: 'var(--success)', borderRadius: 6, padding: '2px 6px', display: 'inline-block', marginTop: 6 }}>{k.delta}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
+        <section className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24, boxShadow: 'var(--shadow)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <h2 style={{ fontSize: 11, color: 'var(--label2)', textTransform: 'uppercase', letterSpacing: 0.8, margin: 0 }}>Lista de Metas</h2>
+              <span style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 20, padding: '2px 10px', fontSize: 10, color: 'var(--muted)' }}>{filteredMetas.length}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setViewMode('grid')} aria-label="Grid" style={{ background: viewMode === 'grid' ? 'var(--primary)' : 'var(--card2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 11, display: 'inline-flex', gap: 4, alignItems: 'center' }}><LayoutGrid size={13} /> Grid</button>
+              <button type="button" onClick={() => setViewMode('list')} aria-label="Lista" style={{ background: viewMode === 'list' ? 'var(--primary)' : 'var(--card2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 11, display: 'inline-flex', gap: 4, alignItems: 'center' }}><ListIcon size={13} /> Lista</button>
+              <button type="button" onClick={toggleAll} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 8, height: 32, padding: '0 12px', fontSize: 11, color: 'var(--muted)', cursor: 'pointer' }}>Selecionar Todas</button>
+            </div>
+          </div>
+          {selected.size > 0 && <button type="button" onClick={() => { addToast(selected.size + ' metas processadas'); setSelected(new Set()); }} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 8, height: 32, padding: '0 12px', fontSize: 11, color: 'var(--muted)', cursor: 'pointer', marginBottom: 10 }}>Acoes em Massa ({selected.size})</button>}
+          {viewMode === 'list' ? (
+            filteredMetas.length === 0 ? (
+              /* Estado vazio HONESTO. Antes, uma empresa sem metas via as oito
+                 metas de exemplo (MOCK_METAS) — inclusive "Joaozinho R$ 50k". */
+              <div style={{ textAlign: 'center', padding: '48px 20px', border: '1px dashed var(--border)', borderRadius: 12, background: 'var(--card2)' }}>
+                <Target size={28} color="var(--muted)" style={{ margin: '0 auto 10px' }} />
+                <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
+                  {traduzir('nenhuma_meta_cadastrada', 'Nenhuma meta cadastrada')}
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, maxWidth: 460, margin: '6px auto 0' }}>
+                  {traduzir('as_metas_vem_de_get_metas_cadastre_a_pri', 'As metas vêm de GET /metas. Cadastre a primeira para começar a acompanhar o desempenho.')}
+                </p>
+              </div>
+            ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table role="table" aria-label={traduzir('metas', "Metas")} style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--card)', zIndex: 10 }}>
+                  <tr>{['', 'Meta', 'Tipo', 'Valor', 'Progresso', 'Prazo', 'Responsavel', 'Premiacao', 'Status', 'Acoes'].map((h) => <th key={h} style={{ fontSize: 10, color: 'var(--label2)', textTransform: 'uppercase', letterSpacing: 0.8, padding: '12px 8px', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {filteredMetas.map((m) => (
+                    <tr key={m.id} className="metas-row group" onClick={() => setDetail(m)} style={{ borderLeft: '2px solid transparent' }}>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)' }} onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selected.has(m.id)} onChange={() => toggleSel(m.id)} aria-label={'Selecionar ' + m.nome} /></td>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)' }}><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{m.nome}</div><span style={{ background: 'var(--infoBg)', color: 'var(--info)', borderRadius: 6, padding: '2px 8px', fontSize: 10 }}>{m.equipe}</span></td>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{m.tipo}</td>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text)' }}>{maskBRL(m.valorAtual, m.unidade)} <span style={{ color: 'var(--label)' }}>/ {maskBRL(m.valorMeta, m.unidade)}</span></td>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)' }}><div style={{ height: 8, background: 'var(--card2)', borderRadius: 6, width: 110 }}><div style={{ height: 8, borderRadius: 6, width: Math.min(100, m.progresso) + '%', background: getProgressColor(m.progresso) }} /></div><span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{m.progresso}%</span></td>
+                      <td style={{ padding: '12px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{m.prazo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            )
+          ) : null}
+          {viewMode === 'grid' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
+              {filteredMetas.map((m) => (
+                <div key={m.id} className="metas-card" onClick={() => setDetail(m)} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 16, padding: 16, cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <span style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg,var(--primary),var(--primary2))', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Target size={20} color="#fff" /></span>
+                    <div><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{m.nome}</div><span style={{ background: 'var(--infoBg)', color: 'var(--info)', borderRadius: 6, padding: '2px 8px', fontSize: 10 }}>{m.equipe}</span></div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{m.tipo} - {maskBRL(m.valorAtual, m.unidade)} / {maskBRL(m.valorMeta, m.unidade)}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                    <span style={{ width: 60, height: 60, borderRadius: '50%', border: '6px solid ' + getProgressColor(m.progresso), display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{m.progresso}%</span>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>Prazo {m.prazo}<br />{m.responsavel} - {m.premiacao}</div>
+                  </div>
+                  <div style={{ marginTop: 10 }}><Badge s={m.status} /></div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ background: 'linear-gradient(135deg,var(--card2),var(--card))', border: '1px solid var(--border3)', borderRadius: 16, padding: 18 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ width: 42, height: 42, borderRadius: 12, background: 'linear-gradient(135deg,var(--primary),var(--primary2))', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', animation: 'pulse 2s infinite' }}><Sparkles size={18} color="#fff" /></span>
+              <div><div style={{ fontSize: 12, fontWeight: 700 }}>IA NEXUS</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>Insights das metas</div></div>
+            </div>
+            <div style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, margin: '10px 0', fontSize: 11, color: 'var(--muted)' }}>{kpis.risco > 0 ? `${kpis.risco} meta(s) em risco precisam de atenção.` : 'Metas em andamento dentro do esperado.'}</div>
+            <div style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10, fontSize: 11, color: 'var(--muted)' }}>Atingimento geral: {kpis.geral}% com base nos registros do banco de dados.</div>
+            <button type="button" onClick={() => addToast('Analise IA gerada')} style={{ background: 'var(--primary)', height: 36, borderRadius: 8, padding: '0 14px', color: 'var(--text)', fontSize: 11, fontWeight: 700, width: '100%', border: 'none', cursor: 'pointer' }}>Analisar Mais</button>
+          </div>
+        </aside>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+        <div className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Distribuicao por Equipe</h3>
+          {porEquipe.map((e) => (
+            <div key={e.nome} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 11, color: 'var(--muted)' }}>
+              <span style={{ width: 90 }}>{e.nome} ({e.qtd})</span>
+              <div style={{ flex: 1, height: 8, background: 'var(--card2)', borderRadius: 6 }}><div style={{ height: 8, borderRadius: 6, width: e.ating + '%', background: getProgressColor(e.ating) }} /></div>
+              <span style={{ width: 36, textAlign: 'right', color: 'var(--text)', fontWeight: 700 }}>{e.ating}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Ranking Colaboradores</h3>
+          {ranking.map((m, i) => (
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12 }}>
+              <span style={{ width: 22, height: 22, borderRadius: '50%', background: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#b45309' : 'var(--card2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 }}>{i + 1}</span>
+              <span style={{ flex: 1 }}>{m.responsavel} <span style={{ color: 'var(--label)', fontSize: 11 }}>- {m.equipe}</span></span>
+              <span style={{ fontWeight: 800 }}>{m.progresso}%</span>
+            </div>
+          ))}
+          <button type="button" onClick={() => setShowRanking(true)} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 11, padding: '8px 12px', cursor: 'pointer', marginTop: 6 }}>Ver Ranking Completo</button>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+        <div className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Evolucao Atingimento</h3>
+          <div style={{ height: 160 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={EVOLUCAO}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="mes" tick={{ fill: 'var(--label)', fontSize: 11 }} stroke="var(--border)" />
+                <YAxis tick={{ fill: 'var(--label)', fontSize: 11 }} stroke="var(--border)" />
+                <Tooltip contentStyle={{ background: 'var(--card2)', border: '1px solid #2a2a4a', borderRadius: 10, fontSize: 12 }} />
+                <Line type="monotone" dataKey="ating" stroke="var(--primary)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: '16px 0 8px' }}>Metas por Tipo</h3>
+        <div style={{ height: 120 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={porTipo}>
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="tipo" tick={{ fill: 'var(--label)', fontSize: 11 }} stroke="var(--border)" />
+              <YAxis tick={{ fill: 'var(--label)', fontSize: 11 }} stroke="var(--border)" />
+              <Tooltip contentStyle={{ background: 'var(--card2)', border: '1px solid #2a2a4a', borderRadius: 10, fontSize: 12 }} />
+              <Bar dataKey="qtd" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        </div>
+        <div className="metas-card" style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 20 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Ranking + Premiacoes</h3>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{formatBRL(kpis.prem, { maxFractionDigits: 0 })}</div>
+          <button type="button" onClick={() => setShowRanking(true)} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 11, padding: '8px 12px', cursor: 'pointer', marginTop: 8 }}>Ver Ranking</button>
+          <button type="button" onClick={() => addToast('Premiacoes pagas')} style={{ background: 'var(--nx-green)', height: 36, borderRadius: 8, padding: '0 14px', color: 'var(--text)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', marginTop: 8, marginLeft: 8 }}>Pagar Premiacoes</button>
+        </div>
+      </div>
+
+      {(showNew || editing) ? (
+        <div onClick={() => { setShowNew(false); setEditing(null); }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label={editing ? 'Editar meta' : 'Nova meta'} style={{ width: 640, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 28, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto', animation: 'slideIn .3s' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{editing ? 'Editar Meta' : 'Nova Meta'}</h2>
+              <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => { setShowNew(false); setEditing(null); }} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: '50%', color: 'var(--text)', cursor: 'pointer' }}><X size={14} /></button>
+            </div>
+            <form onSubmit={criarMeta} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('nome', "Nome")}</span><input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className="metas-input" style={inp} placeholder="Ex: Receita Vendas Outubro" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('equipe', "Equipe")}</span><select value={form.equipe} onChange={(e) => setForm({ ...form, equipe: e.target.value })} className="metas-input" style={inp}>{EQUIPES.filter((x) => x !== 'Todas Equipes').map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Colaborador</span><input value={form.colaborador} onChange={(e) => setForm({ ...form, colaborador: e.target.value })} className="metas-input" style={inp} placeholder="Opcional" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('tipo', "Tipo")}</span><select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} className="metas-input" style={inp}>{TIPOS.filter((x) => x !== 'Todos Tipos').map((o) => <option key={o} value={o}>{o}</option>)}</select></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Responsavel</span><input value={form.responsavel} onChange={(e) => setForm({ ...form, responsavel: e.target.value })} className="metas-input" style={inp} /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Valor Meta</span><input value={form.valorMeta} onChange={(e) => setForm({ ...form, valorMeta: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Valor Atual</span><input value={form.valorAtual} onChange={(e) => setForm({ ...form, valorAtual: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Prazo Fim</span><input type="date" value={form.prazoFim} onChange={(e) => setForm({ ...form, prazoFim: e.target.value })} className="metas-input" style={inp} /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Valor Premiacao</span><input value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Descricao</span><textarea value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} className="metas-input" style={{ ...inp, height: 80, padding: 12 }} /></label>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => { setShowNew(false); setEditing(null); }} style={{ background: 'var(--card2)', border: '1px solid var(--border)', height: 44, borderRadius: 12, padding: '0 20px', fontSize: 12, color: 'var(--text)', cursor: 'pointer' }}>{traduzir('cancelar', "Cancelar")}</button>
+                <button type="submit" disabled={saving} className="metas-btn-p" style={{ ...btnP, height: 44, padding: '0 24px', opacity: saving ? 0.7 : 1 }}>{saving ? 'Salvando...' : (editing ? 'Salvar' : 'Criar Meta')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+      {detail ? (
+        <div onClick={() => setDetail(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label={'Detalhe ' + detail.nome} style={{ width: 760, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 24, padding: 28, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto', animation: 'slideIn .3s' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{detail.nome}</h2>
+              <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setDetail(null)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: '50%', color: 'var(--text)', cursor: 'pointer' }}><X size={14} /></button>
+            </div>
+            <div style={{ display: 'flex', gap: 16, marginTop: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ width: 120, height: 120, borderRadius: '50%', background: 'var(--card2)', border: '8px solid var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800 }}>{detail.progresso}%</span>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{detail.equipe} - {detail.tipo} - Prazo {detail.prazo} ({calcDias(detail.prazo)} dias restantes)</div>
+                <div style={{ height: 8, background: 'var(--card2)', borderRadius: 6, marginTop: 8 }}><div style={{ height: 8, borderRadius: 6, width: Math.min(100, detail.progresso) + '%', background: getProgressColor(detail.progresso) }} /></div>
+                <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 8 }}>{maskBRL(detail.valorAtual, detail.unidade)} / {maskBRL(detail.valorMeta, detail.unidade)} - Media diaria necessaria: {maskBRL(Math.round(calcMedia(detail)), detail.unidade)} - Proj IA: {calcProj(detail)}%</div>
+                <div style={{ marginTop: 8 }}><Badge s={detail.status} /></div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+              <button type="button" onClick={() => { setEditing(detail); setForm({ nome: detail.nome, equipe: detail.equipe, colaborador: detail.colaborador || '', tipo: detail.tipo, valorMeta: String(detail.valorMeta), valorAtual: String(detail.valorAtual), prazoInicio: detail.prazoInicio || '', prazoFim: detail.prazoFim || '', responsavel: detail.responsavel || '', premiacaoTipo: 'Valor fixo', valor: String(detail.premiacaoValor || ''), condicao: 'Atingir 100%', descricao: detail.descricao || '' }); setShowNew(true); }} style={btnG}><Pencil size={13} />{traduzir('editar', "Editar")}</button>
+              <button type="button" onClick={() => duplicar(detail)} style={btnG}><Copy size={13} />{traduzir('duplicar', "Duplicar")}</button>
+              <button type="button" onClick={() => pausar(detail)} style={btnG}><Pause size={13} /> {detail.status === 'Pausada' ? 'Reativar' : 'Pausar'}</button>
+              <button type="button" onClick={() => excluir(detail.id)} style={{ ...btnG, color: '#ef4444' }}><Trash2 size={13} />{traduzir('excluir', "Excluir")}</button>
+              <button type="button" onClick={() => { setShowProgress(detail); setProgForm({ atual: String(detail.valorAtual), novo: '', incremento: '', motivo: '', obs: '' }); }} style={{ ...btnP, height: 40 }}><CheckCircle2 size={13} /> Atualizar Progresso</button>
+              <button type="button" onClick={() => addToast('Premiacao paga')} style={{ ...btnP, height: 40, background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>Pagar Premiacao</button>
+              <button type="button" onClick={() => addToast('Link copiado')} style={btnG}><Share2 size={13} /> Compartilhar</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showProgress ? (
+        <div onClick={() => setShowProgress(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Atualizar progresso" style={{ width: 480, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 28, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Atualizar Progresso</h2>
+              <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setShowProgress(null)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: '50%', color: 'var(--text)', cursor: 'pointer' }}><X size={14} /></button>
+            </div>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Valor Atual</span><input value={progForm.atual} onChange={(e) => setProgForm({ ...progForm, atual: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Novo Valor</span><input value={progForm.novo} onChange={(e) => setProgForm({ ...progForm, novo: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>Incremento</span><input value={progForm.incremento} onChange={(e) => setProgForm({ ...progForm, incremento: e.target.value })} className="metas-input" style={inp} inputMode="decimal" /></label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><span style={lbl}>{traduzir('motivo', "Motivo")}</span><input value={progForm.motivo} onChange={(e) => setProgForm({ ...progForm, motivo: e.target.value })} className="metas-input" style={inp} /></label>
+              <button type="button" onClick={confirmarProgresso} className="metas-btn-p" style={{ ...btnP, background: 'var(--primary)', justifyContent: 'center' }}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showRanking ? (
+        <div onClick={() => setShowRanking(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Ranking completo" style={{ width: 640, maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 28, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Ranking Completo</h2>
+              <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setShowRanking(false)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: '50%', color: 'var(--text)', cursor: 'pointer' }}><X size={14} /></button>
+            </div>
+            <table role="table" aria-label="Ranking" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>{['Posicao', 'Colaborador', 'Equipe', 'Meta', 'Realizado', 'Progresso', 'Premiacao'].map((h) => <th key={h} style={{ fontSize: 10, color: 'var(--label2)', textTransform: 'uppercase', letterSpacing: 0.8, padding: '12px 8px', borderBottom: '1px solid var(--border)', textAlign: 'left' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {[...baseMetas].sort((a, b) => b.progresso - a.progresso).map((m, i) => (
+                  <tr key={m.id}>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>{i === 0 ? 'Ouro' : i === 1 ? 'Prata' : i === 2 ? 'Bronze' : i + 1}</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text)' }}>{m.responsavel}</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{m.equipe}</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>{maskBRL(m.valorMeta, m.unidade)}</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>{maskBRL(m.valorAtual, m.unidade)}</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 800 }}>{m.progresso}%</td>
+                    <td style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>{m.premiacao}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button type="button" onClick={exportCSV} style={{ ...btnG, marginTop: 12 }}><Download size={13} /> Exportar</button>
+          </div>
+        </div>
+      ) : null}
+      <div style={{ position: 'fixed', right: 16, bottom: 16, display: 'flex', flexDirection: 'column', gap: 10, zIndex: 70 }}>
+        {toastList.map((t) => (
+          <div key={t.id} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', fontSize: 12, display: 'flex', gap: 12, alignItems: 'center', minWidth: 280, maxWidth: 360, animation: 'slideIn .3s', position: 'relative', overflow: 'hidden' }}>
+            <span style={{ width: 24, height: 24, borderRadius: '50%', background: t.kind === 'ok' ? 'var(--successBg)' : 'var(--warningBg)', color: t.kind === 'ok' ? 'var(--success)' : 'var(--warning)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>!</span>
+            <span>{t.msg}</span>
+            <span style={{ position: 'absolute', bottom: 0, left: 0, height: 2, background: 'var(--primary)', animation: 'shrink 2.8s linear' }} />
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}
+

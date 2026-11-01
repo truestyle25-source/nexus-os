@@ -41,7 +41,7 @@ export interface MovimentoInput {
   produtoId: string;
   usuarioId?: string;
   tipo: TipoMovEstoque;
-  quantidade: number; // sempre positivo aqui; o sinal é decidido pelo tipo
+  quantidade: number; // quantidade positiva, com até 3 casas na unidade de estoque
   motivo?: string;
   documento?: string;
   origem: Origem;
@@ -64,7 +64,7 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
   if (!filial) throw NaoEncontrado('Filial inválida para esta empresa.');
 
   const atual = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: input.filialId, produtoId: input.produtoId } } });
-  const qtdAtual = atual?.quantidade ?? 0;
+  const qtdAtual = Number(atual?.quantidade ?? 0);
 
   let estoqueId: string;
   let novaQtd: number;
@@ -161,7 +161,7 @@ export async function transferirEstoque(tx: Tx, input: TransferenciaInput) {
   if (!origem || !destino) throw NaoEncontrado('Filial de origem ou destino inválida para esta empresa.');
 
   const estoqueOrigem = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: input.filialOrigemId, produtoId: input.produtoId } } });
-  const qtdOrigemAtual = estoqueOrigem?.quantidade ?? 0;
+  const qtdOrigemAtual = Number(estoqueOrigem?.quantidade ?? 0);
   if (qtdOrigemAtual < input.quantidade) {
     throw new ErroDeNegocio(`Estoque insuficiente na filial de origem para ${produto.nome}: tem ${qtdOrigemAtual}, precisa ${input.quantidade}.`, 400);
   }
