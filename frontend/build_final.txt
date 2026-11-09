@@ -1,0 +1,17 @@
+  ▲ Next.js 14.2.5
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving '../../../typescript/lib/typescript' in c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build for build dependencies doesn't lead to expected result 'C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js', but to 'c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ../../../typescript/lib/typescript (expected C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js)
+<w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+<w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+<w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+<w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+<w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+<w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+<w>  at resolve commonjs c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend>

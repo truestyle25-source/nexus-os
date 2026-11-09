@@ -1,6 +1,53 @@
 ﻿import fp from 'fastify-plugin'
 import { prisma } from '../lib/prisma.js'
 
+/**
+ * Valida o identificador do usuário extraído do JWT.
+ * Retorna o ID do usuário e a empresaId se válido, ou null em caso de falha.
+ * Esta função garante que:
+ * - O ID existe e é do tipo string
+ - O ID não está vazio nem em branco
+ - O usuário existe no banco de dados
+ - O usuário está ativo (status = 'ATIVO')
+ - Retorna também a empresaId para validação de contexto (empresa diferente)
+ */
+async function validarUsuarioId(user: { id?: unknown } | null | undefined): Promise<{ id: string; empresaId: string } | null> {
+  const rawId = user?.id
+
+  // 1. Verificar se o ID existe e é do tipo string
+  if (typeof rawId !== 'string') {
+    return null
+  }
+
+  const id = rawId.trim()
+
+  // 2. Verificar que o ID não está vazio nem apenas espaços
+  if (id.length === 0) {
+    return null
+  }
+
+  // 3. Verificar se o usuário existe no banco de dados
+  const usuarioExistente = await prisma.usuario.findFirst({
+    where: { id },
+    select: { id: true, status: true, empresaId: true },
+  })
+
+  if (!usuarioExistente) {
+    return null
+  }
+
+  // 4. Verificar se o usuário está ativo
+  if (usuarioExistente.status !== 'ATIVO') {
+    return null
+  }
+
+  // 5. Retornar o ID válido e a empresaId para validação de contexto (empresa diferente)
+  return {
+    id: usuarioExistente.id,
+    empresaId: usuarioExistente.empresaId,
+  }
+}
+
 export const registerAuthentication = fp(async (app: any) => {
   app.decorate('authenticate', async function (request: any, reply: any) {
     try {
@@ -8,6 +55,27 @@ export const registerAuthentication = fp(async (app: any) => {
     } catch (err) {
       return reply.status(401).send({ message: 'Não autenticado' })
     }
+
+    // Validacao aprimorada do identificado do usuario a partir do JWT.
+    // O payload do JWT e DECLARADO com `id: string` (src/types/fastify.d.ts),
+    // mas a assinatura de tipos nao e validacao em runtime: um token assinado sem
+    // a claim `id`, com `id` vazio, em branco ou de tipo inesperado, passa pelo
+    // jwtVerify() sem erro e deixa request.user.id como undefined. Nesse caso o
+    // Prisma ignora o campo undefined dentro de where (o filtro nao e gerado)
+    // e a consulta passa a valer para QUALQUER usuario do banco: uma permissao
+    // pertencente a outra pessoa autorizaria a requisição atual (fail-open).
+
+    const usuarioValidado = await validarUsuarioId(request.user)
+
+    if (!usuarioValidado) {
+      return reply.status(401).send({
+        message: 'Token inválido: identificacao de usuario ausente ou invalida.',
+      })
+    }
+
+    // Armazenar o usuario validado no request para uso subsequente das rotas
+    // @ts-expect-error - adicionando propriedade dinamica ao tipo FastifyRequest
+    request.usuarioValidado = usuarioValidado
 
     // Revogacao de token (Seção 5 — "Alterar senha").
     //
@@ -133,3 +201,5 @@ export function permissaoQualquerDas(requisitos: Array<{ modulo: string; acao: s
     }
   }
 }
+
+

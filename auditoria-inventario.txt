@@ -1,0 +1,311 @@
+========== NEXUS OS - INVENTÁRIO PARA AUDITORIA ==========
+
+========== frontend\app\(dashboard) ==========
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\layout.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\admin\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\alertas\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\assinatura\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\auditoria\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\central-integracoes\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\clientes\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\clientes\page.tsx.backup-tema-20261028-115541
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\clientes\page.tsx.backup-tema-20261028-120452
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\compras\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\compras\page.tsx.backup-tema-20261028-113751
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\compras\page.tsx.backup-tema-20261028-114033
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\configuracoes\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\configuracoes\page.tsx.backup-visual-20261029-184217
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\configuracoes\page.tsx.backup-visual-20261029-184955
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\configuracoes\page.tsx.backup-visual-20261029-191746
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\dre\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\dre\page.tsx.backup-visual-20261029-202946
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\estoque\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\estoque\page.tsx.backup-cores-20261028-110152
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\estoque\page.tsx.backup-tema-claro-20261028-110624
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\financeiro\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\financeiro\page.tsx.backup-20261028-103515
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\financeiro\page.tsx.backup-cores-20261028-104609
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\financeiro\page.tsx.backup-financeiro-20261028-105116
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\financeiro\page.tsx.backup-tooltips-20261028-105234
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fiscal\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fluxo\FluxoAreaChart.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fluxo\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fluxo\page.tsx.backup-tema-20261028-215121
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx.backup-canvas-20261028-204736
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx.backup-correcao-sintaxe-20261028-120939
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx.backup-sintaxe-20261028-123614
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx.backup-tema-20261028-125519
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\fornecedores\page.tsx.backup-tipos-20261028-125805
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\ia\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\importacao\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\indicadores\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\intelligence\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\metas\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\metas\page.tsx.backup-theme-20261029-204358
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\pdv\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\pdv\page.tsx.backup-tema-20261028-111330
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\pdv\page.tsx.backup-tema-20261028-112521
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\pdv\page.tsx.bak-encoding
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\pesquisa\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\plataforma\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\ponto\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\products\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.backup-identificadores-20261028-130440
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.backup-tema-20261028-205717
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.backup-tipo-20261028-130154
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.bak
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.pre-duplicate-fix.bak
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\produtos\page.tsx.pre-jsx-fix.bak
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\radar-organizacional\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\radar-organizacional\page.tsx.backup-20261028-104321
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\relatorios\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\rh\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\rh\page.tsx.backup-antes-tema-20261030-200658
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\rh\page.tsx.backup-theme-20261030-194858
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\usuarios\page.tsx
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\app\(dashboard)\vendas\page.tsx
+
+========== frontend\tests\e2e ==========
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\login.spec.ts
+
+========== backend\src\routes ==========
+
+========== backend\src ==========
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\seed.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\server.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\server.ts.backup-isolamento-enterprise-20261028-131528
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\auth\hash.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\auth\jwt.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\config\env.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\config\prisma.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\domain\cnpj.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\auth.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\email.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\erros.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\folha.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\format.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\fuso.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\idempotencia.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\log-redacao.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\pdf.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\permissoes-catalogo.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\permissoes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\prisma.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\secrets.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\storage.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\middlewares\apiKeyAuth.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\middlewares\auth.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\middlewares\rateLimiter.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\api-publica\api-publica.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\assinatura\assinatura.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\auditoria\auditoria.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\auth\auth.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\compras\compras.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\dashboard\dashboard.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\empresa\empresa.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\enterprise-pack\routes.js
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\conversao.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\conversao.service.ts.backup-prisma-20261028-131030
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\conversao.service.ts.bak
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\estoque-indicadores.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\estoque.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\estoque\estoque.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fiscal\fiscal.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fiscal\fiscal.status.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\fornecedores.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\fornecedores.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\gestao\gestao.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\importacao\importacao.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\agendador-ml.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\integracoes.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\mercadolivre-api.client.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\mercadolivre-consulta.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\mercadolivre-notificacoes.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\mercadolivre-sync.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\mercadolivre.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\core\registry.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\core\types.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\shopee\shopee-api.client.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\shopee\shopee-scheduler.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\shopee\shopee-signature.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\shopee\shopee.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\shopee\shopee.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\lgpd\lgpd.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\payments\pix.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\payments\pixProvider.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\payments\pixUniversal.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\pdv\pdv.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\produtos\kits.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\produtos\produtos.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\radar\radar.disc.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\radar\radar.regras.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\radar\radar.resumo.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\radar\radar.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\export.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\relatorios.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\relatorios.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\folha.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\gestao-tempo.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\inventario.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\inventario.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\lideranca.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\lideranca.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\loja.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\loja.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\plano-desenvolvimento.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\plano-desenvolvimento.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\ponto-fechamento.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\pontuacao.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\pontuacao.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\rh.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\rh.utils.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\treinamentos.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\treinamentos.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\verbas.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\tts\tts.controller.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\tts\tts.service.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\usuarios\usuarios.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas-historico.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas-status.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas.filtros.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas.routes.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas.routes.ts.backup-sintaxe
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\vendas\vendas.routes.ts.bak
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\scripts\backup.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\scripts\gerarSnapshotsDiarios.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\scripts\restaurar-backup.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\scripts\scheduler.ts
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\types\fastify.d.ts
+
+========== MODELOS PRISMA ==========
+model Empresa {
+model Importacao {
+model Filial {
+model Setor {
+model Usuario {
+model Permissao {
+model TokenRecuperacaoSenha {
+model Auditoria {
+model Categoria {
+model Produto {
+model ComposicaoKit {
+model ProducaoKit {
+model Estoque {
+model SessaoInventario {
+model ContagemInventario {
+model EstoqueSnapshotDiario {
+model EstoqueMovimentacao {
+model Fornecedor {
+model CompraFornecedor {
+model Compra {
+model CompraItem {
+model Cliente {
+model Venda {
+model VendaItem {
+model Caixa {
+model MovimentacaoCaixa {
+model Dimensao {
+model Unidade {
+model TipoProduto {
+model FatorConversao {
+model ConsumoInterno {
+model IntegracaoPDV {
+model Financeiro {
+model DRE {
+model IndicadorDiario {
+model Meta {
+model Departamento {
+model Cargo {
+model Funcionario {
+model Documento {
+model Advertencia {
+model Suspensao {
+model Desligamento {
+model Ferias {
+model Ponto {
+model IntegracaoPonto {
+model Alerta {
+model Notificacao {
+model RegraAutomacao {
+model ConversaIA {
+model Assinatura {
+model Pagamento {
+model RelatorioGerado {
+model Folha {
+model LancamentoFolha {
+model PagamentoRH {
+model DecimoTerceiro {
+model PixSettings {
+model PixCobranca {
+model ChaveApi {
+model IntegracaoExterno {
+model SincronizacaoTarefa {
+model NotificacaoMercadoLivre {
+model ShopeeConexao {
+model ShopeeOAuthState {
+model ShopeePedido {
+model TokenRevogado {
+model PlanoDesenvolvimento {
+model Treinamento {
+model ParticipanteTreinamento {
+model AvaliacaoComportamental {
+model PesquisaBemEstar {
+model RegistroGamificacao {
+model Recompensa {
+model ResgateRecompensa {
+model CriterioPontuacao {
+model AvaliacaoCriterio {
+model AcaoRadar {
+model FeedbackLideranca {
+model VendaPagamento {
+model EstoqueReserva {
+model IdempotencyKey {
+model DivergenciaCaixa {
+model LoginAttempt {
+model NexusErpRecord {
+
+========== CONFIGURAÇÃO PLAYWRIGHT ==========
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  fullyParallel: false,
+  reporter: 'list',
+  use: {
+    baseURL: 'http://localhost:3000',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000/login',
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
+});
+
+========== PACKAGE SCRIPTS ==========
+
+
+dev   : next dev -p 3000
+build : next build
+start : next start
+test  : tsx --test tests/*.test.ts
+
+
+
+

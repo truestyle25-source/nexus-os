@@ -1,0 +1,126 @@
+[1mdiff --git "a/.\\backup-fiscal-visual-20261101-072418\\page.tsx" "b/.\\frontend\\app\\(dashboard)\\fiscal\\page.tsx"[m
+[1mindex 6c1c499..1b161c1 100644[m
+[1m--- "a/.\\backup-fiscal-visual-20261101-072418\\page.tsx"[m
+[1m+++ "b/.\\frontend\\app\\(dashboard)\\fiscal\\page.tsx"[m
+[36m@@ -179,10 +179,10 @@[m [mconst TONS_STATUS: Record<[m
+   TomStatus,[m
+   { chip: string; icone: ComponentType<{ className?: string }> }[m
+ > = {[m
+[31m-  ok: { chip: 'bg-[#22c55e]/15 text-[#22c55e] border-[#22c55e]/20', icone: CheckCircle2 },[m
+[31m-  aviso: { chip: 'bg-[#eab308]/15 text-[#eab308] border-[#eab308]/20', icone: Clock3 },[m
+[31m-  erro: { chip: 'bg-[#ef4444]/15 text-[#ef4444] border-[#ef4444]/20', icone: XCircle },[m
+[31m-  neutro: { chip: 'bg-white/10 text-white/40 border-white/10', icone: Ban },[m
+[32m+[m[32m  ok: { chip: 'bg-[color-mix(in_srgb,var(--nx-green)_15%,transparent)] text-[var(--nx-green)] border-[color-mix(in_srgb,var(--nx-green)_20%,var(--nx-border))]', icone: CheckCircle2 },[m
+[32m+[m[32m  aviso: { chip: 'bg-[color-mix(in_srgb,var(--nx-amber)_15%,transparent)] text-[var(--nx-amber)] border-[color-mix(in_srgb,var(--nx-amber)_20%,var(--nx-border))]', icone: Clock3 },[m
+[32m+[m[32m  erro: { chip: 'bg-[color-mix(in_srgb,var(--nx-red)_15%,transparent)] text-[var(--nx-red)] border-[color-mix(in_srgb,var(--nx-red)_20%,var(--nx-border))]', icone: XCircle },[m
+[32m+[m[32m  neutro: { chip: 'bg-[var(--nx-surface-2)] text-[var(--nx-ink-3)] border-[var(--nx-border)]', icone: Ban },[m
+ };[m
+ [m
+ /** Status normalizado nas quatro famílias visuais do Layout Mestre. */[m
+[36m@@ -248,16 +248,16 @@[m [mconst fiscalCss = `[m
+ .fiscal-root { max-width: 100%; box-sizing: border-box; }[m
+ .fiscal-root ::-webkit-scrollbar { width: 8px; height: 8px; }[m
+ .fiscal-root ::-webkit-scrollbar-track { background: transparent; }[m
+[31m-.fiscal-root ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 999px; }[m
+[31m-.fiscal-root ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.16); }[m
+[32m+[m[32m.fiscal-root ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--nx-ink) 8%, transparent); border-radius: 999px; }[m
+[32m+[m[32m.fiscal-root ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--nx-ink) 16%, transparent); }[m
+ .fiscal-scroll-hide { scrollbar-width: none; -ms-overflow-style: none; }[m
+ .fiscal-scroll-hide::-webkit-scrollbar { display: none; }[m
+[31m-.fiscal-check { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,.22); background: #24243a; cursor: pointer; position: relative; transition: all .15s ease; }[m
+[31m-.fiscal-check:hover { border-color: rgba(255,255,255,.45); }[m
+[31m-.fiscal-check:checked { background: #7c5cfc; border-color: #7c5cfc; }[m
+[31m-.fiscal-check:checked::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }[m
+[32m+[m[32m.fiscal-check { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--nx-border-strong); background: var(--nx-surface-2); cursor: pointer; position: relative; transition: all .15s ease; }[m
+[32m+[m[32m.fiscal-check:hover { border-color: var(--nx-accent); }[m
+[32m+[m[32m.fiscal-check:checked { background: var(--nx-accent); border-color: var(--nx-accent); }[m
+[32m+[m[32m.fiscal-check:checked::after { content: ''; position: absolute; left: 5px; top: 1.5px; width: 4px; height: 8px; border: solid var(--nx-ink); border-width: 0 2px 2px 0; transform: rotate(45deg); }[m
+ .fiscal-select { appearance: none; -webkit-appearance: none; }[m
+[31m-.fiscal-select option { background: #1c1c2e; color: #fff; }[m
+[32m+[m[32m.fiscal-select option { background: var(--nx-surface); color: var(--nx-ink); }[m
+ .fiscal-toast { animation: fiscalSlideUp .2s ease both; }[m
+ .fiscal-drawer { animation: fiscalSlideIn .2s ease both; }[m
+ .fiscal-modal { animation: fiscalScaleIn .2s ease both; }[m
+[36m@@ -321,10 +321,10 @@[m [masync function copiarTexto(texto: string): Promise<boolean> {[m
+ }[m
+ [m
+ const TONS_KPI: Record<string, string> = {[m
+[31m-  roxo: 'border border-[#7c5cfc]/20 bg-[#7c5cfc]/10 text-[#7c5cfc]',[m
+[31m-  verde: 'border border-[#22c55e]/20 bg-[#22c55e]/10 text-[#22c55e]',[m
+[31m-  ambar: 'border border-[#eab308]/20 bg-[#eab308]/10 text-[#eab308]',[m
+[31m-  branco: 'border border-white/10 bg-white/[0.06] text-white/60',[m
+[32m+[m[32m  roxo: 'border border-[color-mix(in_srgb,var(--nx-accent)_20%,var(--nx-border))] bg-[color-mix(in_srgb,var(--nx-accent)_10%,transparent)] text-[var(--nx-accent-ink)]',[m
+[32m+[m[32m  verde: 'border border-[color-mix(in_srgb,var(--nx-green)_20%,var(--nx-border))] bg-[color-mix(in_srgb,var(--nx-green)_10%,transparent)] text-[var(--nx-green)]',[m
+[32m+[m[32m  ambar: 'border border-[color-mix(in_srgb,var(--nx-amber)_20%,var(--nx-border))] bg-[color-mix(in_srgb,var(--nx-amber)_10%,transparent)] text-[var(--nx-amber)]',[m
+[32m+[m[32m  branco: 'border border-[var(--nx-border)] bg-[var(--nx-surface-2)] text-[var(--nx-ink-3)]',[m
+ };[m
+ [m
+ /** Cartão de KPI: rótulo em caixa alta, ícone 32px, valor e apoio. */[m
+[36m@@ -342,9 +342,9 @@[m [mfunction Kpi({[m
+   tom: keyof typeof TONS_KPI;[m
+ }) {[m
+   return ([m
+[31m-    <div className="flex min-w-0 flex-col gap-3 rounded-[16px] border border-white/[0.08] bg-[#1c1c2e] p-5">[m
+[32m+[m[32m    <div className="flex min-w-0 flex-col gap-3 rounded-[16px] border border-[var(--nx-border)] bg-[var(--nx-surface)] p-5">[m
+       <div className="flex items-start justify-between gap-3">[m
+[31m-        <span className="text-[11px] uppercase leading-snug tracking-[0.14em] text-white/40">[m
+[32m+[m[32m        <span className="text-[11px] uppercase leading-snug tracking-[0.14em] text-[var(--nx-ink-3)]">[m
+           {titulo}[m
+         </span>[m
+         <span[m
+[36m@@ -354,8 +354,8 @@[m [mfunction Kpi({[m
+         </span>[m
+       </div>[m
+       <div className="min-w-0">[m
+[31m-        <div className="truncate text-[22px] font-bold tracking-tight text-white">{valor}</div>[m
+[31m-        <div className="mt-1 flex items-center gap-1 text-[11px] text-white/40">{apoio}</div>[m
+[32m+[m[32m        <div className="truncate text-[22px] font-bold tracking-tight text-[var(--nx-ink)]">{valor}</div>[m
+[32m+[m[32m        <div className="mt-1 flex items-center gap-1 text-[11px] text-[var(--nx-ink-2)]">{apoio}</div>[m
+       </div>[m
+     </div>[m
+   );[m
+[36m@@ -384,8 +384,8 @@[m [mfunction BotaoIcone({[m
+       aria-label={rotulo}[m
+       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all disabled:cursor-not-allowed disabled:opacity-40 ${[m
+         destaque[m
+[31m-          ? 'bg-[#7c5cfc]/15 text-[#7c5cfc] hover:bg-[#7c5cfc]/25'[m
+[31m-          : 'bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white'[m
+[32m+[m[32m          ? 'bg-[color-mix(in_srgb,var(--nx-accent)_15%,transparent)] text-[var(--nx-accent-ink)] hover:bg-[color-mix(in_srgb,var(--nx-accent)_25%,transparent)]'[m
+[32m+[m[32m          : 'bg-[var(--nx-surface-2)] text-[var(--nx-ink-2)] hover:bg-[var(--nx-surface-3)] hover:text-[var(--nx-ink)]'[m
+       }`}[m
+     >[m
+       {children}[m
+[36m@@ -411,7 +411,7 @@[m [mfunction Filtro({[m
+         aria-label={rotulo}[m
+         value={valor}[m
+         onChange={(e) => onChange(e.target.value)}[m
+[31m-        className="fiscal-select h-8 cursor-pointer rounded-full border border-white/10 bg-[#24243a] py-0 pl-3 pr-7 text-[12px] font-medium text-white/80 outline-none transition-colors hover:border-white/20"[m
+[32m+[m[32m        className="fiscal-select h-8 cursor-pointer rounded-full border border-[var(--nx-border)] bg-[var(--nx-surface-3)] py-0 pl-3 pr-7 text-[12px] font-medium text-[var(--nx-ink)] outline-none transition-colors hover:border-[var(--nx-border-strong)]"[m
+       >[m
+         {opcoes.map((op) => ([m
+           <option key={op} value={op}>[m
+[36m@@ -419,7 +419,7 @@[m [mfunction Filtro({[m
+           </option>[m
+         ))}[m
+       </select>[m
+[31m-      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />[m
+[32m+[m[32m      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--nx-ink-3)]" />[m
+     </div>[m
+   );[m
+ }[m
+[36m@@ -438,12 +438,12 @@[m [mfunction EstadoVazio({[m
+ }) {[m
+   return ([m
+     <div className="flex flex-col items-center justify-center gap-4 px-6 py-24 text-center">[m
+[31m-      <span className="flex h-14 w-14 items-center justify-center rounded-[16px] border border-[#7c5cfc]/20 bg-[#7c5cfc]/10 text-[#7c5cfc] shadow-[0_0_20px_rgba(124,92,252,0.3)]">[m
+[32m+[m[32m      <span className="flex h-14 w-14 items-center justify-center rounded-[16px] border border-[color-mix(in_srgb,var(--nx-accent)_20%,var(--nx-border))] bg-[color-mix(in_srgb,var(--nx-accent)_10%,transparent)] text-[var(--nx-accent-ink)]">[m
+         <Icone className="h-6 w-6" />[m
+       </span>[m
+       <div>[m
+[31m-        <h3 className="mb-1 mt-2 text-[14px] font-semibold text-white">{titulo}</h3>[m
+[31m-        <p className="mx-auto max-w-[400px] text-[12px] leading-6 text-white/50">{descricao}</p>[m
+[32m+[m[32m        <h3 className="mb-1 mt-2 text-[14px] font-semibold text-[var(--nx-ink)]">{titulo}</h3>[m
+[32m+[m[32m        <p className="mx-auto max-w-[400px] text-[12px] leading-6 text-[var(--nx-ink-3)]">{descricao}</p>[m
+       </div>[m
+       {acao}[m
+     </div>[m

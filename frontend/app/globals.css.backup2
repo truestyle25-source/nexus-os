@@ -1,0 +1,1219 @@
+/* @import precisa ser a primeira regra do arquivo (CSS §@import) para não ser
+   descartada pelo navegador quando vem depois de outros statements. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--nx-canvas);
+  color: var(--nx-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+body {
+  background:
+    radial-gradient(ellipse 85% 48% at 50% -5%, var(--nx-glow-top), transparent),
+    radial-gradient(circle at 50% 100%, var(--nx-glow-bottom), transparent),
+    var(--nx-canvas);
+}
+
+.card {
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: 16px;
+}
+
+.field {
+  background: var(--nx-surface-3);
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+}
+
+/* ==========================================================================
+   NEXUS OS — design system compartilhado
+   Antes, a maioria das classes abaixo era usada nas páginas (dashboard,
+   products, admin) mas nunca tinha sido definida em lugar nenhum — o HTML
+   renderizava sem nenhum estilo. Esta seção fecha essa lacuna e também
+   passa a servir de base para as telas que ainda usavam inline style cru.
+   ========================================================================== */
+
+/* ==========================================================================
+   NEXUS OS — TOKENS DE TEMA (fonte única de verdade de cor)
+
+   Antes, cada tela repetia cores fixas e não existia tema claro. Agora:
+     • `:root`               = tema ESCURO (padrão do Layout Mestre)
+     • `[data-theme='claro']`= tema CLARO
+     • `--nx-accent`         = cor principal escolhida em Configurações,
+                               reescrita em tempo de execução por
+                               `lib/theme.ts` (default #7C3AED)
+
+   O seletor de tema é atributo e não classe porque o `ThemeScript` roda
+   ANTES da hidratação, no <head>: ele escreve `data-theme` no <html> e
+   evita o "flash" de tema errado.
+
+   `--nx-ink-rgb` existe separado porque as regras de compatibilidade
+   precisam de `rgb(var(--nx-ink-rgb) / 0.4)` para reescrever as
+   utilitárias `text-white/40` etc.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+  /* --- superfícies (do mais profundo ao mais elevado) --- */
+  --nx-canvas:        #0b0b12;  /* fundo da página                     */
+  --nx-surface:       #15151f;  /* cards, painéis, sidebar             */
+  --nx-surface-2:     #1c1c2a;  /* linhas internas, cabeçalhos de tabela*/
+  --nx-surface-3:     #0d0c14;  /* campos, inputs, áreas rebaixadas     */
+
+  /* --- traços --- */
+  --nx-border:        #2a2a3a;
+  --nx-border-strong: #3a3a4a;
+
+  /* --- tinta --- */
+  --nx-ink:           #f4f4f5;  /* texto principal                     */
+  --nx-ink-2:         #c1c1cc;  /* texto secundário - 4.5:1 sobre #15151f */
+  --nx-ink-3:         #8888a0;  /* legendas, rótulos, metadados - 4.5:1 sobre #15151f */
+  --nx-ink-rgb:       244 242 251;
+--nx-accent-rgb:    124 58 237;
+
+/* --- accent (sobrescrito por lib/theme.ts) --- */
+  --nx-accent:        #7C3AED;
+  --nx-accent-2:      #a78bfa;  /* variante clara (ícones ativos)      */
+/* Cores suplementares do design system */
+--nx-green:         #22c55e;  /* verde para estados de sucesso/margem   */
+  --nx-accent-ink:    #a78bfa;  /* accent LEGÍVEL sobre superfície clara*/
+}
+
+/* Tema Claro */
+[data-theme='claro'] {
+  --nx-canvas:        #f8fafc;
+  --nx-surface:       #ffffff;
+  --nx-surface-2:     #f1f5f9;
+  --nx-surface-3:     #f8fafc;
+  --nx-border:        rgba(0,0,0,0.15);
+  --nx-border-strong: rgba(0,0,0,0.25);
+  --nx-ink:           #181824;
+  --nx-ink-2:         #7a7a8e;  /* texto secundário - 4.5:1 sobre #ffffff */
+  --nx-ink-3:         #58586e;  /* ajustado para 4.5:1 contraste sobre white */
+  --nx-accent:        #9F8CF5;
+  --nx-accent-2:      #c8d6f6;
+  --nx-accent-ink:    #181824;
+}
+
+/* Cores semânticas */
+--nx-red:             #ef4444;
+--nx-green:           #22c55e;
+--nx-amber:           #f59e0b;
+
+  /* --- semânticas --- */
+  --nx-green:  #34d399;
+  --nx-amber:  #fbbf24;
+  --nx-red:    #f87171;
+
+  /* --- brilhos de fundo --- */
+  --nx-glow-top:    rgba(128, 92, 246, 0.18);
+  --nx-glow-bottom: rgba(50, 38, 105, 0.12);
+
+  /* sombra de painel flutuante (busca global, notificações) */
+  --nx-shadow-pop: rgba(0, 0, 0, 0.6);
+
+  /* legados: mantidos porque várias páginas ainda os consomem */
+  --nexus-bg:      var(--nx-canvas);
+  --nexus-panel:   var(--nx-surface);
+  --nexus-panel-2: var(--nx-surface-2);
+  --nexus-border:  var(--nx-border);
+  --nexus-accent:  var(--nx-accent);
+  --nexus-accent-2:var(--nx-accent-2);
+  --nexus-text:    var(--nx-ink);
+  --nexus-muted:   var(--nx-ink-3);
+  --nexus-green:   var(--nx-green);
+  --nexus-amber:   var(--nx-amber);
+  --nexus-red:     var(--nx-red);
+}
+
+[data-theme='claro'] {
+  color-scheme: light;
+  /* --- superfícies --- */
+  --nx-canvas:        #f2f2f7;  /* fundo da página                     */
+  --nx-surface:       #ffffff;  /* cards, painéis, sidebar             */
+  --nx-surface-2:     #f6f6fa;  /* linhas internas, cabeçalhos de tabela*/
+  --nx-surface-3:     #eaeaef;  /* campos, inputs, áreas rebaixadas     */
+
+  /* --- traços --- */
+  --nx-border:        #e0e0ea;
+  --nx-border-strong: #c9c9d6;
+
+  /* --- tinta --- */
+  --nx-ink:           #14131c;  /* texto principal                     */
+  --nx-ink-2:         #4a4860;  /* texto secundário                    */
+  --nx-ink-3:         #6e6c84;  /* legendas, rótulos, metadados        */
+  --nx-ink-rgb:       20 19 28;
+
+  /* --- accent: cor oficial do tema claro (#9F8CF5 em todos os módulos) --- */
+  --nx-accent:        #9F8CF5;
+  --nx-accent-2:      #9F8CF5;
+  --nx-accent-ink:    #7C3AED;
+
+  /* --- semânticas: escurecem para manter contraste sobre branco --- */
+  --nx-green: #15803d;
+  --nx-amber: #b45309;
+  --nx-red:   #dc2626;
+
+  /* --- brilhos de fundo: muito mais discretos no claro --- */
+  --nx-glow-top:    rgba(124, 92, 240, 0.07);
+  --nx-glow-bottom: rgba(124, 92, 240, 0.05);
+
+  /* no tema claro a sombra precisa ser muito mais suave */
+  --nx-shadow-pop: rgba(20, 19, 28, 0.14);
+}
+
+/* Densidade compacta: encolhe o respiro dos cards. Fica no <html> para que
+   valha para o shell (sidebar/topbar) também, e não só para uma tela. */
+[data-densidade='compacta'] { --nx-density-pad-y: 0.75rem; --nx-density-pad-x: 1rem; }
+[data-densidade='confortavel'] { --nx-density-pad-y: 1.25rem; --nx-density-pad-x: 1.25rem; }
+
+a { color: inherit; }
+button { font-family: inherit; }
+
+/* ---- Login / cadastro / recuperação de senha ---- */
+.auth-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 32px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 30px 80px -30px rgba(124, 92, 240, 0.35);
+}
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.auth-brand .brand-mark { width: 36px; height: 36px; }
+.auth-brand strong { font-size: 20px; letter-spacing: 0.02em; }
+.auth-subtitle { color: var(--nexus-muted); font-size: 14px; margin-bottom: 26px; }
+.auth-field { margin-bottom: 14px; }
+.auth-field label { display: block; font-size: 12px; color: var(--nexus-muted); margin-bottom: 6px; }
+.auth-field input {
+  width: 100%;
+  padding: 12px 14px;
+  color: var(--nexus-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.auth-field input:focus { border-color: var(--nexus-accent); }
+.auth-primary {
+  width: 100%;
+  padding: 13px;
+  margin-top: 6px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--nexus-accent), #7C3AED);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.auth-primary:hover:not(:disabled) { opacity: 0.92; }
+.auth-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.auth-secondary {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--nexus-border);
+  color: var(--nexus-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.auth-secondary:hover { border-color: var(--nexus-accent-2); }
+.auth-link {
+  display: block;
+  text-align: center;
+  margin-top: 18px;
+  color: var(--nexus-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.auth-link:hover { color: var(--nexus-accent-2); }
+.auth-message { margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.auth-message.error { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: #fca5a5; }
+.auth-message.success { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); color: #6ee7b7; }
+.auth-divider { height: 1px; background: var(--nexus-border); margin: 22px 0; }
+.auth-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ---- Dashboard shell ---- */
+.dashboard-shell { display: flex; min-height: 100dvh; }
+.dashboard-state { padding: 60px; color: var(--nexus-muted); font-size: 14px; }
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 14px;
+  background: rgba(14, 12, 22, 0.85);
+  border-right: 1px solid var(--nexus-border);
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+}
+.brand-lockup { display: flex; align-items: center; gap: 10px; padding: 6px 8px 22px; }
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--nexus-accent), #4c2fb0);
+}
+.brand-lockup strong { font-size: 15px; display: block; letter-spacing: 0.02em; }
+.brand-lockup span { font-size: 10px; color: var(--nexus-muted); letter-spacing: 0.12em; }
+
+.main-nav { display: flex; flex-direction: column; gap: 3px; flex: 1; overflow-y: auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 9px;
+  background: transparent; border: none; color: var(--nexus-muted);
+  font-size: 13.5px; text-align: left; cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.nav-item:hover:not(.nav-item-disabled) { background: rgba(255, 255, 255, 0.05); color: var(--nexus-text); }
+.nav-item-active { background: rgba(124, 92, 240, 0.16); color: var(--nexus-text); }
+.nav-item-active .nav-icon { color: var(--nexus-accent-2); }
+.nav-item-disabled { opacity: 0.35; cursor: not-allowed; }
+.nav-icon { width: 18px; text-align: center; }
+.logout-button {
+  margin-top: 10px; padding: 10px 12px; border-radius: 9px;
+  background: transparent; border: 1px solid var(--nexus-border);
+  color: var(--nexus-muted); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+}
+.logout-button:hover { color: var(--nexus-text); border-color: var(--nexus-accent-2); }
+
+.dashboard-content { flex: 1; padding: 30px 36px; min-width: 0; }
+.dashboard-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 26px; flex-wrap: wrap;
+}
+.dashboard-header h1 { font-size: 22px; margin-bottom: 4px; }
+.dashboard-header p { color: var(--nexus-muted); font-size: 13px; }
+.dashboard-header p span { opacity: 0.5; margin: 0 6px; }
+.header-status { display: flex; gap: 8px; align-items: center; }
+.status-pill, .payment-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; font-size: 12px;
+  background: var(--nexus-panel-2); border: 1px solid var(--nexus-border);
+}
+.status-pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--nexus-green); display: inline-block; }
+.payment-pill { color: var(--nexus-accent-2); }
+
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.metric-card {
+  background: var(--nexus-panel); border: 1px solid var(--nexus-border);
+  border-radius: 14px; padding: 18px;
+}
+.metric-heading { display: flex; align-items: center; justify-content: space-between; font-size: 11px; letter-spacing: 0.08em; color: var(--nexus-muted); margin-bottom: 10px; }
+.metric-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 12px; }
+.metric-icon.green { background: rgba(52, 211, 153, 0.15); color: var(--nexus-green); }
+.metric-icon.purple { background: rgba(124, 92, 240, 0.15); color: var(--nexus-accent-2); }
+.metric-icon.amber { background: rgba(251, 191, 36, 0.15); color: var(--nexus-amber); }
+.metric-card strong { font-size: 24px; display: block; margin-bottom: 4px; }
+.metric-card p { font-size: 12.5px; color: var(--nexus-muted); }
+.plan-title { color: var(--nexus-accent-2) !important; }
+
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.info-panel { background: var(--nexus-panel); border: 1px solid var(--nexus-border); border-radius: 14px; padding: 18px; }
+.info-panel h2 { font-size: 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.panel-symbol { font-size: 15px; }
+.purple-text { color: var(--nexus-accent-2); }
+.amber-text { color: var(--nexus-amber); }
+.info-list { display: flex; flex-direction: column; gap: 10px; }
+.info-row { display: flex; justify-content: space-between; font-size: 13px; }
+.info-row span { color: var(--nexus-muted); }
+.accent-value { color: var(--nexus-accent-2) !important; }
+.integration-note { margin-top: 14px; font-size: 11.5px; color: var(--nexus-muted); line-height: 1.5; }
+
+
+/* ---- Refinos visuais NEXUS OS — hierarquia e responsividade ---- */
+.dashboard-content, .admin-page {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+.dashboard-content { padding: 28px clamp(18px, 3vw, 40px); }
+.admin-page { padding: 28px clamp(18px, 3vw, 40px); }
+.metric-card, .info-panel, .admin-panel, .card {
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.metric-card:hover, .info-panel:hover, .admin-panel:hover {
+  border-color: rgba(167,139,250,.20);
+  box-shadow: 0 14px 34px rgba(0,0,0,.18);
+}
+.admin-header h1 { font-size: clamp(20px, 2vw, 26px); }
+.admin-header p { max-width: 760px; line-height: 1.55; }
+.admin-grid { align-items: start; }
+.admin-panel { overflow: hidden; }
+.admin-table { overflow-x: auto; }
+.admin-list-row { min-width: 0; }
+@media (max-width: 1024px) {
+  .sidebar { width: 224px; }
+  .dashboard-content, .admin-page { padding: 22px 20px; }
+}
+@media (max-width: 640px) {
+  .dashboard-content, .admin-page { padding: 16px 14px; }
+  .metric-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .metric-card { padding: 14px; }
+  .metric-card strong { font-size: 20px; }
+  .panel-grid, .admin-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- Telas de módulo (padrão admin-*, usado em Produtos/Config e nas
+   telas que antes eram só <div style={{padding:20}}>) ---- */
+.admin-page { padding: 30px 36px; max-width: 1180px; margin: 0 auto; }
+.admin-header { margin-bottom: 22px; }
+.admin-header h1 { font-size: 20px; margin: 10px 0 4px; }
+.admin-header p { color: var(--nexus-muted); font-size: 13px; }
+.back-button {
+  background: transparent; border: 1px solid var(--nexus-border); color: var(--nexus-muted);
+  padding: 7px 12px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
+}
+.back-button:hover { color: var(--nexus-text); border-color: var(--nexus-accent-2); }
+.admin-message { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+.admin-error { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: #fca5a5; }
+.admin-success { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3); color: #6ee7b7; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.admin-panel { background: var(--nexus-panel); border: 1px solid var(--nexus-border); border-radius: 14px; padding: 20px; }
+.admin-panel h2 { font-size: 14.5px; margin-bottom: 14px; }
+.admin-panel h3 { font-size: 13px; color: var(--nexus-muted); margin: 16px 0 10px; }
+.admin-wide { grid-column: 1 / -1; }
+.admin-form { display: flex; flex-direction: column; gap: 12px; }
+.admin-form label { font-size: 12px; color: var(--nexus-muted); display: flex; flex-direction: column; gap: 6px; }
+.admin-form input, .admin-form select, .admin-form textarea {
+  background: #0d0c14; border: 1px solid var(--nexus-border); border-radius: 8px;
+  padding: 10px 12px; color: var(--nexus-text); font-size: 13.5px; outline: none;
+}
+.admin-form input:focus, .admin-form select:focus, .admin-form textarea:focus { border-color: var(--nexus-accent); }
+.admin-inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+.admin-inline label { font-size: 12px; color: var(--nexus-muted); display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+.admin-inline input, .admin-inline select { background: #0d0c14; border: 1px solid var(--nexus-border); border-radius: 8px; padding: 10px 12px; color: var(--nexus-text); font-size: 13.5px; }
+.admin-primary {
+  border: none; border-radius: 9px; padding: 11px 16px; font-weight: 600; font-size: 13.5px;
+  background: linear-gradient(135deg, var(--nexus-accent), #7C3AED); color: #fff; cursor: pointer; align-self: flex-start;
+}
+.admin-primary:hover:not(:disabled) { opacity: 0.92; }
+.admin-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.admin-table { display: flex; flex-direction: column; gap: 8px; }
+.admin-list-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px; background: var(--nexus-panel-2); border: 1px solid var(--nexus-border);
+  font-size: 13px; flex-wrap: wrap;
+}
+.admin-list-row strong { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.admin-list-row span { color: var(--nexus-muted); font-size: 12px; }
+.empty-state { color: var(--nexus-muted); font-size: 13px; padding: 20px 0; }
+.kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.kpi-chip { background: var(--nexus-panel); border: 1px solid var(--nexus-border); border-radius: 10px; padding: 12px 16px; font-size: 13px; min-width: 140px; }
+.kpi-chip strong { display: block; font-size: 17px; margin-top: 2px; }
+.kpi-chip.warn strong { color: var(--nexus-amber); }
+.kpi-chip.danger strong { color: var(--nexus-red); }
+.admin-simple-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-simple-table th { text-align: left; color: var(--nexus-muted); font-weight: 500; font-size: 11.5px; padding: 8px 10px; border-bottom: 1px solid var(--nexus-border); }
+.admin-simple-table td { padding: 9px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+.admin-note { font-size: 12px; color: var(--nexus-muted); line-height: 1.6; margin-bottom: 16px; }
+.admin-pre { background: #0d0c14; border: 1px solid var(--nexus-border); border-radius: 10px; padding: 14px; font-size: 12px; overflow: auto; }
+
+/* ==========================================================================
+   NEXUS OS — fundação visual do Layout Mestre (V2.1)
+   Tokens do mestre: painéis #1A1A2E, cards internos #121221, borda
+   white/[0.06], accent #7C3AED. Os componentes de UI
+   (frontend/components/ui) usam classes Tailwind idênticas às do mestre;
+   aqui ficam apenas os utilitários compartilhados.
+   ========================================================================== */
+
+.nx-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.nx-scroll::-webkit-scrollbar-track { background: transparent; }
+.nx-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 999px; }
+.nx-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.16); }
+.nx-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
+/* Barra dos gráficos de faturamento (gradiente accent do mestre). */
+.nx-bar {
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(to top, rgba(124, 92, 255, 0.25), rgba(124, 92, 255, 0.95));
+  min-height: 4px;
+  transition: height 0.25s ease;
+}
+.nx-bar:hover { background: linear-gradient(to top, rgba(124, 92, 255, 0.45), #9d85ff); }
+
+/* Chip de fluxo (tela Indicadores: Vendas → ROI / Marketing → CAC × LTV). */
+.nx-flow-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px; background: #121221;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 16px; font-size: 11px; color: rgba(255, 255, 255, 0.7);
+  text-align: center; min-width: 110px;
+}
+.nx-flow-chip.is-head {
+  border-color: rgba(255, 255, 255, 0.12);
+  font-size: 12px; color: rgba(255, 255, 255, 0.8); font-weight: 500; min-width: 90px;
+}
+
+/* ==========================================================================
+   NEXUS OS — correção final de responsividade (apenas layout, sem lógica)
+   Desktop / notebook / tablet / celular.
+   ========================================================================== */
+.admin-panel, .info-panel, .metric-card { min-width: 0; }
+.admin-simple-table { display: block; overflow-x: auto; white-space: nowrap; }
+.admin-simple-table thead, .admin-simple-table tbody { min-width: 560px; }
+.admin-inline > * { min-width: 0; }
+.admin-form input, .admin-form select, .admin-form textarea,
+.admin-inline input, .admin-inline select { max-width: 100%; }
+.admin-primary, .admin-secondary, .auth-secondary { max-width: 100%; }
+canvas, svg, img { max-width: 100%; }
+
+@media (max-width: 1024px) {
+  .dashboard-content, .admin-page { padding: 24px; }
+  .metric-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .admin-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+}
+@media (max-width: 860px) {
+  .dashboard-shell { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; overflow-x: auto; }
+  .main-nav { flex-direction: row; }
+  .brand-lockup { display: none; }
+  .dashboard-content, .admin-page { padding: 20px; }
+}
+@media (max-width: 640px) {
+  .dashboard-content, .admin-page { padding: 16px; }
+  .admin-header h1 { font-size: 18px; }
+  .admin-inline { flex-direction: column; align-items: stretch; }
+  .admin-inline label { min-width: 0; width: 100%; }
+  .admin-primary, .admin-secondary { width: 100%; text-align: center; }
+  .admin-list-row { flex-direction: column; align-items: flex-start; }
+  .metric-grid, .admin-grid, .panel-grid { grid-template-columns: 1fr; }
+  .kpi-row { flex-direction: column; }
+  .kpi-chip { min-width: 0; width: 100%; }
+  .auth-grid-2 { grid-template-columns: 1fr; }
+  .admin-pre { font-size: 11px; }
+}
+
+/* ===== RH — cards, presença, calendário, desempenho ===== */
+.rh-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.rh-toolbar input.rh-search { flex: 1 1 240px; background: var(--nexus-panel, #14111f); border: 1px solid var(--nexus-border, rgba(255,255,255,.08)); border-radius: 10px; padding: 9px 12px; color: #fff; }
+.rh-toolbar select { background: var(--nexus-panel, #14111f); border: 1px solid var(--nexus-border, rgba(255,255,255,.08)); border-radius: 10px; padding: 9px 12px; color: #fff; }
+.rh-toolbar .admin-primary { margin-left: auto; }
+
+.rh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.rh-card { background: var(--nexus-panel, #14111f); border: 1px solid var(--nexus-border, rgba(255,255,255,.08)); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.rh-card-top { display: flex; align-items: center; gap: 12px; }
+.rh-avatar { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6d28d9); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.rh-card-id { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.rh-card-id strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-sub { font-size: 11.5px; color: var(--nexus-muted, #9b93b3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-badge { font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 3px 8px; border-radius: 999px; flex-shrink: 0; }
+.rh-badge.ok { background: rgba(34, 197, 94, .14); color: #4ade80; }
+.rh-badge.warn { background: rgba(245, 158, 11, .14); color: #fbbf24; }
+.rh-card-info { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--nexus-muted, #9b93b3); }
+.rh-card-info strong { color: #fff; font-weight: 600; }
+.rh-card-actions { display: flex; gap: 8px; }
+.rh-card-actions button { flex: 1; }
+
+.rh-fold { margin-top: 4px; }
+.rh-fold summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.rh-fold-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 14px; }
+
+.rh-presenca-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+.rh-cal-head { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
+.rh-cal-head button { background: var(--nexus-panel, #14111f); border: 1px solid var(--nexus-border, rgba(255,255,255,.08)); color: #fff; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; }
+.rh-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.rh-cal-dow { text-align: center; font-size: 10.5px; color: var(--nexus-muted, #9b93b3); padding: 4px 0; }
+.rh-cal-dia { text-align: center; font-size: 12px; padding: 7px 0; border-radius: 8px; color: #d9d4ea; }
+.rh-cal-dia.hoje { background: #8b5cf6; color: #fff; font-weight: 700; }
+.rh-cal-dia.com-batida { background: rgba(34, 197, 94, .12); color: #4ade80; font-weight: 600; }
+.rh-cal-dia.com-batida small { display: block; font-size: 8.5px; color: #4ade80; line-height: 1.1; }
+.rh-cal-dia.atraso { background: rgba(245, 158, 11, .12); color: #fbbf24; }
+.rh-cal-dia.atraso small { display: block; font-size: 8.5px; color: #fbbf24; line-height: 1.1; }
+.rh-cal-dia.falta { background: rgba(239, 68, 68, .12); color: #f87171; }
+.rh-subtitulo { font-size: 12.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--nexus-muted, #9b93b3); margin: 16px 0 8px; }
+.rh-batidas-hoje { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.rh-batida-linha { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--nexus-border, rgba(255,255,255,.07)); border-radius: 10px; padding: 8px 12px; }
+.rh-batida-nome { font-size: 13px; color: #e6e1f5; flex: 1; }
+.rh-batida-seq { font-size: 12px; color: var(--nexus-muted, #9b93b3); }
+.rh-batida-seq.ok { color: #4ade80; }
+.rh-batida-seq.atraso { color: #fbbf24; }
+.rh-batida-seq.falta { color: #f87171; font-weight: 700; }
+.rh-doc-btn { background: rgba(139, 92, 246, .12); border: 1px solid rgba(139, 92, 246, .35); color: #c4b5fd; font-size: 11px; font-weight: 600; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.rh-doc-btn:hover { background: rgba(139, 92, 246, .25); }
+.rh-doc-ok { font-size: 11px; color: #4ade80; }
+.rh-clock { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #d9d4ea; margin-top: 6px; }
+.rh-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.rh-dot.ok { background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, .7); }
+.rh-dot.off { background: #6b7280; }
+.rh-hint { font-size: 11.5px; color: var(--nexus-muted, #9b93b3); margin-top: 10px; line-height: 1.5; }
+
+.rh-bars { display: flex; flex-direction: column; gap: 10px; }
+.rh-bar-row { display: grid; grid-template-columns: 160px 1fr 36px; gap: 10px; align-items: center; }
+.rh-bar-label { font-size: 12.5px; color: #d9d4ea; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-bar-track { height: 10px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; }
+.rh-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.rh-bar-val { font-size: 12.5px; color: var(--nexus-muted, #9b93b3); text-align: right; }
+.rh-ia-texto { margin-top: 12px; font-size: 13px; line-height: 1.6; color: #e6e1f5; background: rgba(139, 92, 246, .08); border: 1px solid rgba(139, 92, 246, .25); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; }
+
+/* ===== RH v2 — topbar, pills, chips, conexão, barras duais ===== */
+.rh-topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.rh-topbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rh-topbar-sub { font-size: 11px; letter-spacing: .8px; color: var(--nexus-muted, #9b93b3); text-transform: uppercase; }
+/* Botão primário — cor sólida #7B5CFF com halo, conforme o design system.
+   Antes era `linear-gradient(135deg, #8b5cf6, #6d28d9)`, um roxo mais quente e
+   saturado que destoava dos cartões (#15151F) e dos demais primários da app
+   (`rh3-btn-primary`). Agora as duas famílias usam a mesma cor. */
+.rh-btn-primary { background: #7B5CFF; color: #fff; border: none; box-shadow: 0 0 24px rgba(123, 92, 255, .35); border-radius: 10px; padding: 10px 18px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.rh-btn-primary:hover { background: #6a4fe0; }
+.rh-btn-primary:disabled { opacity: .6; cursor: default; }
+
+.rh-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(139, 92, 246, .14); border: 1px solid rgba(139, 92, 246, .35); color: #c4b5fd; font-size: 10.5px; font-weight: 700; letter-spacing: .5px; padding: 4px 10px; border-radius: 999px; text-transform: uppercase; }
+.rh-pill.small { font-size: 9.5px; padding: 3px 9px; }
+.rh-pill.tiny { font-size: 9px; padding: 2px 7px; margin-left: 6px; font-style: normal; }
+.rh-pill.ok { background: rgba(34, 197, 94, .14); border-color: rgba(34, 197, 94, .4); color: #4ade80; }
+.rh-pill.warn { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .4); color: #fbbf24; }
+.rh-pill.danger { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .4); color: #f87171; }
+
+.rh-panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.rh-panel-head h2 { margin: 0; font-size: 15px; letter-spacing: .6px; }
+.rh-panel-head h3 { margin: 0; font-size: 12.5px; color: var(--nexus-muted, #9b93b3); }
+
+.rh-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.rh-chip { background: rgba(255,255,255,.05); border: 1px solid var(--nexus-border, rgba(255,255,255,.08)); color: #d9d4ea; font-size: 11px; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.rh-chip.on { background: #8b5cf6; border-color: #8b5cf6; color: #fff; font-weight: 600; }
+.rh-chip.static { cursor: default; color: var(--nexus-muted, #9b93b3); }
+.rh-toolbar .rh-chips { margin-left: auto; }
+
+.rh-conn-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rh-conn-list li { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; background: rgba(255,255,255,.03); border: 1px solid var(--nexus-border, rgba(255,255,255,.06)); border-radius: 8px; padding: 8px 12px; }
+.rh-conn-list li span { color: var(--nexus-muted, #9b93b3); }
+.rh-conn-list li strong { color: #fff; font-weight: 600; }
+.rh-conn-list li strong.ok { color: #4ade80; }
+
+.rh-bar-track.dual { display: flex; gap: 3px; background: transparent; overflow: visible; }
+.rh-bar-fill.roxo { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.rh-bar-fill.verde { background: linear-gradient(90deg, #22c55e, #4ade80); }
+.rh-bar-row.perf { grid-template-columns: 200px 1fr 90px; }
+
+.kpi-chip small { display: block; font-size: 10.5px; color: var(--nexus-muted, #9b93b3); margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .rh-presenca-grid { grid-template-columns: 1fr; }
+  .rh-fold-grid { grid-template-columns: 1fr; }
+  .rh-bar-row { grid-template-columns: 110px 1fr 32px; }
+  .rh-toolbar .admin-primary { margin-left: 0; width: auto; }
+  .rh-topbar { flex-direction: column; align-items: stretch; }
+  .rh-toolbar .rh-chips { margin-left: 0; }
+  .rh-bar-row.perf { grid-template-columns: 110px 1fr 60px; }
+}
+
+
+/* ==========================================================================
+   RH v3 — Desligamento (CLT) + Espelho de Ponto
+   Paleta do "Layout Mestre": fundo #0B0B14, cards #15151F, borda #2A2A3A e
+   accent #7B5CFF. Tipografia: Inter (texto) + JetBrains Mono (datas, horas e
+   valores). A camada de impressão A4 fica no fim do bloco.
+   ========================================================================== */
+
+.mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+@keyframes rhFadeSlide { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.rh-fade-slide { animation: rhFadeSlide .35s cubic-bezier(.16, 1, .3, 1) both; }
+
+@keyframes rhPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+.rh-pulse { animation: rhPulse 1.8s ease-in-out infinite; }
+
+/* ---- barra de etiquetas acima do conteúdo ---- */
+.rh-badgebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.rh-badgebar > span { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; }
+.rh-bb-violet { background: #15151F; border: 1px solid rgba(123, 92, 255, .25); color: #C4B5FD; box-shadow: 0 0 18px rgba(123, 92, 255, .15); }
+.rh-bb-neutral { background: #15151F; border: 1px solid #2A2A3A; color: #A1A1AA; }
+.rh-bb-live { background: rgba(16, 185, 129, .1); border: 1px solid rgba(16, 185, 129, .2); color: #6EE7B7; }
+
+/* ---- cartões, KPIs e barra de ferramentas ---- */
+.rh3-card { background: #15151F; border: 1px solid #2A2A3A; border-radius: 16px; padding: 20px; }
+.rh3-kpi { display: flex; align-items: center; gap: 12px; }
+.rh3-kpi-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; }
+.rh3-kpi-val { font-size: 20px; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+.rh3-kpi-lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #71717A; font-weight: 600; margin-top: 2px; }
+.rh3-toolbar { display: flex; flex-direction: column; gap: 12px; }
+@media (min-width: 640px) { .rh3-toolbar { flex-direction: row; align-items: center; justify-content: space-between; } }
+
+/* Pilha vertical de cartões. Equivale ao `space-y-*` do spec para os cards de
+   desligamento — sem ela, os cartões ficavam colados. */
+.rh3-stack { display: flex; flex-direction: column; gap: 12px; }
+
+/* Grade de KPIs: 1 coluna no celular, 4 a partir de 640px. */
+.rh3-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .rh3-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Barra de busca com ícone. A classe `rh-search` já existia; esta é a mesma
+   receita aplicada via `rh3-` para o formulário de desligamento. */
+.rh3-search { width: 100%; height: 36px; border-radius: 999px; background: #15151F; border: 1px solid #2A2A3A; color: #F4F4F5; font-size: 13px; padding: 0 16px; }
+.rh3-search::placeholder { color: #71717A; }
+.rh3-search:focus { outline: none; border-color: rgba(123, 92, 255, .4); }
+
+/* Efeito "vidro" do cabeçalho (spec: `.glass`). Fica aqui porque o shell do
+   dashboard já é compartilhado com as demais telas — declarar no layout
+   duplicaria a regra em todo o app. */
+.glass { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+
+/* ---- barra de abas (spec: TABS.map) ---- */
+.rh3-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 0 4px 8px; margin: 0 -4px; }
+.rh3-tabs::-webkit-scrollbar { height: 0; }
+.rh3-tab { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 500; border: 1px solid #2A2A3A; background: #15151F; color: #A1A1AA; cursor: pointer; transition: all .15s ease; }
+.rh3-tab:hover { background: #1C1C2A; }
+.rh3-tab.on { background: #fff; color: #000; border-color: #fff; box-shadow: 0 0 24px rgba(255, 255, 255, .28); transform: scale(1.02); }
+
+/* ---- avatar com gradiente (cards de desligamento) ---- */
+.rh3-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.rh3-avatar.violet { background: linear-gradient(135deg, #8b5cf6, #4f46e5); }
+.rh3-avatar.fuchsia { background: linear-gradient(135deg, #d946ef, #ec4899); }
+.rh3-avatar.amber { background: linear-gradient(135deg, #f59e0b, #ea580c); }
+.rh3-avatar.emerald { background: linear-gradient(135deg, #10b981, #14b8a6); }
+.rh3-avatar.blue { background: linear-gradient(135deg, #3b82f6, #06b6d4); }
+
+/* ---- marcações de documentos anexados ---- */
+.rh3-docs { display: flex; flex-wrap: wrap; gap: 6px; }
+.rh3-doc { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; padding: 4px 8px; border-radius: 999px; background: #1C1C2A; border: 1px solid #2A2A3A; color: #D4D4D8; }
+
+/* ---- linha do tempo do fluxo disciplinar (4 pontos + conectores) ---- */
+.rh3-timeline { display: flex; align-items: center; gap: 4px; }
+.rh3-tl-dot { width: 8px; height: 8px; border-radius: 50%; background: #2A2A3A; flex-shrink: 0; }
+.rh3-tl-dot.on { background: #7B5CFF; box-shadow: 0 0 10px rgba(123, 92, 255, .5); }
+.rh3-tl-line { width: 14px; height: 1px; background: #2A2A3A; flex-shrink: 0; }
+
+/* ---- rodapé de assinatura (espelho e termo) ---- */
+.rh3-assinatura { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; border-top: 1px dashed #52525B; padding-top: 64px; margin-top: 32px; text-align: center; font-size: 13px; font-weight: 600; color: #71717A; }
+@media print {
+  .rh3-assinatura { border-top: 1px dashed #000; color: #000; }
+}
+
+/* Envelope de impressão: o conteúdo impresso herda a cor do papel, então os
+   textos que no PDF são quase-pretos (`#3A3A4A`, `#71717A`) ficariam ilegíveis
+   sobre branco. Aqui ficam pretos e com negrito leve. */
+.print-inner { padding-top: 0; }
+@media print { .print-inner { padding-top: 0; } }
+
+/* Cabeçalho e estatísticas que só existem no papel. Na tela ficam escondidos
+   para não repetir o que os cards de KPI já mostram acima da tabela. */
+.print-only-header,
+.print-stats { display: none; }
+
+@media print {
+  .print-only-header {
+    display: flex !important;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 0 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #000;
+    color: #000;
+  }
+  .print-stats {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    position: absolute;
+    top: 46px;
+    right: 0;
+    color: #000;
+  }
+  .print-stats > div { display: flex; flex-direction: column; }
+  .print-stats b { font-size: 13px; }
+  .print-stats span { font-size: 8.5px; text-transform: uppercase; letter-spacing: .1em; }
+}
+.rh3-btn { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 999px; border: 1px solid transparent; cursor: pointer; transition: background .15s ease; }
+.rh3-btn-primary { background: #7B5CFF; color: #fff; box-shadow: 0 0 24px rgba(123, 92, 255, .35); }
+.rh3-btn-primary:hover { background: #6a4fe0; }
+.rh3-btn-white { background: #fff; color: #000; box-shadow: 0 0 20px rgba(255, 255, 255, .25); }
+.rh3-btn-white:hover { background: #E4E4E7; }
+.rh3-btn-ghost { background: #15151F; border-color: #2A2A3A; color: #D4D4D8; }
+.rh3-btn-ghost:hover { background: #1C1C2A; border-color: #3A3A4A; }
+.rh3-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- pílulas de filtro ---- */
+.rh3-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.rh3-pill { font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--nx-border); background: var(--nx-surface); color: var(--nx-ink-2); cursor: pointer; transition: all .15s ease; }
+.rh3-pill:hover { background: var(--nx-surface-2); }
+.rh3-pill.on { background: var(--nx-surface-2); color: var(--nx-ink); border-color: var(--nx-border); box-shadow: 0 0 24px rgba(255, 255, 255, .28); transform: scale(1.02); }
+
+/* ---- fluxo disciplinar (kanban) ---- */
+.rh3-fluxo { display: flex; align-items: stretch; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.rh3-step { flex: 1 1 0; min-width: 170px; background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 14px; padding: 16px; }
+.rh3-step-dot { width: 10px; height: 10px; border-radius: 50%; margin-bottom: 10px; }
+.rh3-step h4 { margin: 0; font-size: 13.5px; font-weight: 700; }
+.rh3-step p { margin: 4px 0 0; font-size: 11px; color: #71717A; }
+.rh3-arrow { display: grid; place-items: center; flex-shrink: 0; color: #3A3A4A; }
+
+
+
+/* ---- cartões de desligamento ---- */
+.rh3-desl { display: flex; align-items: flex-start; gap: 12px; }
+.rh3-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.rh3-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+.rh3-timeline { display: flex; align-items: center; }
+.rh3-tl-dot { width: 9px; height: 9px; border-radius: 50%; background: #2A2A3A; flex-shrink: 0; }
+.rh3-tl-dot.on { background: #7B5CFF; box-shadow: 0 0 10px rgba(123, 92, 255, .6); }
+.rh3-tl-line { flex: 1; height: 1px; background: #2A2A3A; min-width: 14px; }
+.rh3-doc { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, .06); border: 1px solid #2A2A3A; color: #A1A1AA; }
+
+/* ---- estatísticas e tabela do espelho ---- */
+.rh3-stat { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 16px; padding: 16px; }
+.rh3-stat-val { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.rh3-tablecard { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 16px; overflow: hidden; }
+.rh3-scroll { overflow-x: auto; }
+.rh3-table { width: 100%; border-collapse: collapse; }
+.rh3-table th { height: 40px; padding: 0 12px; text-align: left; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--nx-ink-2); background: var(--nx-surface-2); white-space: nowrap; }
+.rh3-table td { height: 44px; padding: 0 12px; font-size: 12.5px; color: var(--nx-ink); border-top: 1px solid var(--nx-border); white-space: nowrap; }
+.rh3-table td.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px; }
+.rh3-st-ok { color: #34D399; }
+.rh3-st-falta { color: #EF4444; font-weight: 700; }
+.rh3-st-atraso { color: #F59E0B; font-weight: 700; }
+.rh3-st-domingo { color: #71717A; }
+.rh3-st-vazio { color: #3A3A4A; }
+.rh3-assinatura { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; border-top: 1px dashed #3A3A4A; padding-top: 64px; margin-top: 64px; text-align: center; font-size: 12px; font-weight: 600; color: #A1A1AA; }
+
+/* ---- formulários, modais e documento claro ---- */
+.rh3-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .7); backdrop-filter: blur(6px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.rh3-modal { background: #15151F; border: 1px solid #2A2A3A; border-radius: 16px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 24px; }
+.rh3-grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 640px) { .rh3-grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rh3-field { display: flex; flex-direction: column; gap: 6px; }
+.rh3-field > span { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #71717A; }
+.rh3-input { width: 100%; height: 44px; background: var(--nx-surface-3); border: 1px solid var(--nx-border); border-radius: 12px; padding: 0 14px; font-size: 13px; color: var(--nx-ink); }
+.rh3-input::placeholder { color: #3A3A4A; }
+.rh3-input:focus { outline: none; border-color: rgba(123, 92, 255, .5); }
+textarea.rh3-input { height: auto; padding: 12px 14px; resize: vertical; font-family: inherit; }
+.rh3-check { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--nx-border); background: var(--nx-surface-3); cursor: pointer; }
+.rh3-check.on { border-color: rgba(123, 92, 255, .5); }
+.rh3-check b { display: block; font-size: 12.5px; font-weight: 600; color: #E4E4E7; }
+.rh3-check em { display: block; font-size: 11px; font-style: normal; color: #71717A; margin-top: 2px; }
+.rh3-verbas { background: #11111A; border: 1px solid #2A2A3A; border-radius: 16px; padding: 20px; }
+.rh3-verbas-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 640px) { .rh3-verbas-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rh3-verbas-total { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 16px; border-top: 1px solid #2A2A3A; }
+.rh3-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.rh3-iconbtn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #15151F; border: 1px solid #2A2A3A; color: #A1A1AA; cursor: pointer; }
+.rh3-iconbtn:hover { background: #1C1C2A; color: #fff; }
+.rh3-drop { position: absolute; right: 0; top: 46px; width: 340px; max-width: 80vw; background: #15151F; border: 1px solid #2A2A3A; border-radius: 14px; box-shadow: 0 0 40px rgba(0, 0, 0, .5); overflow: hidden; z-index: 40; }
+
+/* ---- termo de desligamento (documento claro, pronto para impressão) ---- */
+.rh3-termo-overlay { position: fixed; inset: 0; background: rgba(250, 250, 248, .96); z-index: 70; overflow-y: auto; }
+.rh3-termo { background: #fff; color: #18181B; max-width: 860px; margin: 32px auto; border-radius: 16px; box-shadow: 0 0 80px rgba(0, 0, 0, .2); }
+.rh3-termo-inner { padding: 32px; }
+.rh3-termo h2 { font-size: 17px; font-weight: 800; letter-spacing: -.01em; margin: 0; }
+.rh3-termo h3 { font-size: 10.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: #71717A; margin: 0 0 10px; }
+.rh3-termo p { font-size: 12.5px; line-height: 1.7; color: #3F3F46; }
+.rh3-termo-box { background: #fff; border: 1px solid #E4E4E7; border-radius: 12px; padding: 24px; }
+.rh3-termo-motivo { background: #FAFAFA; border: 1px solid #E4E4E7; border-radius: 12px; padding: 16px; font-size: 12.5px; line-height: 1.7; color: #3F3F46; }
+.rh3-termo-verbas { background: #18181B; color: #fff; border-radius: 12px; padding: 20px; }
+.rh3-termo-verbas-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 640px) { .rh3-termo-verbas-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rh3-termo-info { background: #F5F3FF; border: 1px solid #DDD6FE; color: #4C1D95; border-radius: 12px; padding: 14px; display: flex; gap: 10px; font-size: 11.5px; line-height: 1.6; }
+.rh3-termo-assinatura { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; margin-top: 64px; padding-top: 12px; border-top: 1px solid #3F3F46; text-align: center; font-size: 11.5px; font-weight: 600; }
+.rh3-termo-table { width: 100%; font-size: 12px; }
+.rh3-termo-table td { padding: 5px 0; vertical-align: top; }
+.rh3-termo-table td:first-child { color: #71717A; width: 44%; }
+
+/* cabeçalhos que só existem no papel */
+.rh3-print-only { display: none; }
+
+
+/* ---- grade de estatísticas + cabeçalho de impressão ---- */
+.rh3-stats-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .rh3-stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rh3-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .rh3-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rh3-print-head { align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 10px; border-bottom: 1px solid #D4D4D8; margin-bottom: 12px; }
+.rh3-print-head b { font-size: 13px; font-weight: 800; }
+.rh3-print-head span { font-size: 10.5px; color: #52525B; }
+.rh3-warn { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px; background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .3); color: #FCD34D; font-size: 12px; }
+
+/* ==========================================================================
+   NEXUS OS \u2014 TEMA CLARO, 2\u00aa CAMADA (seletores com escopo de p\u00e1gina)
+
+   A camada anterior cobre as utilit\u00e1rias do Tailwind (bg-[#\u2026], text-white/NN).
+   Aqui entram as classes definidas dentro dos blocos <style> das pr\u00f3prias
+   p\u00e1ginas \u2014 que a camada anterior n\u00e3o alcan\u00e7a, porque n\u00e3o s\u00e3o utilit\u00e1rias.
+   Cada seletor \u00e9 remapeado para os mesmos tokens, s\u00f3 no tema claro.
+   ========================================================================== */
+
+/* ---------------- Fornecedores (.nx-*) ---------------- */
+[data-theme='claro'] .nx-card { background: var(--nx-surface); border-color: var(--nx-border); }
+[data-theme='claro'] .nx-kpi { background: var(--nx-surface); border-color: var(--nx-border); }
+[data-theme='claro'] .nx-input { background: var(--nx-surface-3); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .nx-input::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .nx-back { background: var(--nx-surface-2); border-color: var(--nx-border); color: var(--nx-ink-2); }
+[data-theme='claro'] .nx-back:hover { background: var(--nx-surface-3); color: var(--nx-ink); }
+[data-theme='claro'] .nx-ia { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .nx-tab { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink-3); }
+[data-theme='claro'] .nx-tab.ativa { background: var(--nx-accent); color: #fff; }
+[data-theme='claro'] .nx-th { color: var(--nx-ink-3); }
+[data-theme='claro'] .nx-td { color: var(--nx-ink); border-bottom-color: var(--nx-border); }
+[data-theme='claro'] .nx-avatar { background: var(--nx-accent); }
+[data-theme='claro'] .nx-tag { background: var(--nx-surface-2); color: var(--nx-ink-2); }
+[data-theme='claro'] .nx-btn-ghost { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink-2); }
+[data-theme='claro'] .nx-btn-ghost:hover { background: var(--nx-surface-2); color: var(--nx-ink); }
+[data-theme='claro'] .nx-btn-roxo { color: #fff; }
+[data-theme='claro'] .nx-label,
+[data-theme='claro'] .nx-flabel { color: var(--nx-ink-2); }
+[data-theme='claro'] .nx-modal { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .nx-close { background: var(--nx-surface-2); color: var(--nx-ink-2); }
+[data-theme='claro'] .nx-close:hover { background: var(--nx-surface-3); color: var(--nx-ink); }
+[data-theme='claro'] .nx-toast { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink); }
+
+/* ---------------- IA NEXUS ---------------- */
+[data-theme='claro'] .nexus-root { background: var(--nx-canvas); color: var(--nx-ink); }
+[data-theme='claro'] .sidebar { background: var(--nx-surface); border-right-color: var(--nx-border); }
+[data-theme='claro'] .pill { background: var(--nx-surface-2); border-color: var(--nx-border); color: var(--nx-ink-2); }
+[data-theme='claro'] .nav-btn,
+[data-theme='claro'] .icon-btn { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink-2); }
+[data-theme='claro'] .nav-btn:hover,
+[data-theme='claro'] .icon-btn:hover { background: var(--nx-surface-2); color: var(--nx-ink); }
+[data-theme='claro'] .bubble-user { background: var(--nx-accent); color: #fff; }
+[data-theme='claro'] .bubble-ai { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .input-wrap { background: var(--nx-surface); }
+[data-theme='claro'] .input-pill { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .input-pill input::placeholder { color: var(--nx-ink-3); }
+
+/* ---------------- DRE e Fluxo (campos e dicas) ---------------- */
+[data-theme='claro'] .dre-field,
+[data-theme='claro'] .fx-field { background: var(--nx-surface-3); border-color: var(--nx-border); color: var(--nx-ink); }
+[data-theme='claro'] .dre-field option,
+[data-theme='claro'] .fx-field option { background: var(--nx-surface); color: var(--nx-ink); }
+[data-theme='claro'] .dre-tip,
+[data-theme='claro'] .fx-tip { background: var(--nx-surface); border-color: var(--nx-border); color: var(--nx-ink-2); }
+[data-theme='claro'] .dre-chip:hover { background: var(--nx-surface-2); color: var(--nx-ink); }
+
+/* ---------------- Fiscal ---------------- */
+[data-theme='claro'] .fiscal-select option { background: var(--nx-surface); color: var(--nx-ink); }
+[data-theme='claro'] .fiscal-select { background: var(--nx-surface-3); border-color: var(--nx-border); color: var(--nx-ink); }
+
+/* ==========================================================================
+   TEMA CLARO — CAMPOS DE FORMULÁRIO
+   --------------------------------------------------------------------------
+   Estas classes declaravam cor de fundo e cor de texto FIXAS (escuras) dentro
+   de `<style>` das próprias páginas. Como a cor está escrita literalmente, a
+   camada de compatibilidade por classe utilitária (bg-[#…], text-white/NN)
+   não as alcança: no tema claro o campo ficava com fundo escuro e texto
+   branco — ou o inverso, texto claro sobre fundo branco, ilegível.
+
+   Aqui cada uma passa a ler os tokens, que já trocam sozinhos com o tema.
+   O `color-scheme` também é declarado para que o popup nativo de <select>
+   e os controles de data/hora do navegador acompanhem o tema.
+   ========================================================================== */
+
+/* Configurações (.input-nexus) e demais telas que reusam a classe */
+[data-theme='claro'] .input-nexus {
+  background-color: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .input-nexus::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .input-nexus:focus { border-color: var(--nx-accent); }
+
+/* Opções de <select>: sem isso o dropdown nativo abre com a cor do SO. */
+[data-theme='claro'] .input-nexus option,
+[data-theme='claro'] select option { background-color: var(--nx-surface); color: var(--nx-ink); }
+
+/* RH (.rh3-input) */
+[data-theme='claro'] .rh3-input {
+  background: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .rh3-input::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .rh3-input:focus { border-color: var(--nx-accent); }
+
+/* BARRA DE FERRAMENTAS DO RH (busca e filtros) */
+[data-theme='claro'] .rh-toolbar input.rh-search,
+[data-theme='claro'] .rh-toolbar select {
+  background: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .rh-toolbar input.rh-search::placeholder { color: var(--nx-ink-3); }
+
+/* Administração de usuários (.admin-form / .admin-inline) */
+[data-theme='claro'] .admin-form input,
+[data-theme='claro'] .admin-form select,
+[data-theme='claro'] .admin-form textarea,
+[data-theme='claro'] .admin-inline input,
+[data-theme='claro'] .admin-inline select {
+  background: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .admin-form input::placeholder,
+[data-theme='claro'] .admin-form textarea::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .admin-form label { color: var(--nx-ink-2); }
+
+/* Login / cadastro / recuperação de senha (.auth-field) */
+[data-theme='claro'] .auth-field input,
+[data-theme='claro'] .auth-field select {
+  background: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .auth-field input::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .auth-field label { color: var(--nx-ink-2); }
+[data-theme='claro'] .auth-subtitle { color: var(--nx-ink-2); }
+
+/* IA (.ia-input) */
+[data-theme='claro'] .ia-input {
+  background: var(--nx-surface-3);
+  border-color: var(--nx-border-strong);
+  color: var(--nx-ink);
+}
+[data-theme='claro'] .ia-input::placeholder { color: var(--nx-ink-3); }
+[data-theme='claro'] .ia-input:focus { border-color: var(--nx-accent); }
+
+/* Modais: o painel segue o tema para não destoar dos campos dentro dele. */
+[data-theme='claro'] .nx-modal,
+[data-theme='claro'] .nx-modal-back { color: var(--nx-ink); }
+
+/* ==========================================================================
+   NEXUS OS — TEMA CLARO (camada de compatibilidade)
+
+   Os tokens do bloco anterior são a fonte da verdade. Esta seção existe
+   porque o app ainda usa cores fixas em utilitárias do Tailwind
+   (bg-[#…], text-white/NN e afins). Em vez de reescrever 59 arquivos de
+   uma vez, remapeamos essas utilitárias para os tokens — apenas quando
+   data-theme="claro" está ativo.
+
+   Regras: (a) só cor neutra-escura é remapeada; (b) cor semântica
+   (verde/vermelho/âmbar/azul) e accent NÃO são tocadas; (c) a precedência
+   vem do seletor composto [data-theme='claro'] .classe, que tem
+   especificidade (0,2,0) contra (0,1,0) da regra do Tailwind — por isso
+   nenhum !important é necessário aqui.
+   ========================================================================== */
+
+/* --- superfícies (o "fundo" dos cards, campos, linhas e da sidebar) --- */
+[data-theme='claro'] .bg-\[\#0B0B18\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#08080A\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#0D0D14\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#0F0F14\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#0F0F1A\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#0F0F24\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#111113\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#12121A\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#12121F\] { background-color: var(--nx-surface-3); }
+[data-theme='claro'] .bg-\[\#121221\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#121224\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#1A121E\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#241F14\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2A1A1A\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#1A1A23\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1A1A2A\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1A1A2E\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1B1B30\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1C1C2E\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1C1C32\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1E1E32\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1E1E36\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#1F1F2E\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#232330\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#24243A\] { background-color: var(--nx-surface); }
+[data-theme='claro'] .bg-\[\#2A2A35\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2A2A3A\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2A2A3E\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2A2A4A\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2E2E44\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#2F2F55\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#3A3A4A\] { background-color: var(--nx-surface-2); }
+[data-theme='claro'] .bg-\[\#3A3A6A\] { background-color: var(--nx-surface-2); }
+
+/* --- bordas --- */
+[data-theme='claro'] .border-\[\#12121F\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#1A1A23\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#1C1C32\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#1E1E28\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#1E1E32\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#23233F\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#23253A\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2A2A35\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2A2A3A\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2A2A3E\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2A2A4A\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2E2E44\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#2F2F55\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#3A3A4A\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#3A3A6A\] { border-color: var(--nx-border); }
+[data-theme='claro'] .border-\[\#3A3A4A\] { border-color: var(--nx-border-strong); }
+[data-theme='claro'] .border-\[\#3A3A6A\] { border-color: var(--nx-border-strong); }
+[data-theme='claro'] .border-\[\#2F2F55\] { border-color: var(--nx-border-strong); }
+[data-theme='claro'] .border-\[\#2E2E44\] { border-color: var(--nx-border-strong); }
+
+/* --- texto branco -> tinta --- */
+[data-theme='claro'] .text-white { color: var(--nx-ink); }
+[data-theme='claro'] .text-white\/15 { color: rgb(var(--nx-ink-rgb) / 0.15); }
+[data-theme='claro'] .text-white\/20 { color: rgb(var(--nx-ink-rgb) / 0.20); }
+[data-theme='claro'] .text-white\/25 { color: rgb(var(--nx-ink-rgb) / 0.25); }
+[data-theme='claro'] .text-white\/30 { color: rgb(var(--nx-ink-rgb) / 0.30); }
+[data-theme='claro'] .text-white\/35 { color: rgb(var(--nx-ink-rgb) / 0.35); }
+[data-theme='claro'] .text-white\/40 { color: rgb(var(--nx-ink-rgb) / 0.40); }
+[data-theme='claro'] .text-white\/45 { color: rgb(var(--nx-ink-rgb) / 0.45); }
+[data-theme='claro'] .text-white\/50 { color: rgb(var(--nx-ink-rgb) / 0.50); }
+[data-theme='claro'] .text-white\/55 { color: rgb(var(--nx-ink-rgb) / 0.55); }
+[data-theme='claro'] .text-white\/60 { color: rgb(var(--nx-ink-rgb) / 0.60); }
+[data-theme='claro'] .text-white\/65 { color: rgb(var(--nx-ink-rgb) / 0.65); }
+[data-theme='claro'] .text-white\/70 { color: rgb(var(--nx-ink-rgb) / 0.70); }
+[data-theme='claro'] .text-white\/75 { color: rgb(var(--nx-ink-rgb) / 0.75); }
+[data-theme='claro'] .text-white\/80 { color: rgb(var(--nx-ink-rgb) / 0.80); }
+[data-theme='claro'] .text-white\/85 { color: rgb(var(--nx-ink-rgb) / 0.85); }
+[data-theme='claro'] .text-white\/90 { color: rgb(var(--nx-ink-rgb) / 0.90); }
+
+/* --- sobreposições brancas (hover / divisores) -> tinta sutil --- */
+[data-theme='claro'] .bg-white\/3 { background-color: rgb(var(--nx-ink-rgb) / 0.03); }
+[data-theme='claro'] .border-white\/3 { border-color: rgb(var(--nx-ink-rgb) / 0.03); }
+[data-theme='claro'] .border-white\/\[0\.03\] { border-color: rgb(var(--nx-ink-rgb) / 0.03); }
+[data-theme='claro'] .bg-white\/\[0\.03\] { background-color: rgb(var(--nx-ink-rgb) / 0.03); }
+[data-theme='claro'] .divide-white\/3 { border-color: rgb(var(--nx-ink-rgb) / 0.03); }
+[data-theme='claro'] .bg-white\/5 { background-color: rgb(var(--nx-ink-rgb) / 0.05); }
+[data-theme='claro'] .border-white\/5 { border-color: rgb(var(--nx-ink-rgb) / 0.05); }
+[data-theme='claro'] .border-white\/\[0\.05\] { border-color: rgb(var(--nx-ink-rgb) / 0.05); }
+[data-theme='claro'] .bg-white\/\[0\.05\] { background-color: rgb(var(--nx-ink-rgb) / 0.05); }
+[data-theme='claro'] .divide-white\/5 { border-color: rgb(var(--nx-ink-rgb) / 0.05); }
+[data-theme='claro'] .bg-white\/6 { background-color: rgb(var(--nx-ink-rgb) / 0.06); }
+[data-theme='claro'] .border-white\/6 { border-color: rgb(var(--nx-ink-rgb) / 0.06); }
+[data-theme='claro'] .border-white\/\[0\.06\] { border-color: rgb(var(--nx-ink-rgb) / 0.06); }
+[data-theme='claro'] .bg-white\/\[0\.06\] { background-color: rgb(var(--nx-ink-rgb) / 0.06); }
+[data-theme='claro'] .divide-white\/6 { border-color: rgb(var(--nx-ink-rgb) / 0.06); }
+[data-theme='claro'] .bg-white\/8 { background-color: rgb(var(--nx-ink-rgb) / 0.08); }
+[data-theme='claro'] .border-white\/8 { border-color: rgb(var(--nx-ink-rgb) / 0.08); }
+[data-theme='claro'] .border-white\/\[0\.08\] { border-color: rgb(var(--nx-ink-rgb) / 0.08); }
+[data-theme='claro'] .bg-white\/\[0\.08\] { background-color: rgb(var(--nx-ink-rgb) / 0.08); }
+[data-theme='claro'] .divide-white\/8 { border-color: rgb(var(--nx-ink-rgb) / 0.08); }
+[data-theme='claro'] .bg-white\/10 { background-color: rgb(var(--nx-ink-rgb) / 0.10); }
+[data-theme='claro'] .border-white\/10 { border-color: rgb(var(--nx-ink-rgb) / 0.10); }
+[data-theme='claro'] .border-white\/\[0\.10\] { border-color: rgb(var(--nx-ink-rgb) / 0.10); }
+[data-theme='claro'] .bg-white\/\[0\.10\] { background-color: rgb(var(--nx-ink-rgb) / 0.10); }
+[data-theme='claro'] .divide-white\/10 { border-color: rgb(var(--nx-ink-rgb) / 0.10); }
+[data-theme='claro'] .bg-white\/15 { background-color: rgb(var(--nx-ink-rgb) / 0.15); }
+[data-theme='claro'] .border-white\/15 { border-color: rgb(var(--nx-ink-rgb) / 0.15); }
+[data-theme='claro'] .border-white\/\[0\.15\] { border-color: rgb(var(--nx-ink-rgb) / 0.15); }
+[data-theme='claro'] .bg-white\/\[0\.15\] { background-color: rgb(var(--nx-ink-rgb) / 0.15); }
+[data-theme='claro'] .divide-white\/15 { border-color: rgb(var(--nx-ink-rgb) / 0.15); }
+
+/* --- texto claro e violeta-claro -> tinta legível --- */
+[data-theme='claro'] .text-\[\#B8B8D4\] { color: var(--nx-ink-2); }
+[data-theme='claro'] .text-\[\#C7C9DD\] { color: var(--nx-ink-2); }
+[data-theme='claro'] .text-\[\#C8C8E0\] { color: var(--nx-ink-2); }
+[data-theme='claro'] .text-\[\#D0D0E0\] { color: var(--nx-ink-2); }
+[data-theme='claro'] .text-\[\#E8E8F0\] { color: var(--nx-ink-2); }
+[data-theme='claro'] .text-\[\#8888AA\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#8A8AB0\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#8B8BA7\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#9A9AB8\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#A0A0BB\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#A0A0C0\] { color: var(--nx-ink-3); }
+[data-theme='claro'] .text-\[\#A78BFA\] { color: var(--nx-accent-ink); }
+[data-theme='claro'] .text-\[\#A99CFF\] { color: var(--nx-accent-ink); }
+[data-theme='claro'] .text-\[\#8B74FF\] { color: var(--nx-accent-ink); }
+[data-theme='claro'] .text-\[\#8B5CF6\] { color: var(--nx-accent-ink); }
+[data-theme='claro'] .text-\[\#D8D4F5\] { color: var(--nx-accent-ink); }
+[data-theme='claro'] .text-\[\#0B0B18\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#08080A\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#0D0D14\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#0F0F14\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#0F0F1A\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#0F0F24\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#111113\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#12121A\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#12121F\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1A1A23\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1A1A2A\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1A1A2E\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1B1B30\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1C1C2E\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1C1C32\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1E1E32\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1E1E36\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#1F1F2E\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#232330\] { color: var(--nx-ink); }
+[data-theme='claro'] .text-\[\#24243A\] { color: var(--nx-ink); }
+
+/* --- gradientes de superfície --- */
+[data-theme='claro'] .from-\[\#1A1A2E\] { --tw-gradient-from: var(--nx-surface) var(--nx-gradient-from-pos); }
+[data-theme='claro'] .from-\[\#1C1C32\] { --tw-gradient-from: var(--nx-surface) var(--nx-gradient-from-pos); }
+[data-theme='claro'] .from-\[\#1A121E\] { --tw-gradient-from: var(--nx-surface) var(--nx-gradient-from-pos); }
+[data-theme='claro'] .to-\[\#12121F\] { --tw-gradient-to: var(--nx-surface-2) var(--nx-gradient-to-pos); }
+
+
+/* ==========================================================================
+   IMPRESSÃO — A4 retrato
+   A técnica de `visibility` (em vez de `display:none`) preserva o layout do
+   documento; os alvos de impressão são reposicionados no canto superior
+   esquerdo da página. Os elementos invisíveis que ficariam no fluxo são
+   colapsados para não gerar folhas em branco extras.
+   ========================================================================== */
+@page { size: A4 portrait; margin: 10mm 10mm 12mm 10mm; }
+
+@media print {
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* shell do dashboard fora do papel */
+  body.printing-espelho aside, body.printing-espelho header, body.printing-espelho nav,
+  body.printing-termo aside, body.printing-termo header, body.printing-termo nav { display: none !important; }
+
+  /* ---------- ESPELHO DE PONTO ---------- */
+  body.printing-espelho * { visibility: hidden !important; }
+  body.printing-espelho #espelho-print-area,
+  body.printing-espelho #espelho-print-stats,
+  body.printing-espelho #espelho-print-only-header { visibility: visible !important; }
+
+  body.printing-espelho .admin-page > *:not(.rh-fade-slide) { display: none !important; }
+  body.printing-espelho .rh-fade-slide > *:not(.rh3-print-root) { display: none !important; }
+  body.printing-espelho .rh3-print-root > .print-hide { display: none !important; }
+  body.printing-espelho .rh3-print-only { display: flex !important; }
+
+  /* Os três alvos de impressão viram camadas absolutas no topo da folha:
+     cabeçalho (0), indicadores (52px) e a tabela (0 + recuo de 136px). */
+  body.printing-espelho #espelho-print-only-header { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; }
+  body.printing-espelho #espelho-print-stats { position: absolute !important; top: 52px !important; left: 0 !important; width: 100% !important; }
+  body.printing-espelho #espelho-print-area {
+    position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important;
+    background: #fff !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+  }
+  body.printing-espelho #espelho-print-area .rh3-print-inner { padding-top: 136px; }
+
+  /* ---------- TERMO DE DESLIGAMENTO ---------- */
+  body.printing-termo .rh3-termo-overlay { position: static !important; inset: auto !important; background: #fff !important; overflow: visible !important; padding: 0 !important; }
+  body.printing-termo .rh3-termo { max-width: 100% !important; margin: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+  body.printing-termo .print-hide { display: none !important; }
+  body.printing-termo .rh3-print-only { display: flex !important; }
+  body.printing-termo * { visibility: hidden !important; }
+  body.printing-termo #termo-print-area,
+  body.printing-termo #termo-print-only-header { visibility: visible !important; }
+
+  /* ---------- tabelas no papel ---------- */
+  .rh3-table th, .rh3-table td { border: 1px solid #000 !important; color: #000 !important; }
+  .rh3-table th { background: #eeeeee !important; }
+  .rh3-table td.rh3-st-ok, .rh3-table td.rh3-st-falta,
+  .rh3-table td.rh3-st-atraso, .rh3-table td.rh3-st-domingo, .rh3-table td.rh3-st-vazio { color: #000 !important; }
+  .rh3-stat { background: #fff !important; border: 1px solid #000 !important; }
+  .rh3-stat-val, .rh3-kpi-lbl { color: #000 !important; }
+  .rh3-assinatura { color: #000 !important; border-top-color: #000 !important; }
+  .rh3-warn { background: #fff !important; border: 1px solid #000 !important; color: #000 !important; }
+}
+

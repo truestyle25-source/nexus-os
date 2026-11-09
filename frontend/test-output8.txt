@@ -1,0 +1,37 @@
+
+Running 2 tests using 2 workers
+
+  x  2 [chromium] › tests\e2e\auditoria-enterprise.spec.ts:21:5 › Auditoria Enterprise: login, navegacao e captura de erros (436ms)
+  ok 1 [chromium] › tests\e2e\login.spec.ts:17:7 › Tela de login do NEXUS OS › deve exibir os elementos principais do login (3.6s)
+
+
+  1) [chromium] › tests\e2e\auditoria-enterprise.spec.ts:21:5 › Auditoria Enterprise: login, navegacao e captura de erros 
+
+    Error: Defina NEXUS_AUDIT_EMAIL e NEXUS_AUDIT_PASSWORD.
+
+      21 | test("Auditoria Enterprise: login, navegacao e captura de erros", async ({ page }, info) => {
+      22 |   test.setTimeout(30 * 60 * 1000);
+    > 23 |   if (!email || !password) throw new Error("Defina NEXUS_AUDIT_EMAIL e NEXUS_AUDIT_PASSWORD.");
+         |                                  ^
+      24 |   fs.mkdirSync(output, { recursive: true });
+      25 |
+      26 |   const consoleErrors: string[] = [];
+        at c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\auditoria-enterprise.spec.ts:23:34
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\auditoria-enterprise-Audit-5976c-avegacao-e-captura-de-erros-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\auditoria-enterprise-Audit-5976c-avegacao-e-captura-de-erros-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\auditoria-enterprise-Audit-5976c-avegacao-e-captura-de-erros-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\auditoria-enterprise-Audit-5976c-avegacao-e-captura-de-erros-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests\e2e\auditoria-enterprise.spec.ts:21:5 › Auditoria Enterprise: login, navegacao e captura de erros 
+  1 passed (19.4s)

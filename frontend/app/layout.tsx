@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     'SaaS',
     'estoque',
     'vendas',
-    'PDV',
+    'Estoque',
     'financeiro',
     'RH',
   ],

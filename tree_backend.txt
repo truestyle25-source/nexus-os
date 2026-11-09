@@ -1,0 +1,185 @@
+Listagem de caminhos de pasta para o volume Acer
+O número de série do volume é FC18-B5F3
+C:\USERS\SAMUE\ONEDRIVE\DOCUMENTOS\GITHUB\NEXUS-OS\BACKEND\SRC
+|   seed.ts
+|   server.ts
+|   server.ts.backup-isolamento-enterprise-20261028-131528
+|   
++---auth
+|       hash.ts
+|       jwt.ts
+|       
++---config
+|       env.ts
+|       prisma.ts
+|       
++---domain
+|       cnpj.ts
+|       
++---lib
+|       auth.ts
+|       email.ts
+|       erros.ts
+|       folha.ts
+|       format.ts
+|       fuso.ts
+|       idempotencia.ts
+|       log-redacao.ts
+|       pdf.ts
+|       permissoes-catalogo.ts
+|       permissoes.ts
+|       prisma.ts
+|       secrets.ts
+|       storage.ts
+|       
++---middlewares
+|       apiKeyAuth.ts
+|       auth.ts
+|       rateLimiter.ts
+|       
++---modules
+|   +---api-publica
+|   |       api-publica.routes.ts
+|   |       
+|   +---assinatura
+|   |       assinatura.routes.ts
+|   |       
+|   +---auditoria
+|   |       auditoria.service.ts
+|   |       
+|   +---auth
+|   |       auth.routes.ts
+|   |       
+|   +---chat
+|   |       chat.service.ts
+|   |       
+|   +---compras
+|   |       compras.routes.ts
+|   |       
+|   +---dashboard
+|   |       dashboard.routes.ts
+|   |       
+|   +---empresa
+|   |       empresa.routes.ts
+|   |       
+|   +---enterprise-pack
+|   |       routes.js
+|   |       
+|   +---estoque
+|   |       conversao.service.ts
+|   |       conversao.service.ts.backup-prisma-20261028-131030
+|   |       conversao.service.ts.bak
+|   |       estoque-indicadores.service.ts
+|   |       estoque.routes.ts
+|   |       estoque.service.ts
+|   |       
+|   +---fiscal
+|   |       fiscal.routes.ts
+|   |       fiscal.status.ts
+|   |       
+|   +---fornecedores
+|   |       fornecedores.routes.ts
+|   |       fornecedores.service.ts
+|   |       iaFornecedores.service.ts
+|   |       
+|   +---gestao
+|   |       gestao.routes.ts
+|   |       
+|   +---ia
+|   |       ia.routes.ts
+|   |       ia.service.ts
+|   |       
+|   +---importacao
+|   |       importacao.routes.ts
+|   |       
+|   +---integracoes
+|   |   |   agendador-ml.ts
+|   |   |   integracoes.routes.ts
+|   |   |   mercadolivre-api.client.ts
+|   |   |   mercadolivre-consulta.service.ts
+|   |   |   mercadolivre-notificacoes.service.ts
+|   |   |   mercadolivre-sync.service.ts
+|   |   |   mercadolivre.service.ts
+|   |   |   
+|   |   +---core
+|   |   |       registry.ts
+|   |   |       types.ts
+|   |   |       
+|   |   \---shopee
+|   |           shopee-api.client.ts
+|   |           shopee-scheduler.ts
+|   |           shopee-signature.ts
+|   |           shopee.routes.ts
+|   |           shopee.service.ts
+|   |           
+|   +---lgpd
+|   |       lgpd.routes.ts
+|   |       
+|   +---payments
+|   |       pix.routes.ts
+|   |       pixProvider.ts
+|   |       pixUniversal.ts
+|   |       
+|   +---pdv
+|   |       pdv.routes.ts
+|   |       
+|   +---produtos
+|   |       kits.routes.ts
+|   |       produtos.routes.ts
+|   |       
+|   +---radar
+|   |       radar.disc.ts
+|   |       radar.regras.ts
+|   |       radar.resumo.ts
+|   |       radar.routes.ts
+|   |       
+|   +---relatorios
+|   |       export.service.ts
+|   |       iaRelatorios.service.ts
+|   |       relatorios.routes.ts
+|   |       relatorios.service.ts
+|   |       
+|   +---rh
+|   |       folha.routes.ts
+|   |       gestao-tempo.routes.ts
+|   |       inventario.routes.ts
+|   |       inventario.ts
+|   |       lideranca.routes.ts
+|   |       lideranca.ts
+|   |       loja.routes.ts
+|   |       loja.ts
+|   |       plano-desenvolvimento.routes.ts
+|   |       plano-desenvolvimento.ts
+|   |       ponto-fechamento.service.ts
+|   |       pontuacao.routes.ts
+|   |       pontuacao.ts
+|   |       rh.routes.ts
+|   |       rh.utils.ts
+|   |       treinamentos.routes.ts
+|   |       treinamentos.ts
+|   |       verbas.ts
+|   |       
+|   +---tts
+|   |       tts.controller.ts
+|   |       tts.service.ts
+|   |       
+|   +---usuarios
+|   |       usuarios.routes.ts
+|   |       
+|   \---vendas
+|           vendas-historico.routes.ts
+|           vendas-status.routes.ts
+|           vendas.filtros.ts
+|           vendas.routes.ts
+|           vendas.routes.ts.backup-sintaxe
+|           vendas.routes.ts.bak
+|           
++---scripts
+|       backup.ts
+|       gerarSnapshotsDiarios.ts
+|       restaurar-backup.ts
+|       scheduler.ts
+|       
+\---types
+        fastify.d.ts
+        

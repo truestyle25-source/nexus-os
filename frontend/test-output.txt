@@ -1,0 +1,35 @@
+[WebServer] <w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving '../../../typescript/lib/typescript' in c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build for build dependencies doesn't lead to expected result 'C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js', but to 'c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js' instead. Resolving dependencies are ignored for this path.
+[WebServer] <w>  at resolve commonjs file ../../../typescript/lib/typescript (expected C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js)
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\handle-externals.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\handle-externals.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at resolve commonjs c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+SyntaxError: Unexpected token '﻿', "﻿[
+    {"... is not valid JSON
+
+   at auditoria-enterprise.spec.ts:6
+
+  4 |
+  5 | type RouteEntry = { path: string; source: string };
+> 6 | const routes = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "auditoria-rotas.json"), "utf8")) as RouteEntry[];
+    |                     ^
+  7 | const base = process.env.NEXUS_FRONTEND_URL || "http://localhost:3000";
+  8 | const email = process.env.NEXUS_AUDIT_EMAIL;
+  9 | const password = process.env.NEXUS_AUDIT_PASSWORD;
+    at Object.<anonymous> (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\auditoria-enterprise.spec.ts:6:21)
+
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+browser.newPage: Target page, context or browser has been closed
+    at c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\simulacao-nexus.spec.js:7:30 {
+  log: []
+}
+
+Node.js v24.19.0

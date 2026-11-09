@@ -1,0 +1,458 @@
+﻿NEXUS OS - INVENTÁRIO AUTOMÁTICO
+Data: 2026-11-02 09:50:37
+Raiz: C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os
+
+========== BACKEND: ARQUIVOS DE ROTAS ==========
+Arquivos encontrados: 38
+Rotas identificadas por declaração direta: 297
+
+GET /dre | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /financeiro | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+POST /financeiro | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /fluxo-caixa | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /metas | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+POST /metas | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+DELETE /metas/:id | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+PUT /metas/:id | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+PATCH /metas/:id/progresso | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /roi | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /ticket-medio | backend\backup-correcao-typescript-20261101-151652\src\modules\gestao\gestao.routes.ts
+GET /produtos/:id/kit | backend\backup-correcao-typescript-20261101-151652\src\modules\produtos\kits.routes.ts
+PUT /produtos/:id/kit | backend\backup-correcao-typescript-20261101-151652\src\modules\produtos\kits.routes.ts
+GET /produtos/:id/kit/producoes | backend\backup-correcao-typescript-20261101-151652\src\modules\produtos\kits.routes.ts
+POST /produtos/:id/kit/produzir | backend\backup-correcao-typescript-20261101-151652\src\modules\produtos\kits.routes.ts
+GET /estoque/inventarios | backend\backup-correcao-typescript-20261101-151652\src\modules\rh\inventario.routes.ts
+POST /estoque/inventarios | backend\backup-correcao-typescript-20261101-151652\src\modules\rh\inventario.routes.ts
+GET /estoque/inventarios/:id | backend\backup-correcao-typescript-20261101-151652\src\modules\rh\inventario.routes.ts
+PUT /estoque/inventarios/:id/contagens | backend\backup-correcao-typescript-20261101-151652\src\modules\rh\inventario.routes.ts
+POST /estoque/inventarios/:id/fechar | backend\backup-correcao-typescript-20261101-151652\src\modules\rh\inventario.routes.ts
+GET /vendas | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+POST /vendas | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+GET /vendas/:id | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+POST /vendas/:id/cancelar | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+GET /vendas/dashboard | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+GET /vendas/idempotencia/:key | backend\backup-correcao-typescript-20261101-151652\src\modules\vendas\vendas.routes.ts
+GET /api/v1/clientes | backend\src\modules\api-publica\api-publica.routes.ts
+GET /api/v1/estoque | backend\src\modules\api-publica\api-publica.routes.ts
+GET /api/v1/produtos | backend\src\modules\api-publica\api-publica.routes.ts
+GET /api/v1/vendas | backend\src\modules\api-publica\api-publica.routes.ts
+GET /api-publica/chaves | backend\src\modules\api-publica\api-publica.routes.ts
+POST /api-publica/chaves | backend\src\modules\api-publica\api-publica.routes.ts
+POST /api-publica/chaves/:id/revogar | backend\src\modules\api-publica\api-publica.routes.ts
+GET /assinatura | backend\src\modules\assinatura\assinatura.routes.ts
+POST /assinatura/checkout | backend\src\modules\assinatura\assinatura.routes.ts
+POST /auth/alterar-senha | backend\src\modules\auth\auth.routes.ts
+POST /auth/login | backend\src\modules\auth\auth.routes.ts
+POST /auth/logout | backend\src\modules\auth\auth.routes.ts
+GET /auth/me | backend\src\modules\auth\auth.routes.ts
+PUT /auth/me | backend\src\modules\auth\auth.routes.ts
+POST /auth/recuperar-senha | backend\src\modules\auth\auth.routes.ts
+POST /auth/redefinir-senha | backend\src\modules\auth\auth.routes.ts
+POST /auth/register-company | backend\src\modules\auth\auth.routes.ts
+GET /clientes | backend\src\modules\compras\compras.routes.ts
+POST /clientes | backend\src\modules\compras\compras.routes.ts
+GET /clientes/:id | backend\src\modules\compras\compras.routes.ts
+PUT /clientes/:id | backend\src\modules\compras\compras.routes.ts
+PATCH /clientes/:id/status | backend\src\modules\compras\compras.routes.ts
+GET /compras | backend\src\modules\compras\compras.routes.ts
+POST /compras | backend\src\modules\compras\compras.routes.ts
+GET /compras/:id | backend\src\modules\compras\compras.routes.ts
+PUT /compras/:id | backend\src\modules\compras\compras.routes.ts
+POST /compras/:id/cancelar | backend\src\modules\compras\compras.routes.ts
+POST /compras/:id/confirmar | backend\src\modules\compras\compras.routes.ts
+POST /compras/:id/receber | backend\src\modules\compras\compras.routes.ts
+GET /fornecedores | backend\src\modules\compras\compras.routes.ts
+POST /fornecedores | backend\src\modules\compras\compras.routes.ts
+GET /fornecedores/:id | backend\src\modules\compras\compras.routes.ts
+PUT /fornecedores/:id | backend\src\modules\compras\compras.routes.ts
+PATCH /fornecedores/:id/status | backend\src\modules\compras\compras.routes.ts
+GET /serie | backend\src\modules\dashboard\dashboard.routes.ts
+GET /stats | backend\src\modules\dashboard\dashboard.routes.ts
+GET /empresas | backend\src\modules\empresa\empresa.routes.ts
+PUT /empresas/:id | backend\src\modules\empresa\empresa.routes.ts
+GET /filiais | backend\src\modules\empresa\empresa.routes.ts
+POST /filiais | backend\src\modules\empresa\empresa.routes.ts
+GET /setores | backend\src\modules\empresa\empresa.routes.ts
+POST /setores | backend\src\modules\empresa\empresa.routes.ts
+GET /estoque | backend\src\modules\estoque\estoque.routes.ts
+GET /estoque/movimentacoes | backend\src\modules\estoque\estoque.routes.ts
+POST /estoque/movimentar | backend\src\modules\estoque\estoque.routes.ts
+POST /estoque/snapshot/gerar | backend\src\modules\estoque\estoque.routes.ts
+POST /estoque/transferir | backend\src\modules\estoque\estoque.routes.ts
+GET /fiscal/status | backend\src\modules\fiscal\fiscal.routes.ts
+GET /api/v1/fornecedores | backend\src\modules\fornecedores\fornecedores.routes.ts
+POST /api/v1/fornecedores | backend\src\modules\fornecedores\fornecedores.routes.ts
+GET /api/v1/fornecedores/:id | backend\src\modules\fornecedores\fornecedores.routes.ts
+PUT /api/v1/fornecedores/:id | backend\src\modules\fornecedores\fornecedores.routes.ts
+POST /api/v1/fornecedores/export | backend\src\modules\fornecedores\fornecedores.routes.ts
+GET /api/v1/fornecedores/insights | backend\src\modules\fornecedores\fornecedores.routes.ts
+GET /api/v1/fornecedores/kpis | backend\src\modules\fornecedores\fornecedores.routes.ts
+POST /ia/analisar | backend\src\modules\fornecedores\fornecedores.routes.ts
+GET /dre | backend\src\modules\gestao\gestao.routes.ts
+GET /financeiro | backend\src\modules\gestao\gestao.routes.ts
+POST /financeiro | backend\src\modules\gestao\gestao.routes.ts
+GET /fluxo-caixa | backend\src\modules\gestao\gestao.routes.ts
+GET /metas | backend\src\modules\gestao\gestao.routes.ts
+POST /metas | backend\src\modules\gestao\gestao.routes.ts
+DELETE /metas/:id | backend\src\modules\gestao\gestao.routes.ts
+PUT /metas/:id | backend\src\modules\gestao\gestao.routes.ts
+PATCH /metas/:id/progresso | backend\src\modules\gestao\gestao.routes.ts
+GET /roi | backend\src\modules\gestao\gestao.routes.ts
+GET /ticket-medio | backend\src\modules\gestao\gestao.routes.ts
+GET /alertas | backend\src\modules\ia\ia.routes.ts
+POST /automacao/executar | backend\src\modules\ia\ia.routes.ts
+POST /automacao/executar-compras-paradas | backend\src\modules\ia\ia.routes.ts
+GET /automacao/regras | backend\src\modules\ia\ia.routes.ts
+POST /automacao/regras | backend\src\modules\ia\ia.routes.ts
+POST /chat | backend\src\modules\ia\ia.routes.ts
+GET /ia/intelligence-center | backend\src\modules\ia\ia.routes.ts
+POST /ia/perguntar | backend\src\modules\ia\ia.routes.ts
+GET /notificacoes | backend\src\modules\ia\ia.routes.ts
+POST /notificacoes/:id/lida | backend\src\modules\ia\ia.routes.ts
+POST /importacao | backend\src\modules\importacao\importacao.routes.ts
+GET /importacoes | backend\src\modules\importacao\importacao.routes.ts
+GET /integracoes/central | backend\src\modules\importacao\importacao.routes.ts
+GET /pesquisa-global | backend\src\modules\importacao\importacao.routes.ts
+GET /relatorios/vendas | backend\src\modules\importacao\importacao.routes.ts
+GET /testes | backend\src\modules\importacao\importacao.routes.ts
+GET /integracoes | backend\src\modules\integracoes\integracoes.routes.ts
+DELETE /integracoes/mercadolivre | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/applications/:applicationId | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/callback | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/conectar | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/missed_feeds | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/sync/agendamento | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/sync/estoque | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/sync/pedidos | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/sync/produtos | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/testar | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/:userId | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/:userId/accepted_payment_methods | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/:userId/addresses | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/:userId/brands | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/:userId/classifieds_promotion_packs | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/mercadolivre/users/me | backend\src\modules\integracoes\integracoes.routes.ts
+PUT /integracoes/mercadolivre/users/me | backend\src\modules\integracoes\integracoes.routes.ts
+POST /integracoes/mercadolivre/webhook | backend\src\modules\integracoes\integracoes.routes.ts
+GET /integracoes/shopee | backend\src\modules\integracoes\shopee\shopee.routes.ts
+DELETE /integracoes/shopee/:connectionId | backend\src\modules\integracoes\shopee\shopee.routes.ts
+GET /integracoes/shopee/:connectionId/pedidos | backend\src\modules\integracoes\shopee\shopee.routes.ts
+GET /integracoes/shopee/:connectionId/produtos | backend\src\modules\integracoes\shopee\shopee.routes.ts
+POST /integracoes/shopee/:connectionId/testar | backend\src\modules\integracoes\shopee\shopee.routes.ts
+GET /integracoes/shopee/callback | backend\src\modules\integracoes\shopee\shopee.routes.ts
+GET /integracoes/shopee/central | backend\src\modules\integracoes\shopee\shopee.routes.ts
+POST /integracoes/shopee/conectar | backend\src\modules\integracoes\shopee\shopee.routes.ts
+POST /lgpd/clientes/:id/anonimizar | backend\src\modules\lgpd\lgpd.routes.ts
+GET /lgpd/clientes/:id/exportar | backend\src\modules\lgpd\lgpd.routes.ts
+POST /lgpd/funcionarios/:id/anonimizar | backend\src\modules\lgpd\lgpd.routes.ts
+GET /lgpd/funcionarios/:id/exportar | backend\src\modules\lgpd\lgpd.routes.ts
+GET /lgpd/minha-conta/exportar | backend\src\modules\lgpd\lgpd.routes.ts
+POST /api/v1/pdv/pix/:txid/status | backend\src\modules\payments\pix.routes.ts
+POST /api/v1/pdv/pix/confirm | backend\src\modules\payments\pix.routes.ts
+POST /api/v1/pdv/pix/generate | backend\src\modules\payments\pix.routes.ts
+GET /api/v1/settings/pix | backend\src\modules\payments\pix.routes.ts
+PUT /api/v1/settings/pix | backend\src\modules\payments\pix.routes.ts
+POST /api/v1/webhooks/pix/:tenantId | backend\src\modules\payments\pix.routes.ts
+POST /pdv/caixa/abrir | backend\src\modules\pdv\pdv.routes.ts
+GET /pdv/caixa/atual | backend\src\modules\pdv\pdv.routes.ts
+POST /pdv/caixa/fechar | backend\src\modules\pdv\pdv.routes.ts
+POST /pdv/caixa/movimentacoes | backend\src\modules\pdv\pdv.routes.ts
+GET /pdv/caixa/resumo | backend\src\modules\pdv\pdv.routes.ts
+GET /pdv/caixa/vendas | backend\src\modules\pdv\pdv.routes.ts
+GET /pdv/catalogo | backend\src\modules\pdv\pdv.routes.ts
+GET /pdv/integracoes | backend\src\modules\pdv\pdv.routes.ts
+POST /pdv/integracoes | backend\src\modules\pdv\pdv.routes.ts
+POST /pdv/sincronizar/:id | backend\src\modules\pdv\pdv.routes.ts
+GET /produtos/:id/kit | backend\src\modules\produtos\kits.routes.ts
+PUT /produtos/:id/kit | backend\src\modules\produtos\kits.routes.ts
+GET /produtos/:id/kit/producoes | backend\src\modules\produtos\kits.routes.ts
+POST /produtos/:id/kit/produzir | backend\src\modules\produtos\kits.routes.ts
+GET /categorias | backend\src\modules\produtos\produtos.routes.ts
+POST /categorias | backend\src\modules\produtos\produtos.routes.ts
+GET /produtos | backend\src\modules\produtos\produtos.routes.ts
+POST /produtos | backend\src\modules\produtos\produtos.routes.ts
+DELETE /produtos/:id | backend\src\modules\produtos\produtos.routes.ts
+GET /produtos/:id | backend\src\modules\produtos\produtos.routes.ts
+PUT /produtos/:id | backend\src\modules\produtos\produtos.routes.ts
+PATCH /produtos/:id/status | backend\src\modules\produtos\produtos.routes.ts
+POST /produtos/importar | backend\src\modules\produtos\produtos.routes.ts
+PATCH /produtos/status-lote | backend\src\modules\produtos\produtos.routes.ts
+POST /acoes | backend\src\modules\radar\radar.routes.ts
+PATCH /acoes/:id | backend\src\modules\radar\radar.routes.ts
+POST /avaliacoes | backend\src\modules\radar\radar.routes.ts
+POST /bem-estar | backend\src\modules\radar\radar.routes.ts
+POST /disc/avaliar | backend\src\modules\radar\radar.routes.ts
+POST /disc/calcular | backend\src\modules\radar\radar.routes.ts
+GET /disc/funcionarios | backend\src\modules\radar\radar.routes.ts
+GET /disc/historico | backend\src\modules\radar\radar.routes.ts
+GET /disc/questionario | backend\src\modules\radar\radar.routes.ts
+GET /gamificacao | backend\src\modules\radar\radar.routes.ts
+POST /gamificacao | backend\src\modules\radar\radar.routes.ts
+POST /ia | backend\src\modules\radar\radar.routes.ts
+POST /relatorio | backend\src\modules\radar\radar.routes.ts
+GET /resumo | backend\src\modules\radar\radar.routes.ts
+POST /simulacao | backend\src\modules\radar\radar.routes.ts
+POST /relatorios/export | backend\src\modules\relatorios\relatorios.routes.ts
+POST /relatorios/ia/criar | backend\src\modules\relatorios\relatorios.routes.ts
+GET /relatorios/ia/historico | backend\src\modules\relatorios\relatorios.routes.ts
+GET /rh/decimo-terceiro | backend\src\modules\rh\folha.routes.ts
+PUT /rh/decimo-terceiro/:id/pagamento | backend\src\modules\rh\folha.routes.ts
+POST /rh/decimo-terceiro/gerar | backend\src\modules\rh\folha.routes.ts
+GET /rh/folhas | backend\src\modules\rh\folha.routes.ts
+POST /rh/folhas | backend\src\modules\rh\folha.routes.ts
+GET /rh/folhas/:id | backend\src\modules\rh\folha.routes.ts
+GET /rh/folhas/:id/completa | backend\src\modules\rh\folha.routes.ts
+GET /rh/folhas/:id/fechamento | backend\src\modules\rh\folha.routes.ts
+POST /rh/folhas/:id/fechar | backend\src\modules\rh\folha.routes.ts
+POST /rh/folhas/:id/lancamentos | backend\src\modules\rh\folha.routes.ts
+PUT /rh/folhas/:id/pagamentos/:funcionarioId | backend\src\modules\rh\folha.routes.ts
+POST /rh/folhas/:id/processar | backend\src\modules\rh\folha.routes.ts
+POST /rh/folhas/:id/reabrir | backend\src\modules\rh\folha.routes.ts
+GET /rh/folhas/:id/recibo/:funcionarioId | backend\src\modules\rh\folha.routes.ts
+DELETE /rh/folhas/lancamentos/:id | backend\src\modules\rh\folha.routes.ts
+GET /rh/gestao-tempo/resumo | backend\src\modules\rh\gestao-tempo.routes.ts
+GET /estoque/inventarios | backend\src\modules\rh\inventario.routes.ts
+POST /estoque/inventarios | backend\src\modules\rh\inventario.routes.ts
+GET /estoque/inventarios/:id | backend\src\modules\rh\inventario.routes.ts
+PUT /estoque/inventarios/:id/contagens | backend\src\modules\rh\inventario.routes.ts
+POST /estoque/inventarios/:id/fechar | backend\src\modules\rh\inventario.routes.ts
+POST /rh/lideranca/analisar | backend\src\modules\rh\lideranca.routes.ts
+GET /rh/lideranca/feedbacks | backend\src\modules\rh\lideranca.routes.ts
+POST /rh/lideranca/feedbacks | backend\src\modules\rh\lideranca.routes.ts
+PATCH /rh/lideranca/feedbacks/:id | backend\src\modules\rh\lideranca.routes.ts
+GET /rh/lideranca/indicadores | backend\src\modules\rh\lideranca.routes.ts
+GET /rh/loja/recompensas | backend\src\modules\rh\loja.routes.ts
+POST /rh/loja/recompensas | backend\src\modules\rh\loja.routes.ts
+PATCH /rh/loja/recompensas/:id | backend\src\modules\rh\loja.routes.ts
+GET /rh/loja/resgates | backend\src\modules\rh\loja.routes.ts
+POST /rh/loja/resgates | backend\src\modules\rh\loja.routes.ts
+PATCH /rh/loja/resgates/:id | backend\src\modules\rh\loja.routes.ts
+GET /rh/loja/saldos | backend\src\modules\rh\loja.routes.ts
+GET /rh/planos-desenvolvimento | backend\src\modules\rh\plano-desenvolvimento.routes.ts
+POST /rh/planos-desenvolvimento | backend\src\modules\rh\plano-desenvolvimento.routes.ts
+GET /rh/planos-desenvolvimento/:id | backend\src\modules\rh\plano-desenvolvimento.routes.ts
+PATCH /rh/planos-desenvolvimento/:id | backend\src\modules\rh\plano-desenvolvimento.routes.ts
+POST /rh/planos-desenvolvimento/analisar | backend\src\modules\rh\plano-desenvolvimento.routes.ts
+POST /rh/pontuacao/avaliar | backend\src\modules\rh\pontuacao.routes.ts
+GET /rh/pontuacao/criterios | backend\src\modules\rh\pontuacao.routes.ts
+POST /rh/pontuacao/criterios | backend\src\modules\rh\pontuacao.routes.ts
+DELETE /rh/pontuacao/criterios/:id | backend\src\modules\rh\pontuacao.routes.ts
+PATCH /rh/pontuacao/criterios/:id | backend\src\modules\rh\pontuacao.routes.ts
+GET /rh/pontuacao/historico | backend\src\modules\rh\pontuacao.routes.ts
+POST /rh/pontuacao/lancamentos | backend\src\modules\rh\pontuacao.routes.ts
+GET /cargos | backend\src\modules\rh\rh.routes.ts
+POST /cargos | backend\src\modules\rh\rh.routes.ts
+DELETE /cargos/:id | backend\src\modules\rh\rh.routes.ts
+PUT /cargos/:id | backend\src\modules\rh\rh.routes.ts
+GET /departamentos | backend\src\modules\rh\rh.routes.ts
+POST /departamentos | backend\src\modules\rh\rh.routes.ts
+DELETE /departamentos/:id | backend\src\modules\rh\rh.routes.ts
+PUT /departamentos/:id | backend\src\modules\rh\rh.routes.ts
+GET /funcionarios | backend\src\modules\rh\rh.routes.ts
+POST /funcionarios | backend\src\modules\rh\rh.routes.ts
+PUT /funcionarios/:id | backend\src\modules\rh\rh.routes.ts
+GET /ponto | backend\src\modules\rh\rh.routes.ts
+POST /ponto/fechar-expediente | backend\src\modules\rh\rh.routes.ts
+POST /ponto/integracao | backend\src\modules\rh\rh.routes.ts
+POST /ponto/manual | backend\src\modules\rh\rh.routes.ts
+POST /ponto/sincronizar/:integracaoId | backend\src\modules\rh\rh.routes.ts
+GET /rh/advertencias | backend\src\modules\rh\rh.routes.ts
+POST /rh/advertencias | backend\src\modules\rh\rh.routes.ts
+POST /rh/advertencias/:id/documento | backend\src\modules\rh\rh.routes.ts
+GET /rh/desempenho | backend\src\modules\rh\rh.routes.ts
+GET /rh/desligamentos | backend\src\modules\rh\rh.routes.ts
+POST /rh/desligamentos | backend\src\modules\rh\rh.routes.ts
+PUT /rh/desligamentos/:id | backend\src\modules\rh\rh.routes.ts
+POST /rh/desligamentos/:id/arquivar | backend\src\modules\rh\rh.routes.ts
+POST /rh/desligamentos/:id/cancelar | backend\src\modules\rh\rh.routes.ts
+POST /rh/desligamentos/:id/documento | backend\src\modules\rh\rh.routes.ts
+POST /rh/desligamentos/preview | backend\src\modules\rh\rh.routes.ts
+GET /rh/documentos | backend\src\modules\rh\rh.routes.ts
+POST /rh/documentos | backend\src\modules\rh\rh.routes.ts
+DELETE /rh/documentos/:id | backend\src\modules\rh\rh.routes.ts
+GET /rh/documentos/:id/download | backend\src\modules\rh\rh.routes.ts
+GET /rh/documentos/storage | backend\src\modules\rh\rh.routes.ts
+POST /rh/funcionarios/:id/dossie | backend\src\modules\rh\rh.routes.ts
+GET /rh/funcionarios/arquivados | backend\src\modules\rh\rh.routes.ts
+POST /rh/funcionarios/arquivar-vencidos | backend\src\modules\rh\rh.routes.ts
+GET /rh/indicadores | backend\src\modules\rh\rh.routes.ts
+GET /rh/ponto | backend\src\modules\rh\rh.routes.ts
+GET /rh/relogio | backend\src\modules\rh\rh.routes.ts
+GET /rh/suspensoes | backend\src\modules\rh\rh.routes.ts
+POST /rh/suspensoes | backend\src\modules\rh\rh.routes.ts
+POST /rh/suspensoes/:id/documento | backend\src\modules\rh\rh.routes.ts
+GET /rh/usuarios-vinculaveis | backend\src\modules\rh\rh.routes.ts
+GET /rh/funcionarios/:id/treinamentos | backend\src\modules\rh\treinamentos.routes.ts
+GET /rh/treinamentos | backend\src\modules\rh\treinamentos.routes.ts
+POST /rh/treinamentos | backend\src\modules\rh\treinamentos.routes.ts
+GET /rh/treinamentos/:id | backend\src\modules\rh\treinamentos.routes.ts
+PATCH /rh/treinamentos/:id | backend\src\modules\rh\treinamentos.routes.ts
+POST /rh/treinamentos/:id/cancelar | backend\src\modules\rh\treinamentos.routes.ts
+POST /rh/treinamentos/:id/participantes | backend\src\modules\rh\treinamentos.routes.ts
+DELETE /rh/treinamentos/:id/participantes/:funcionarioId | backend\src\modules\rh\treinamentos.routes.ts
+PATCH /rh/treinamentos/:id/presenca | backend\src\modules\rh\treinamentos.routes.ts
+POST /rh/treinamentos/analisar | backend\src\modules\rh\treinamentos.routes.ts
+GET /auditoria | backend\src\modules\usuarios\usuarios.routes.ts
+GET /usuarios | backend\src\modules\usuarios\usuarios.routes.ts
+POST /usuarios | backend\src\modules\usuarios\usuarios.routes.ts
+PUT /usuarios/:id/permissoes | backend\src\modules\usuarios\usuarios.routes.ts
+GET /vendas | backend\src\modules\vendas\vendas.routes.ts
+POST /vendas | backend\src\modules\vendas\vendas.routes.ts
+GET /vendas/:id | backend\src\modules\vendas\vendas.routes.ts
+POST /vendas/:id/cancelar | backend\src\modules\vendas\vendas.routes.ts
+GET /vendas/dashboard | backend\src\modules\vendas\vendas.routes.ts
+GET /vendas/idempotencia/:key | backend\src\modules\vendas\vendas.routes.ts
+
+========== FRONTEND: PÁGINAS ==========
+Total de páginas: 36
+frontend\app\(dashboard)\admin\page.tsx
+frontend\app\(dashboard)\alertas\page.tsx
+frontend\app\(dashboard)\assinatura\page.tsx
+frontend\app\(dashboard)\auditoria\page.tsx
+frontend\app\(dashboard)\central-integracoes\page.tsx
+frontend\app\(dashboard)\clientes\page.tsx
+frontend\app\(dashboard)\compras\page.tsx
+frontend\app\(dashboard)\configuracoes\page.tsx
+frontend\app\(dashboard)\dre\page.tsx
+frontend\app\(dashboard)\estoque\page.tsx
+frontend\app\(dashboard)\financeiro\page.tsx
+frontend\app\(dashboard)\fiscal\page.tsx
+frontend\app\(dashboard)\fluxo\page.tsx
+frontend\app\(dashboard)\fornecedores\page.tsx
+frontend\app\(dashboard)\ia\page.tsx
+frontend\app\(dashboard)\importacao\page.tsx
+frontend\app\(dashboard)\indicadores\page.tsx
+frontend\app\(dashboard)\intelligence\page.tsx
+frontend\app\(dashboard)\metas\page.tsx
+frontend\app\(dashboard)\page.tsx
+frontend\app\(dashboard)\pdv\page.tsx
+frontend\app\(dashboard)\pesquisa\page.tsx
+frontend\app\(dashboard)\plataforma\page.tsx
+frontend\app\(dashboard)\ponto\page.tsx
+frontend\app\(dashboard)\products\page.tsx
+frontend\app\(dashboard)\produtos\page.tsx
+frontend\app\(dashboard)\radar-organizacional\page.tsx
+frontend\app\(dashboard)\relatorios\page.tsx
+frontend\app\(dashboard)\rh\page.tsx
+frontend\app\(dashboard)\usuarios\page.tsx
+frontend\app\(dashboard)\vendas\page.tsx
+frontend\app\auth\[...caminho]\page.tsx
+frontend\app\esqueci-senha\page.tsx
+frontend\app\login\auth\[...caminho]\page.tsx
+frontend\app\login\page.tsx
+frontend\app\redefinir-senha\page.tsx
+
+========== PRISMA: MODELOS ==========
+Total de modelos: 85
+Empresa
+Importacao
+Filial
+Setor
+Usuario
+Permissao
+TokenRecuperacaoSenha
+Auditoria
+Categoria
+Produto
+ComposicaoKit
+ProducaoKit
+Estoque
+SessaoInventario
+ContagemInventario
+EstoqueSnapshotDiario
+EstoqueMovimentacao
+Fornecedor
+CompraFornecedor
+Compra
+CompraItem
+Cliente
+Venda
+VendaItem
+Caixa
+MovimentacaoCaixa
+Dimensao
+Unidade
+TipoProduto
+FatorConversao
+ConsumoInterno
+IntegracaoPDV
+Financeiro
+DRE
+IndicadorDiario
+Meta
+Departamento
+Cargo
+Funcionario
+Documento
+Advertencia
+Suspensao
+Desligamento
+Ferias
+Ponto
+IntegracaoPonto
+Alerta
+Notificacao
+RegraAutomacao
+ConversaIA
+Assinatura
+Pagamento
+RelatorioGerado
+Folha
+LancamentoFolha
+PagamentoRH
+DecimoTerceiro
+PixSettings
+PixCobranca
+ChaveApi
+IntegracaoExterno
+SincronizacaoTarefa
+NotificacaoMercadoLivre
+ShopeeConexao
+ShopeeOAuthState
+ShopeePedido
+TokenRevogado
+PlanoDesenvolvimento
+Treinamento
+ParticipanteTreinamento
+AvaliacaoComportamental
+PesquisaBemEstar
+RegistroGamificacao
+Recompensa
+ResgateRecompensa
+CriterioPontuacao
+AvaliacaoCriterio
+AcaoRadar
+FeedbackLideranca
+VendaPagamento
+EstoqueReserva
+IdempotencyKey
+DivergenciaCaixa
+LoginAttempt
+NexusErpRecord
+
+========== SCRIPTS: backend ==========
+dev = tsx watch src/server.ts
+build = tsc
+start = node dist/server.js
+test = tsx --test tests/*.test.ts
+db:push = prisma db push
+db:seed = tsx src/seed.ts
+prisma:generate = prisma generate
+db:migrate = prisma migrate deploy
+estoque:snapshot = tsx src/scripts/gerarSnapshotsDiarios.ts
+backup = tsx src/scripts/backup.ts
+backup:restaurar = tsx src/scripts/restaurar-backup.ts
+
+========== SCRIPTS: frontend ==========
+dev = next dev -p 3000
+build = next build
+start = next start
+test = tsx --test tests/*.test.ts
+
+========== INICIALIZAÇÃO DO BACKEND ==========
+listen = ENCONTRADO
+iniciarAgendadorDeSnapshot = ENCONTRADO
+iniciarAgendadorML = ENCONTRADO
+iniciarAgendadorShopee = ENCONTRADO
+health = ENCONTRADO

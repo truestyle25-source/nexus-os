@@ -1,0 +1,5 @@
+
+Running 2 tests using 2 workers
+
+  x  2 [chromium] › tests\e2e\auditoria-enterprise.spec.ts:21:5 › Auditoria Enterprise: login, navegacao e captura de erros (589ms)
+  ok 1 [chromium] › tests\e2e\login.spec.ts:17:7 › Tela de login do NEXUS OS › deve exibir os elementos principais do login (5.3s)

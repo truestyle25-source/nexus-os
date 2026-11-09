@@ -1,0 +1,1911 @@
+
+> nexus-os-backend@1.0.0 test
+> tsx --test tests/*.test.ts
+
+  ok   POST /auth/register-company -> 201
+  ok   cadastro devolveu empresaId
+  ok   cadastro devolveu o fim do trial
+  ok   assinatura criada AUTOMATICAMENTE no cadastro
+  ok   nasce em TRIAL
+  ok   valorMensal veio do ambiente (SUBSCRIPTION_PRICE)
+
+1. GET /assinatura devolve o registro real
+  ok   GET /assinatura -> 200
+  ok   status devolvido
+  ok   trialFim devolvido
+  ok   valorMensal devolvido
+  ok   id da assinatura presente
+
+2. Trial DENTRO do prazo nao vira nada
+  ok   status no banco continua TRIAL
+  ok   resposta tambem TRIAL
+
+3. POST /assinatura/checkout devolve o endereco configurado
+  ok   POST /assinatura/checkout -> 200
+  ok   devolve a URL configurada no servidor
+  ok   valorMensal devolvido no checkout
+  ok   aviso diz que o acesso NAO e liberado por clique
+
+4. O checkout NAO muda o status da assinatura
+  ok   status segue TRIAL apos pedir a cobranca
+
+5. Trial VENCIDO vira EXPIRADA e a mudanca PERSISTE
+  ok   resposta devolve EXPIRADA
+  ok   EXPIRADA foi GRAVADO no PostgreSQL
+  ok   segunda leitura ja devolve EXPIRADA (nao volta a TRIAL)
+  ok   status ATIVA nao e rebaixada por ter fim de trial no passado
+
+6. Empresa SEM assinatura: 404 (a tela trata como estado vazio)
+  ok   GET /assinatura sem registro -> 404
+  ok   a mensagem e a que a tela reconhece
+  ok   checkout sem assinatura -> 404
+
+7. Isolamento multi-tenant
+  ok   empresa B ve a PROPRIA assinatura
+  ok   empresa B nao recebe a assinatura da empresa A
+  ok   empresa B tem status proprio (TRIAL, nao o EXPIRADA da A)
+
+8. Token e permissao
+  ok   GET /assinatura sem token -> 401
+  ok   GET /assinatura sem permissao ainda responde (e a assinatura da empresa)
+  ok   POST /assinatura/checkout sem permissao -> 403
+  ok   POST /assinatura/checkout sem token -> 401
+
+RESULTADO: 32 ok, 0 falha(s)
+✔ integração: assinatura (1330.0706ms)
+✔ cargo: termos de liderança são reconhecidos, ignorando acento e caixa (4.9866ms)
+✔ cargo: cargo comum NÃO vira líder (1.5029ms)
+✔ cargo: casa palavra inteira, não substring (1.6558ms)
+✔ linguagem: diagnóstico e veredito são REJEITADOS (1.6931ms)
+✔ linguagem: sugestão e dado são ACEITOS (0.926ms)
+✔ linguagem: o filtro ignora acento (0.3983ms)
+✔ linguagem: verifica TODOS os textos, não só o primeiro (1.009ms)
+✔ IA: justificativa só com números do contexto é aceita (3.8118ms)
+✔ IA: justificativa com número inventado é DESCARTADA (0.873ms)
+✔ IA: sugestão que soa a veredito é rejeitada INTEIRA, não corrigida (2.4956ms)
+✔ IA: texto vazio = dados insuficientes, nunca sugestão genérica (0.7877ms)
+✔ IA: prioridade fora do catálogo cai no fallback declarado (0.6837ms)
+✔ IA: contexto NÃO leva nome, cargo, CPF nem id de funcionário (0.354ms)
+✔ IA: resposta estruturalmente inválida não lança exceção (0.3861ms)
+✔ IA: sem GEMINI_API_KEY, falha de forma explícita (0.7774ms)
+✔ jornada: prevista sai dos horarios, descontando o intervalo (4.99ms)
+✔ jornada: sem horario previsto, NAO estima (0.3135ms)
+✔ minutosDeHHMM: formato invalido devolve null, nunca NaN (0.3682ms)
+✔ intervalo: irregular so quando EXISTE batida e ela foge do padrao (1.1052ms)
+✔ indicadores: sem lider identificado, cobertura e null e nao 0% (1.6152ms)
+✔ indicadores: cobertura e sobre os lideres, nao sobre todos (0.3309ms)
+✔ acompanhamento: vencido e quando a data passou e segue pendente (0.3592ms)
+
+1. Cadastro: persiste, valida e grava o status na MESMA escrita
+  ok   POST /clientes -> 200
+  ok   o status volta como enviado
+  ok   o documento é gravado só com dígitos
+  ok   o cadastro foi GRAVADO no PostgreSQL
+  ok   telefone/e-mail/endereço sobreviveram à gravação
+  ok   um cliente novo nasce com os números zerados
+  ok   documento repetido na mesma empresa -> 409
+  ok   nome com 1 caractere -> 400
+  ok   e-mail inválido -> 400
+  ok   status inválido -> 400
+
+2. A correção central: status sem segunda requisição
+  ok   usuário só com `criar` cadastra cliente INATIVO numa requisição só
+  ok   o status INATIVO foi gravado direto, sem PATCH seguinte
+  ok   INATIVO confirmado no banco
+  ok   cadastrar já ARQUIVADO sem `clientes.excluir` -> 403
+  ok   e o cadastro NÃO ficou gravado (falhou antes de criar)
+  ok   com `clientes.excluir`, cadastrar ARQUIVADO -> 200
+  ok   o ARQUIVADO foi gravado
+
+3. Listagem e o filtro que esconde ARQUIVADO
+  ok   GET /clientes sem filtro traz ATIVOS e INATIVOS
+  ok   e NÃO traz ARQUIVADO (comportamento documentado do backend)
+  ok   GET /clientes?status=ARQUIVADO devolve o arquivado
+  ok   status fora do enum -> 400
+  ok   a busca por nome filtra
+  ok   a lista vem ordenada por nome
+
+4. INTEGRAÇÃO COM VENDAS: os números da aba têm que ser reais
+  ok   antes da venda o cliente está zerado na tela (linha de base)
+  FAIL POST /vendas -> 201 -> status=404 corpo={"error":"Unidade base do produto não encontrada."}
+✖ integração: aba clientes (1877.1672ms)
+✔ normalizeCnpj remove pontuação (2.5909ms)
+✔ isValidCnpj aceita CNPJ válido conhecido, com ou sem pontuação (1.1091ms)
+✔ isValidCnpj rejeita CNPJ com dígito verificador errado (0.4594ms)
+✔ isValidCnpj rejeita CNPJ com todos os dígitos iguais (0.3355ms)
+✔ isValidCnpj rejeita entrada com tamanho errado (0.45ms)
+✔ formatCnpj formata 14 dígitos corretamente (0.4597ms)
+✔ generateRandomValidCnpj sempre gera um CNPJ que passa na própria validação (5.2992ms)
+✔ funcionario admitido depois da competencia nao entra na folha (3.0442ms)
+✔ funcionario admitido no primeiro dia do mes entra na folha (0.6532ms)
+✔ funcionario admitido no ultimo dia do mes entra na folha (0.6935ms)
+✔ desligado antes do mes nao entra na folha (0.481ms)
+✔ desligado dentro do mes ainda recebe a folha (0.4468ms)
+✔ desligado no primeiro dia do mes ainda entra (0.3748ms)
+✔ competencia muda o resultado: mesmo desligamento, meses diferentes (1.1204ms)
+✔ 13o: janeiro conta 12 meses, e nao 13 (0.9658ms)
+✔ 13o: admissao no meio do ano conta proporcional (0.4559ms)
+✔ 13o: admitido em ano anterior tem 12 meses (1.0051ms)
+✔ 13o: admissao no dia 1o nunca produz menos de 1 nem mais de 12 (3.1105ms)
+✔ 13o: a contagem nunca diminui conforme o ano avanca (0.428ms)
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29
+`)}};function Ot(e){return new ki(Zs(e))}function Zs(e){let t=new At;for(let[r,n]of Object.entries(e)){let i=new bn(r,Xs(n));t.addField(i)}return t}function Xs(e){if(typeof e=="string")return new W(JSON.stringify(e));if(typeof e=="number"||typeof e=="boolean")return new W(String(e));if(typeof e=="bigint")return new W(`${e}n`);if(e===null)return new W("null");if(e===void 0)return new W("undefined");if(vt(e))return new W(`new Prisma.Decimal("${e.toFixed()}")`);if(e instanceof Uint8Array)return Buffer.isBuffer(e)?new W(`Buffer.alloc(${e.byteLength})`):new W(`new Uint8Array(${e.byteLength})`);if(e instanceof Date){let t=ln(e)?e.toISOString():"Invalid Date";return new W(`new Date("${t}")`)}return e instanceof Me?new W(`Prisma.${e._getName()}`):It(e)?new W(`prisma.${zs(e.modelName)}.$fields.${e.name}`):Array.isArray(e)?zp(e):typeof e=="object"?Zs(e):new W(Object.prototype.toString.call(e))}function zp(e){let t=new St;for(let r of e)t.addItem(Xs(r));return t}function En(e,t){let r=t==="pretty"?Us:fn,n=e.renderAllMessages(r),i=new Rt(0,{colors:r}).write(e).toString();return{message:n,args:i}}function wn({args:e,errors:t,errorFormat:r,callsite:n,originalMethod:i,clientVersion:o,globalOmit:s}){let a=Ot(e);for(let p of t)pn(p,a,s);let{message:l,args:u}=En(a,r),c=Tt({message:l,callsite:n,originalMethod:i,showColors:r==="pretty",callArguments:u});throw new J(c,{clientVersion:o})}var ve=class{constructor(){this._map=new Map}get(t){return this._map.get(t)?.value}set(t,r){this._map.set(t,{value:r})}getOrCreate(t,r){let n=this._map.get(t);if(n)return n.value;let i=r();return this.set(t,i),i}};function pr(e){let t;return{get(){return t||(t={value:e()}),t.value}}}function Te(e){return e.replace(/^./,t=>t.toLowerCase())}function ta(e,t,r){let n=Te(r);return!t.result||!(t.result.$allModels||t.result[n])?e:Yp({...e,...ea(t.name,e,t.result.$allModels),...ea(t.name,e,t.result[n])})}function Yp(e){let t=new ve,r=(n,i)=>t.getOrCreate(n,()=>i.has(n)?[n]:(i.add(n),e[n]?e[n].needs.flatMap(o=>r(o,i)):[n]));return yt(e,n=>({...n,needs:r(n.name,new Set)}))}function ea(e,t,r){return r?yt(r,({needs:n,compute:i},o)=>({name:o,needs:n?Object.keys(n).filter(s=>n[s]):[],compute:Zp(t,o,i)})):{}}function Zp(e,t,r){let n=e?.[t]?.compute;return n?i=>r({...i,[t]:n(i)}):r}function ra(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(e[n.name])for(let i of n.needs)r[i]=!0;return r}function na(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(!e[n.name])for(let i of n.needs)delete r[i];return r}var xn=class{constructor(t,r){this.extension=t;this.previous=r;this.computedFieldsCache=new ve;this.modelExtensionsCache=new ve;this.queryCallbacksCache=new ve;this.clientExtensions=pr(()=>this.extension.client?{...this.previous?.getAllClientExtensions(),...this.extension.client}:this.previous?.getAllClientExtensions());this.batchCallbacks=pr(()=>{let t=this.previous?.getAllBatchQueryCallbacks()??[],r=this.extension.query?.$__internalBatch;return r?t.concat(r):t})}getAllComputedFields(t){return this.computedFieldsCache.getOrCreate(t,()=>ta(this.previous?.getAllComputedFields(t),this.extension,t))}getAllClientExtensions(){return this.clientExtensions.get()}getAllModelExtensions(t){return this.modelExtensionsCache.getOrCreate(t,()=>{let r=Te(t);return!this.extension.model||!(this.extension.model[r]||this.extension.model.$allModels)?this.previous?.getAllModelExtensions(t):{...this.previous?.getAllModelExtensions(t),...this.extension.model.$allModels,...this.extension.model[r]}})}getAllQueryCallbacks(t,r){return this.queryCallbacksCache.getOrCreate(`${t}:${r}`,()=>{let n=this.previous?.getAllQueryCallbacks(t,r)??[],i=[],o=this.extension.query;return!o||!(o[t]||o.$allModels||o[r]||o.$allOperations)?n:(o[t]!==void 0&&(o[t][r]!==void 0&&i.push(o[t][r]),o[t].$allOperations!==void 0&&i.push(o[t].$allOperations)),t!=="$none"&&o.$allModels!==void 0&&(o.$allModels[r]!==void 0&&i.push(o.$allModels[r]),o.$allModels.$allOperations!==void 0&&i.push(o.$allModels.$allOperations)),o[r]!==void 0&&i.push(o[r]),o.$allOperations!==void 0&&i.push(o.$allOperations),n.concat(i))})}getAllBatchQueryCallbacks(){return this.batchCallbacks.get()}},kt=class e{constructor(t){this.head=t}static empty(){return new e}static single(t){return new e(new xn(t))}isEmpty(){return this.head===void 0}append(t){return new e(new xn(t,this.head))}getAllComputedFields(t){return this.head?.getAllComputedFields(t)}getAllClientExtensions(){return this.head?.getAllClientExtensions()}getAllModelExtensions(t){return this.head?.getAllModelExtensions(t)}getAllQueryCallbacks(t,r){return this.head?.getAllQueryCallbacks(t,r)??[]}getAllBatchQueryCallbacks(){return this.head?.getAllBatchQueryCallbacks()??[]}};var ia=Symbol(),dr=class{constructor(t){if(t!==ia)throw new Error("Skip instance can not be constructed directly")}ifUndefined(t){return t===void 0?Pn:t}},Pn=new dr(ia);function Re(e){return e instanceof dr}var Xp={findUnique:"findUnique",findUniqueOrThrow:"findUniqueOrThrow",findFirst:"findFirst",findFirstOrThrow:"findFirstOrThrow",findMany:"findMany",count:"aggregate",create:"createOne",createMany:"createMany",createManyAndReturn:"createManyAndReturn",update:"updateOne",updateMany:"updateMany",upsert:"upsertOne",delete:"deleteOne",deleteMany:"deleteMany",executeRaw:"executeRaw",queryRaw:"queryRaw",aggregate:"aggregate",groupBy:"groupBy",runCommandRaw:"runCommandRaw",findRaw:"findRaw",aggregateRaw:"aggregateRaw"},oa="explicitly `undefined` values are not allowed";function vn({modelName:e,action:t,args:r,runtimeDataModel:n,extensions:i=kt.empty(),callsite:o,clientMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c}){let p=new Di({runtimeDataModel:n,modelName:e,action:t,rootArgs:r,callsite:o,extensions:i,selectionPath:[],argumentPath:[],originalMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c});return{modelName:e,action:Xp[t],query:mr(r,p)}}function mr({select:e,include:t,...r}={},n){let i;return n.isPreviewFeatureOn("omitApi")&&(i=r.omit,delete r.omit),{arguments:aa(r,n),selection:ed(e,t,i,n)}}function ed(e,t,r,n){return e?(t?n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"include",secondField:"select",selectionPath:n.getSelectionPath()}):r&&n.isPreviewFeatureOn("omitApi")&&n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"omit",secondField:"select",selectionPath:n.getSelectionPath()}),id(e,n)):td(n,t,r)}function td(e,t,r){let n={};return e.modelOrType&&!e.isRawAction()&&(n.$composites=!0,n.$scalars=!0),t&&rd(n,t,e),e.isPreviewFeatureOn("omitApi")&&nd(n,r,e),n}function rd(e,t,r){for(let[n,i]of Object.entries(t)){if(Re(i))continue;let o=r.nestSelection(n);if(_i(i,o),i===!1||i===void 0){e[n]=!1;continue}let s=r.findField(n);if(s&&s.kind!=="object"&&r.throwValidationError({kind:"IncludeOnScalar",selectionPath:r.getSelectionPath().concat(n),outputType:r.getOutputTypeDescription()}),s){e[n]=mr(i===!0?{}:i,o);continue}if(i===!0){e[n]=!0;continue}e[n]=mr(i,o)}}function nd(e,t,r){let n=r.getComputedFields(),i={...r.getGlobalOmit(),...t},o=na(i,n);for(let[s,a]of Object.entries(o)){if(Re(a))continue;_i(a,r.nestSelection(s));let l=r.findField(s);n?.[s]&&!l||(e[s]=!a)}}function id(e,t){let r={},n=t.getComputedFields(),i=ra(e,n);for(let[o,s]of Object.entries(i)){if(Re(s))continue;let a=t.nestSelection(o);_i(s,a);let l=t.findField(o);if(!(n?.[o]&&!l)){if(s===!1||s===void 0||Re(s)){r[o]=!1;continue}if(s===!0){l?.kind==="object"?r[o]=mr({},a):r[o]=!0;continue}r[o]=mr(s,a)}}return r}function sa(e,t){if(e===null)return null;if(typeof e=="string"||typeof e=="number"||typeof e=="boolean")return e;if(typeof e=="bigint")return{$type:"BigInt",value:String(e)};if(Pt(e)){if(ln(e))return{$type:"DateTime",value:e.toISOString()};t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:["Date"]},underlyingError:"Provided Date object is invalid"})}if(It(e))return{$type:"FieldRef",value:{_ref:e.name,_container:e.modelName}};if(Array.isArray(e))return od(e,t);if(ArrayBuffer.isView(e))return{$type:"Bytes",value:Buffer.from(e).toString("base64")};if(sd(e))return e.values;if(vt(e))return{$type:"Decimal",value:e.toFixed()};if(e instanceof Me){if(e!==yn.instances[e._getName()])throw new Error("Invalid ObjectEnumValue");return{$type:"Enum",value:e._getName()}}if(ad(e))return e.toJSON();if(typeof e=="object")return aa(e,t);t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:`We could not serialize ${Object.prototype.toString.call(e)} value. Serialize the object to JSON or implement a ".toJSON()" method on it`})}function aa(e,t){if(e.$type)return{$type:"Raw",value:e};let r={};for(let n in e){let i=e[n],o=t.nestArgument(n);Re(i)||(i!==void 0?r[n]=sa(i,o):t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidArgumentValue",argumentPath:o.getArgumentPath(),selectionPath:t.getSelectionPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:oa}))}return r}function od(e,t){let r=[];for(let n=0;n<e.length;n++){let i=t.nestArgument(String(n)),o=e[n];if(o===void 0||Re(o)){let s=o===void 0?"undefined":"Prisma.skip";t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:i.getSelectionPath(),argumentPath:i.getArgumentPath(),argument:{name:`${t.getArgumentName()}[${n}]`,typeNames:[]},underlyingError:`Can not use \`${s}\` value within array. Use \`null\` or filter out \`${s}\` values`})}r.push(sa(o,i))}return r}function sd(e){return typeof e=="object"&&e!==null&&e.__prismaRawParameters__===!0}function ad(e){return typeof e=="object"&&e!==null&&typeof e.toJSON=="function"}function _i(e,t){e===void 0&&t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidSelectionValue",selectionPath:t.getSelectionPath(),underlyingError:oa})}var Di=class e{constructor(t){this.params=t;this.params.modelName&&(this.modelOrType=this.params.runtimeDataModel.models[this.params.modelName]??this.params.runtimeDataModel.types[this.params.modelName])}throwValidationError(t){wn({errors:[t],originalMethod:this.params.originalMethod,args:this.params.rootArgs??{},callsite:this.params.callsite,errorFormat:this.params.errorFormat,clientVersion:this.params.clientVersion,globalOmit:this.params.globalOmit})}getSelectionPath(){return this.params.selectionPath}getArgumentPath(){return this.params.argumentPath}getArgumentName(){return this.params.argumentPath[this.params.argumentPath.length-1]}getOutputTypeDescription(){if(!(!this.params.modelName||!this.modelOrType))return{name:this.params.modelName,fields:this.modelOrType.fields.map(t=>({name:t.name,typeName:"boolean",isRelation:t.kind==="object"}))}}isRawAction(){return["executeRaw","queryRaw","runCommandRaw","findRaw","aggregateRaw"].includes(this.params.action)}isPreviewFeatureOn(t){return this.params.previewFeatures.includes(t)}getComputedFields(){if(this.params.modelName)return this.params.extensions.getAllComputedFields(this.params.modelName)}findField(t){return this.modelOrType?.fields.find(r=>r.name===t)}nestSelection(t){let r=this.findField(t),n=r?.kind==="object"?r.type:void 0;return new e({...this.params,modelName:n,selectionPath:this.params.selectionPath.concat(t)})}getGlobalOmit(){return this.params.modelName&&this.shouldApplyGlobalOmit()?this.params.globalOmit?.[xt(this.params.modelName)]??{}:{}}shouldApplyGlobalOmit(){switch(this.params.action){case"findFirst":case"findFirstOrThrow":case"findUniqueOrThrow":case"findMany":case"upsert":case"findUnique":case"createManyAndReturn":case"create":case"update":case"delete":return!0;case"executeRaw":case"aggregateRaw":case"runCommandRaw":case"findRaw":case"createMany":case"deleteMany":case"groupBy":case"updateMany":case"count":case"aggregate":case"queryRaw":return!1;default:Fe(this.params.action,"Unknown action")}}nestArgument(t){return new e({...this.params,argumentPath:this.params.argumentPath.concat(t)})}};var Dt=class{constructor(t){this._engine=t}prometheus(t){return this._engine.metrics({format:"prometheus",...t})}json(t){return this._engine.metrics({format:"json",...t})}};function la(e){return{models:Fi(e.models),enums:Fi(e.enums),types:Fi(e.types)}}function Fi(e){let t={};for(let{name:r,...n}of e)t[r]=n;return t}function ua(e,t){let r=pr(()=>ld(t));Object.defineProperty(e,"dmmf",{get:()=>r.get()})}function ld(e){return{datamodel:{models:Li(e.models),enums:Li(e.enums),types:Li(e.types)}}}function Li(e){return Object.entries(e).map(([t,r])=>({name:t,...r}))}var Ni=new WeakMap,Tn="$$PrismaTypedSql",Mi=class{constructor(t,r){Ni.set(this,{sql:t,values:r}),Object.defineProperty(this,Tn,{value:Tn})}get sql(){return Ni.get(this).sql}get values(){return Ni.get(this).values}};function ca(e){return(...t)=>new Mi(e,t)}function pa(e){return e!=null&&e[Tn]===Tn}function fr(e){return{ok:!1,error:e,map(){return fr(e)},flatMap(){return fr(e)}}}var $i=class{constructor(){this.registeredErrors=[]}consumeError(t){return this.registeredErrors[t]}registerNewError(t){let r=0;for(;this.registeredErrors[r]!==void 0;)r++;return this.registeredErrors[r]={error:t},r}},qi=e=>{let t=new $i,r=Ce(t,e.transactionContext.bind(e)),n={adapterName:e.adapterName,errorRegistry:t,queryRaw:Ce(t,e.queryRaw.bind(e)),executeRaw:Ce(t,e.executeRaw.bind(e)),provider:e.provider,transactionContext:async(...i)=>(await r(...i)).map(s=>ud(t,s))};return e.getConnectionInfo&&(n.getConnectionInfo=pd(t,e.getConnectionInfo.bind(e))),n},ud=(e,t)=>{let r=Ce(e,t.startTransaction.bind(t));return{adapterName:t.adapterName,provider:t.provider,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),startTransaction:async(...n)=>(await r(...n)).map(o=>cd(e,o))}},cd=(e,t)=>({adapterName:t.adapterName,provider:t.provider,options:t.options,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),commit:Ce(e,t.commit.bind(t)),rollback:Ce(e,t.rollback.bind(t))});function Ce(e,t){return async(...r)=>{try{return await t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}function pd(e,t){return(...r)=>{try{return t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}var Wl=k(oi());var Hl=require("async_hooks"),Kl=require("events"),zl=k(require("fs")),Fr=k(require("path"));var oe=class e{constructor(t,r){if(t.length-1!==r.length)throw t.length===0?new TypeError("Expected at least 1 string"):new TypeError(`Expected ${t.length} strings to have ${t.length-1} values`);let n=r.reduce((s,a)=>s+(a instanceof e?a.values.length:1),0);this.values=new Array(n),this.strings=new Array(n+1),this.strings[0]=t[0];let i=0,o=0;for(;i<r.length;){let s=r[i++],a=t[i];if(s instanceof e){this.strings[o]+=s.strings[0];let l=0;for(;l<s.values.length;)this.values[o++]=s.values[l++],this.strings[o]=s.strings[l];this.strings[o]+=a}else this.values[o++]=s,this.strings[o]=a}}get sql(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`?${this.strings[r++]}`;return n}get statement(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`:${r}${this.strings[r++]}`;return n}get text(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`$${r}${this.strings[r++]}`;return n}inspect(){return{sql:this.sql,statement:this.statement,text:this.text,values:this.values}}};function da(e,t=",",r="",n=""){if(e.length===0)throw new TypeError("Expected `join([])` to be called with an array of multiple elements, but got an empty array");return new oe([r,...Array(e.length-1).fill(t),n],e)}function ji(e){return new oe([e],[])}var ma=ji("");function Vi(e,...t){return new oe(e,t)}function gr(e){return{getKeys(){return Object.keys(e)},getPropertyValue(t){return e[t]}}}function re(e,t){return{getKeys(){return[e]},getPropertyValue(){return t()}}}function ot(e){let t=new ve;return{getKeys(){return e.getKeys()},getPropertyValue(r){return t.getOrCreate(r,()=>e.getPropertyValue(r))},getPropertyDescriptor(r){return e.getPropertyDescriptor?.(r)}}}var Rn={enumerable:!0,configurable:!0,writable:!0};function Cn(e){let t=new Set(e);return{getOwnPropertyDescriptor:()=>Rn,has:(r,n)=>t.has(n),set:(r,n,i)=>t.add(n)&&Reflect.set(r,n,i),ownKeys:()=>[...t]}}var fa=Symbol.for("nodejs.util.inspect.custom");function Se(e,t){let r=dd(t),n=new Set,i=new Proxy(e,{get(o,s){if(n.has(s))return o[s];let a=r.get(s);return a?a.getPropertyValue(s):o[s]},has(o,s){if(n.has(s))return!0;let a=r.get(s);return a?a.has?.(s)??!0:Reflect.has(o,s)},ownKeys(o){let s=ga(Reflect.ownKeys(o),r),a=ga(Array.from(r.keys()),r);return[...new Set([...s,...a,...n])]},set(o,s,a){return r.get(s)?.getPropertyDescriptor?.(s)?.writable===!1?!1:(n.add(s),Reflect.set(o,s,a))},getOwnPropertyDescriptor(o,s){let a=Reflect.getOwnPropertyDescriptor(o,s);if(a&&!a.configurable)return a;let l=r.get(s);return l?l.getPropertyDescriptor?{...Rn,...l?.getPropertyDescriptor(s)}:Rn:a},defineProperty(o,s,a){return n.add(s),Reflect.defineProperty(o,s,a)}});return i[fa]=function(){let o={...this};return delete o[fa],o},i}function dd(e){let t=new Map;for(let r of e){let n=r.getKeys();for(let i of n)t.set(i,r)}return t}function ga(e,t){return e.filter(r=>t.get(r)?.has?.(r)??!0)}function _t(e){return{getKeys(){return e},has(){return!1},getPropertyValue(){}}}function Ft(e,t){return{batch:e,transaction:t?.kind==="batch"?{isolationLevel:t.options.isolationLevel}:void 0}}function ha(e){if(e===void 0)return"";let t=Ot(e);return new Rt(0,{colors:fn}).write(t).toString()}var md="P2037";function st({error:e,user_facing_error:t},r,n){return t.error_code?new V(fd(t,n),{code:t.error_code,clientVersion:r,meta:t.meta,batchRequestIdx:t.batch_request_idx}):new B(e,{clientVersion:r,batchRequestIdx:t.batch_request_idx})}function fd(e,t){let r=e.message;return(t==="postgresql"||t==="postgres"||t==="mysql")&&e.error_code===md&&(r+=`
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+
+PrismaClientValidationError: 
+Invalid `prisma.unidade.create()` invocation in
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\compras-aba.test.ts:87:44
+
+  84 const req = (m: any, url: string, payload?: unknown, headers = H) => app.inject({ method: m, url, headers, payload });
+  85 
+  86 // Criar unidade base para o produto (necessário para FK constraint na migration)
+→ 87 const unidadeBase = await prisma.unidade.create({
+       data: {
+         empresaId: "cmvn2gwuf0000adbhilo5t7xp",
+         simbolo: "UN",
+         fatorCanonico: 1,
+         dimensaoId: null,
+         nome: "Unidade Padrão",
+     +   empresa: {
+     +     create: EmpresaCreateWithoutUnidadesInput | EmpresaUncheckedCreateWithoutUnidadesInput,
+     +     connectOrCreate: EmpresaCreateOrConnectWithoutUnidadesInput,
+     +     connect: EmpresaWhereUniqueInput
+     +   }
+       }
+     })
+
+Argument `empresa` is missing.
+    at wn (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29:1363)
+    at $n.handleRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6958)
+    at $n.handleAndLogRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async main (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\compras-aba.test.ts:87:23) {
+  clientVersion: '5.22.0'
+}
+
+Node.js v24.19.0
+✖ tests\compras-aba.test.ts (4304.1408ms)
+
+1. PUT /auth/me — perfil do usuario
+  ok   PUT /auth/me -> 200
+  ok   devolve o nome gravado
+  ok   devolve o e-mail normalizado (minusculo)
+  ok   nome PERSISTIDO no PostgreSQL
+  ok   e-mail PERSISTIDO no PostgreSQL
+  ok   e-mail ja usado por outra empresa -> 409
+  ok   nome curto -> 400
+
+2. POST /auth/alterar-senha
+  ok   POST /auth/alterar-senha -> 200
+  ok   a senha nova foi gravada (a antiga nao vale mais)
+  ok   a senha antiga foi rejeitada
+  ok   senha atual incorreta -> recusada
+  ok   nova senha curta -> recusada
+
+3. POST /usuarios — criacao
+  ok   POST /usuarios responde com sucesso
+  ok   usuario gravado no PostgreSQL
+  ok   gravado na empresa do token
+  ok   senha guardada como hash, nunca em texto
+  ok   e-mail duplicado -> 409
+  ok   o novo usuario aparece na releitura
+
+4. POST /api-publica/chaves — o segredo volta UMA vez (bug corrigido na tela)
+  ok   POST /api-publica/chaves -> 200
+  ok   a resposta TRAZ o segredo completo
+  ok   o banco guarda apenas o HASH (por isso a tela pode mostrar a chave)
+  ok   a releitura NUNCA devolve o segredo
+
+5. PUT /empresas/:id e POST /filiais
+  ok   PUT /empresas/:id -> 200
+  ok   nome da empresa PERSISTIDO
+  ok   cidade PERSISTIDA
+  ok   CNPJ invalido -> 400
+  ok   UF invalida -> 400
+  ok   POST /filiais responde com sucesso
+  ok   filial PERSISTIDA no PostgreSQL
+  ok   filial gravada na empresa do token
+  ok   empresa B nao cria filial na empresa A -> 403
+
+6. GET /lgpd/minha-conta/exportar (o arquivo que a tela baixa)
+  ok   GET /lgpd/minha-conta/exportar -> 200
+  ok   devolve um OBJETO (a tela faz JSON.stringify)
+  ok   o JSON e serializavel sem erro
+  ok   inclui o titular e a trilha de auditoria
+  ok   o titular traz o e-mail do usuario logado
+  ok   a trilha de auditoria e uma lista
+  ok   nao inclui hash de senha no export
+
+7. Integração: integracoes e PIX (abas vizinhas consumidas aqui)
+  ok   GET /integracoes -> 200
+  ok   devolve itens e resumo
+  ok   GET /api/v1/settings/pix -> 200
+
+8. Isolamento multi-tenant e permissoes
+  ok   empresa B nao ve a chave da empresa A
+  ok   empresa B nao ve usuario da empresa A
+  ok   POST /api-publica/chaves sem permissao -> 403
+  ok   PUT /auth/me sem token -> 401
+  ok   GET /lgpd/minha-conta/exportar sem token -> 401
+  ok   GET /integracoes sem permissao -> 403
+
+RESULTADO: 47 ok, 0 falha(s)
+✔ integração: configurações (2864.6218ms)
+  ok   B1-a: cadastro A -> 201
+  ok   B1-b: cadastro B -> 201
+  ok   B1-c: logins retornam token
+  FAIL B2-a: A cria venda -> 201
+  ok   B2-b: B NÃO lÃª venda de A -> 404
+  ok   B3-a: B listagem -> 200
+  ok   B3-b: B nÃ£o enxerga venda de A na listagem
+  ok   B4-a: B NÃO cria venda com filial/produto de A -> 404
+  FAIL E1: permissão de venda mantida -> A cria nova venda 201 -> status=404
+
+RESULTADO M07: ok=7 falha=2
+✖ tests\cross-tenant-isolamento.test.ts (5737.7529ms)
+
+1. /dashboard/serie: totais conferidos contra o banco
+  ok   GET /dashboard/serie -> 200
+  ok   faturamento = 350 (só FINALIZADA do período)
+  ok   quantidade de vendas = 2
+  ok   venda ABERTA ignorada
+  ok   venda fora do periodo ignorada
+  ok   venda da outra empresa ignorada
+  ok   clientes distintos = 2
+  ok   ticket medio = 175
+  ok   cmv = 80 (2 itens x 40)
+  ok   lucro bruto = 270
+  ok   periodo devolvido sem fuso
+
+2. Buckets continuos: dia sem venda aparece zerado
+  ok   granularidade por dia
+  ok   7 pontos para 7 dias
+  ok   dias sem venda NAO somem do eixo
+  ok   soma dos pontos = total
+
+3. Granularidade por mes bate no mesmo total
+  ok   granularidade por mes
+  ok   mes nao quebra o total
+  ok   buckets mensais cobrem o periodo
+  ok   sem bucket mensal duplicado
+  ok   soma dos buckets mensais = total
+
+4. Periodo sem venda devolve zero, nao lixo
+  ok   periodo vazio -> 200
+  ok   faturamento zero
+  ok   ticket medio null (nao 0)
+  ok   LTV null sem clientes com historico
+
+5. Permissao de custo: sem custos.visualizar tudo vem null
+  ok   usuario COM custos -> permissaoCusto true
+  ok   usuario SEM custos -> permissaoCusto false
+  ok   cmv null para quem nao pode ver custo
+  ok   lucroBruto null
+  ok   margemBruta null
+  ok   faturamento continua visivel
+  ok   nenhum ponto da serie expoe custo
+
+6. /dashboard/stats: momento, nao periodo
+  ok   GET /dashboard/stats -> 200
+  ok   faturamento do mes exclui a venda ABERTA
+  ok   faturamento do mes inclui as finalizadas
+  ok   vendas hoje = 0 (as vendas sao de ontem)
+  ok   produtosAtivos = 0 (nenhum produto criado)
+  ok   usuariosAtivos conta a empresa
+  ok   stats nao traz a empresa B
+
+7. Metas: base do card "Meta Atingida"
+  ok   GET /metas -> 200
+  ok   devolve as duas metas
+  ok   ordenado por percentual DESC
+  ok   existe meta do mes corrente
+  ok   percentual do mes corrente e 40
+  ok   a meta de 2000-01percentual 999 nao e a do periodo
+
+8. Permissoes e token
+  ok   GET /dashboard/stats sem permissao -> 403
+  ok   GET /dashboard/serie sem permissao -> 403
+  ok   GET /dashboard/stats sem token -> 401
+  ok   GET /dashboard/serie sem token -> 401
+
+9. Isolamento multi-tenant
+  ok   empresa B responde 200
+  ok   empresa B ve SO a propria venda (5555)
+  ok   empresa B nao ve a venda da empresa A
+  ok   stats da empresa B soma SO a venda dela
+  ok   empresa B nao ve as metas da empresa A
+
+RESULTADO: 53 ok, 0 falha(s)
+✔ integração: dashboard (1578.578ms)
+
+1. GET /dre NAO GRAVA na tabela DRE
+  ok   GET responde 200
+  ok   nenhuma linha criada na tabela DRE
+  ok   resposta traz o periodo calculado
+  ok   resposta traz a origem
+
+2. Receita bruta, deducoes e CMV
+  ok   receita bruta = 1.000
+  ok   sem receita de deducao: deducoes = 0
+  ok   sem venda: CMV = 0
+  ok   sem deducao: receitaLiquida == receitaBruta
+  ok   deducoes = 100 (imposto abate a receita)
+  ok   receitaLiquida = 900
+  ok   imposto NAO vira despesa operacional (sem dupla contagem)
+
+3. Despesa operacional comum
+  ok   despesa operacional = 250
+  ok   deducoes segue 100
+
+4. CMV vem do custo real dos itens vendidos
+  ok   qtdVendas conta so vendas FINALIZADAS
+  ok   sem venda: CMV = 0
+
+5. Deducao so conta despesa
+  ok   RECEITA com categoria de deducao NAO abate (evita contagem dupla)
+  ok   essa RECEITA entra na receita bruta
+
+6. Categoria de deducao insensivel a caixa e acento
+  ok   "Impostos" (caixa alta) conta como deducao
+
+7. Identidade contabil
+  ok   resultadoOperacional = receitaLiquida - custos - despesas
+  ok   lucroPrejuizo = resultadoOperacional
+  ok   margemBruta = (receitaLiquida - custos) / receitaLiquida
+  ok   margemLiquida = lucro / receitaBruta
+
+8. Margem sem receita devolve null (nao 0)
+  ok   periodo sem receita: margemBruta = null
+  ok   periodo sem receita: margemLiquida = null
+  ok   periodo sem receita: receitaBruta = 0 (numero, nao null)
+
+9. Isolamento multi-tenant, permissoes e periodo
+  ok   sem permissao -> 403
+  ok   empresa B nao ve o DRE da empresa A
+  ok   sem token -> 401
+  ok   datas invalidas devolvem 400 (nao 500)
+  ok   periodo invertido devolve 400
+  ok   nenhuma linha em DRE ao final do teste
+
+RESULTADO: 31 ok, 0 falha(s)
+✔ tests\dre.test.ts (5040.1099ms)
+
+1. GET /estoque: saldo, filiais e indicadores
+  ok   POST /estoque/movimentar (ENTRADA) -> 200
+  ok   o saldo foi para 100 no PostgreSQL
+  ok   GET /estoque -> 200
+  ok   devolve as linhas de estoque
+  ok   devolve as filiais cadastradas (nao so as que tem estoque)
+  ok   devolve os indicadores
+  ok   qtdBaixo conta o item abaixo do minimo (100 nao)
+  ok   sem custos: podeVerCusto = false
+  ok   sem custos: valorTotal nao vem no corpo
+  ok   sem custos: o produto NAO traz o campo custo
+  ok   sem custos: a linha NAO traz valorTotal
+  ok   com custos: o produto traz o custo
+
+2. SAIDA subtrai e nunca deixa o estoque negativo
+  ok   POST /estoque/movimentar (SAIDA) -> 200
+  ok   o saldo caiu para 70
+  ok   saida maior que o saldo -> recusada
+  ok   o estoque NAO virou negativo
+  ok   da para zerar o estoque (ruptura e um estado valido)
+  ok   saldo zerado
+  ok   GET /estoque/movimentacoes -> 200
+  ok   o historico traz o total de movimentos registrados
+
+3. AJUSTE grava SALDO FINAL, nao delta
+  ok   pre-condicao: saldo 40
+  ok   POST com tipo AJUSTE -> 200
+  ok   AJUSTE gravou 12 como SALDO FINAL (nao 40+12 nem 40-28)
+
+4. Transferencia entre filiais
+  ok   pre-condicao: 62 na origem
+  ok   POST /estoque/transferir -> 200
+  ok   a origem ficou com 42
+  ok   o destino recebeu 20
+  ok   a resposta traz o documento que liga as duas pontas
+  ok   foram gravadas DUAS linhas de movimentacao
+  FAIL uma com delta negativo (saida da origem) e outra positivo -> deltas=-20,20
+  ok   transferir mais do que existe -> recusada
+  ok   transferir para a MESMA filial -> recusada
+  ok   o saldo da origem nao mudou nas tentativas recusadas
+
+5. Inventario: folha, contagem e fechamento
+  ok   POST /estoque/inventarios -> 200
+  ok   a sessao nasce ABERTA
+  ok   a folha congelou o saldo do sistema
+  FAIL cada item guarda o saldo do instante da abertura -> sistema=42 esperado=42
+  ok   PUT /contagens -> 200
+  FAIL a contagem foi gravada -> contada=27
+  ok   a divergencia foi CLASSIFICADA (SOBROU/FALTOU)
+  ok   guarda QUEM contou
+  ok   abrir uma 2a folha na MESMA filial -> recusada
+  ok   POST /fechar -> 200
+  ok   a sessao ficou CONCLUIDA
+  ok   CONCLUIR O INVENTARIO NAO ALTERA O ESTOQUE (decisao da empresa)
+  ok   a folha aparece no historico
+  ok   filial sem nenhum item em estoque -> recusada
+
+6. Isolamento multi-tenant e permissoes
+  ok   empresa B responde 200
+  ok   empresa B nao ve o produto da empresa A
+  ok   empresa B nao movimenta produto da empresa A -> 404
+  ok   o saldo da empresa A nao mudou
+  ok   movimentar em filial de outra empresa -> recusada
+  ok   GET /estoque sem permissao -> 403
+  ok   POST /estoque/movimentar sem permissao -> 403
+  ok   POST /estoque/transferir sem permissao -> 403
+  ok   GET /estoque sem token -> 401
+  ok   GET /estoque/inventarios sem permissao -> 403
+  ok   tipo de movimento desconhecido -> recusado
+  ok   o saldo segue intacto apos as tentativas invalidas
+
+RESULTADO: 56 ok, 3 falha(s)
+✔ integração: aba estoque (3197.4793ms)
+✖ tests\estoque-aba.test.ts (6897.748ms)
+
+1. POST /financeiro grava no PostgreSQL
+  ok   POST responde 200
+  ok   resposta traz id
+  ok   registro existe no PostgreSQL
+  ok   valor persistido correto
+  ok   descricao persistida
+  ok   empresaId vem do token
+  ok   origem persistida
+
+2. GET /financeiro devolve o registro criado
+  ok   GET responde 200
+  ok   lançamento está na lista
+  ok   fluxo.despesas soma o lançamento
+  ok   fluxo.receitas zerado
+
+3. X-Total-Count / X-Truncated
+  ok   X-Total-Count presente
+  ok   X-Truncated ausente sem corte
+
+4. Totais cobrem o período inteiro, não só a página exibida
+  ok   lista truncada em 200
+  ok   X-Total-Count informa 250
+  ok   X-Truncated marcado
+  ok   fluxo.receitas cobre os 250 (2.490), nao so os exibidos
+
+5. contasAPagar / contasAReceber sao VALORES em aberto
+  ok   contasAReceber = 2.490 (valor, nao contagem)
+  ok   contasAPagar = 150,50 (valor, nao contagem)
+
+6. VENCIDO derivado na leitura
+  ok   PENDENTE vencido responde como VENCIDO
+  ok   banco preserva PENDENTE (derivacao e so de leitura)
+  ok   filtro status=VENCIDO devolve a conta vencida
+  ok   filtro VENCIDO traz todos como VENCIDO
+  ok   filtro VENCIDO nao traz contas em dia
+  ok   filtro PENDENTE traz os sem-vencimento (249 receitas)
+  ok   filtro PENDENTE exclui a vencida
+  ok   a conta em dia (2030) satisfaz a condicao de PENDENTE
+  ok   filtro PAGO vazio quando nao ha pagos
+
+7. Validacao
+  ok   valor acima de Decimal(12,2) recusado
+  ok   erro de valor legivel (nao erro interno)
+  ok   vencimento invalido recusado
+  ok   valor zero recusado
+  ok   descricao curta recusada
+
+8. Isolamento multi-tenant e permissões
+  ok   sem permissao -> 403
+  ok   empresa B nao ve lancamentos da empresa A
+  ok   fluxo da empresa B zerado
+  ok   sem token -> 401
+  ok   POST sem permissao -> 403
+
+RESULTADO: 38 ok, 0 falha(s)
+✔ tests\financeiro.test.ts (5563.5341ms)
+﹣ GET /fiscal/status returns safe HTTP 500 when PostgreSQL is unavailable (3.6374ms) # Requer URL explícita de loopback descartável na porta fechada 1.
+﹣ GET /fiscal/status autentica, autoriza e limita o resultado à empresa/filial do usuário (3.2186ms) # Defina explicitamente o PostgreSQL descartável fiscal de teste.
+✔ status fiscal informa adaptador ausente e nunca habilita emissão (1.6465ms)
+✔ diagnóstico reconhece dados existentes e lista pendências por filial (0.2911ms)
+
+1. Serie diaria usa o dia LOCAL da empresa, nao o UTC
+  ok   GET responde 200
+  ok   lancamento das 22h30 fica no dia 2026-10-23
+  ok   valor da noite esta no dia certo
+  ok   a serie traz o dia uma unica vez
+
+2. saldoAcumulado e resumo
+  ok   dois dias na serie
+  ok   resumo.entradas = 1.500
+  ok   resumo.saidas = 300
+  ok   resumo.saldo = 1.200
+  ok   saldoAcumulado final = resumo.saldo
+  ok   saldoDia = entradas - saidas
+
+3. So conta PAGO dentro da janela
+  ok   PENDENTE nao entra no resumo realizado
+  ok   periodo sem movimento zera o resumo
+
+4. Horizonte de 30 dias na projecao
+  ok   receita vencendo em 40 dias NAO entra na projecao
+
+5. Contas JA VENCIDAS entram na projecao
+  ok   despesa vencida entra em "a pagar" da projecao
+  ok   saldoProjetado = realizado + projecao
+
+6. Formato dos dias e do fuso
+  ok   todos os dias em YYYY-MM-DD
+  ok   resposta informa o fuso usado
+
+7. Isolamento multi-tenant e permissoes
+  ok   sem permissao -> 403
+  ok   empresa B nao ve a serie da empresa A
+  ok   empresa B com resumo zerado
+  ok   sem token -> 401
+  ok   datas invalidas devolvem 400 (nao 500)
+  ok   erro de data e legivel
+  ok   periodo invertido (inicio > fim) devolvem 400
+
+RESULTADO: 24 ok, 0 falha(s)
+✔ tests\fluxo-caixa.test.ts (4717.1593ms)
+✔ INSS 2026: progressivo por faixa cumulativa (3.3547ms)
+✔ INSS 2026: acima do teto nao ha desconto (teto produtivo) (0.9116ms)
+✔ INSS 2026: zero e negativo nao geram desconto (0.7267ms)
+✔ INSS 2026: nunca decresce quando o salario sobe (2.0453ms)
+✔ IRRF 2026: isencao ate 2.428,80 (0.6289ms)
+✔ IRRF 2026: parcela a deduzir por faixa (0.6433ms)
+✔ IRRF 2026: nunca decresce quando o salario sobe (3.5335ms)
+✔ IRRF nunca fica negativo (a parcela a deduzir nao gera desconto) (2.353ms)
+✔ folha sem ponto: so salario-base, INSS, VT e IRRF (11.8926ms)
+✔ folha: total e sempre a soma exata dos lancamentos (0.9277ms)
+✔ horas extras entram como provento quando ha batida real (1.3226ms)
+✔ sem ponto, a hora extra NAO aparece (nao inventa) (0.5272ms)
+▶ FGTS e multa ficam null: sem saldo depositado nao se estima
+  ✔ beneficios: sem cadastro, nenhum beneficio entra na folha (1.6765ms)
+  ✔ beneficios: somente vale-alimentacao (0.5607ms)
+  ✔ beneficios: somente vale-refeicao (0.403ms)
+  ✔ beneficios: os dois juntos, cada um com seu valor (0.6715ms)
+  ✔ beneficios: toggle desligado NAO paga, mesmo com valor antigo gravado (1.649ms)
+  ✔ beneficios: beneficio com valor zero nao gera rubrica (0.3759ms)
+  ✔ beneficios: VA e VR entram no total de proventos (0.3243ms)
+  ✔ beneficios: INSS incide sobre o provento do beneficio (0.3926ms)
+✔ FGTS e multa ficam null: sem saldo depositado nao se estima (8.6817ms)
+✔ salario zero ou nulo nao quebra e nao gera lancamento (0.2649ms)
+✔ lancamentos manuais somam depois dos automaticos (0.3508ms)
+✔ adicional noturno e omitido enquanto o ponto nao marcar periodo noturno (0.2903ms)
+✔ falta desconta a fracao proporcional do salario, nao o salario inteiro (0.3583ms)
+✔ falta do mes inteiro nunca produz liquido negativo (0.5841ms)
+✔ quando o desconto de ponto e limitado, o lancamento fica marcado para o RH (0.5399ms)
+✔ faltas acima dos dias uteis nao cobram mais que o proprio salario (0.3515ms)
+✔ sem dias uteis (divisor desconhecido) nenhuma falta e descontada (0.3355ms)
+✔ falta so e descontada com batida real (mesmo se diasFalta vier preenchido) (0.2765ms)
+✔ desconto de falta entra no total de descontos, nao nos proventos (0.2626ms)
+✔ atraso desconta os minutos apurados pelo valor/minuto do salario (0.2867ms)
+✔ atraso e falta somam juntos, cada um com sua propria rubrica (1.0926ms)
+✔ atraso so e descontado com batida real (0.4973ms)
+✔ hora extra e provento, falta e atraso sao desconto: liquido cai sem virar negativo (0.651ms)
+✔ ponto sem batidas nao gera nenhuma das duas rubricas (0.4214ms)
+✔ descontos de ponto sao proporcionais ao salario: dobrar salario dobra o desconto (1.6872ms)
+
+1. Cadastro: persiste, valida e devolve
+  ok   POST /api/v1/fornecedores -> 200
+  ok   o id é gerado pelo banco
+  ok   o status volta normalizado como Ativo
+  ok   o CNPJ é gravado limpo (só dígitos)
+  ok   o registro foi GRAVADO no PostgreSQL
+  ok   os campos sobreviveram à gravação (condição/produtos/observações)
+  ok   um fornecedor novo começa com total 0
+  ok   CNPJ repetido na mesma empresa -> 409
+  ok   nome com 1 caractere -> 400
+  ok   categoria inválida -> 400
+  ok   email inválido -> 400
+
+2. INTEGRAÇÃO COM COMPRAS: o pedido tem que aparecer na aba
+  ok   a aba começa com Total Comprado = 0 em ambos
+  FAIL POST /compras (módulo Compras) -> 200 -> status=500 corpo={"error":"Erro interno do servidor."}
+  FAIL "Total Comprado" do fornecedor passou a 200 (era 0) -> totalComprado=0
+  FAIL "Pedidos" passou a 1 -> totalPedidos=0
+  FAIL "Último pedido" foi preenchido -> ultimoPedidoAt=null
+  ok   o OUTRO fornecedor continua em 0 (não houve contaminação)
+  ok   KPI "Total Fornecedores" = 2
+  FAIL KPI "Gasto do mês" = R$ 200 -> gastoMes=0
+  FAIL KPI "Ticket médio" = R$ 200 -> ticketMedio=0
+  FAIL KPI "Pedidos pendentes" = 1 (SOLICITADA é pedido em aberto) -> pedidosPendentes=0
+  ok   KPI "Atrasados" = 0 no dia do pedido
+  FAIL o histórico tem 6 meses e o mês corrente tem o gasto -> hist=[{"mes":"05/26","valor":0},{"mes":"06/26","valor":0},{"mes":"07/26","valor":0},{"mes":"08/26","valor":0},{"mes":"09/26","valor":0},{"mes":"10/26","valor":0}]
+  FAIL os outros 5 meses são 0 (não inventa passado) -> soma=0
+  ok   o insight de atraso diz que não há atraso (honesto)
+  ok   o insight de negociação admite que não há base com 1 pedido
+
+3. Compra CANCELADA deixa de ser pedido
+  ok   "Total Comprado" voltou a 0 ao cancelar
+  ok   "Pedidos" voltou a 0
+  ok   o "Gasto do mês" não conta compra cancelada
+  ok   o "Ticket médio" não conta compra cancelada
+  ok   "Pendentes" não conta compra cancelada
+
+4. Pedido confirmado e antigo vira ATRASADO
+✖ integração: aba fornecedores (1886.4834ms)
+✔ data operacional acompanha o fuso da filial quando o instante UTC cruza a meia-noite local (57.4209ms)
+✔ fuso inválido usa o padrão operacional documentado (1.798ms)
+✔ a marcação da noite pertence ao dia que a empresa viveu (58.7816ms)
+✔ marcação de inicio e de meio-dia ficam no mesmo dia (1.4914ms)
+✔ fuso ausente ou invalido nao derruba a marcacao (1.052ms)
+✔ instanteNaHoraLocal monta a hora da empresa, nao a de UTC (5.9589ms)
+✔ deslocamento do fuso (4.1431ms)
+✔ ida e volta: a hora montada volta igual, em qualquer fuso (31.956ms)
+✔ hashPassword gera hashes diferentes para a mesma senha (salt aleatório) (196.3573ms)
+✔ verifyPassword aceita a senha correta (203.7668ms)
+✔ verifyPassword rejeita senha incorreta (212.0382ms)
+✔ hashPassword rejeita senha muito curta (1.6384ms)
+✔ verifyPassword rejeita hash malformado sem lançar exceção (0.5041ms)
+
+1. /ia/perguntar sem GEMINI_API_KEY: 200 mas COM fallback: true
+  ok   POST /ia/perguntar -> 200
+  ok   resposta vem marcada como fallback
+  ok   texto devolvido nao esta vazio
+  ok   campo `text` espelha `resposta`
+  ok   texto cita a chave ausente (honesto com o gestor)
+
+2. Conversa NAO e persistida quando o modelo nao respondeu
+  ok   nenhuma conversa gravada no fallback
+
+3. Pergunta vazia e recusada
+  ok   pergunta em branco -> 400
+  ok   sem pergunta -> 400
+
+4. Intelligence Center: oportunidades vem de DADOS, nao de texto fixo
+  ok   GET /ia/intelligence-center -> 200
+  ok   sem venda e sem estoque, oportunidades VAZIAS
+  ok   nenhuma oportunidade com os textos fixos antigos
+  ok   oQueAconteceu presente
+  ok   problemas e lista
+
+5. Oportunidade real: produto que VENDEU hoje e esta no minimo
+  ok   oportunidade de giro apareceu
+  ok   a oportunidade CITA o nome do produto real
+  ok   o problema de estoque tambem foi detectado
+  ok   faturamento de hoje refletido no resumo
+
+6. Oportunidade de ritmo (hoje vs ontem)
+  ok   queda de faturamento gera oportunidade de RESSAO_VENDAS
+  ok   crescimento negativo calculado
+
+7. Permissoes e token
+  ok   POST /ia/perguntar sem permissao -> 403
+  ok   GET /ia/intelligence-center sem permissao -> 403
+  ok   POST /ia/perguntar sem token -> 401
+  ok   GET /ia/intelligence-center sem token -> 401
+
+8. Isolamento multi-tenant
+  ok   empresa B responde 200
+  ok   empresa B nao ve o faturamento da empresa A
+  ok   empresa B nao ve o problema de estoque da empresa A
+  ok   empresa B nao ve a oportunidade da empresa A
+
+RESULTADO: 27 ok, 0 falha(s)
+✔ integração: ia nexus (1400.3041ms)
+
+--- 1. Importação feliz: grava produto, Importacao e auditoria ---
+  ok   POST /importacao -> 200
+  ok   qtdImportada = 2
+  ok   sem erros
+  ok   sem duplicidades
+  ok   colunas identificadas a partir da 1ª linha
+  ok   pré-visualização traz as linhas
+  ok   o registro de Importacao diz IMPORTADO
+  ok   qtdTotal/qtdImportada/qtdErro corretos
+  ok   os 2 produtos existem no PostgreSQL
+  ok   produto carrega origem IMPORTADO
+  ok   margem calculada (10/20 -> 50%)
+  ok   status ATIVO por padrão
+  ok   o registro de Importacao foi persistido no banco
+  ok   o registro persistido diz IMPORTADO
+  ok   a operação foi auditada
+
+--- 2. Rollback real: erro detectado SÓ dentro da transação ---
+  ok   POST com erro interno -> 200 (erros vêm no corpo)
+  ok   qtdImportada = 0 no erro
+  ok   status ERRO registrado
+  ok   o erro de custo foi reportado
+  ok   NENHUM produto foi criado (rollback efetivo)
+  ok   registro de Importacao persistido como ERRO
+  ok   qtdErro persistida > 0
+
+--- 3. Duplicidade de SKU NO ARQUIVO trava a importação ---
+  ok   a duplicidade é reportada
+  ok   a duplicidade identifica a linha
+  ok   qtdImportada = 0
+  ok   status ERRO
+  ok   a mensagem é de duplicidade NO ARQUIVO, não "já cadastrado"
+  ok   nenhum produto criado pela duplicidade
+
+--- 4. SKU já existente NA EMPRESA trava a importação ---
+  ok   SKU existente gera erro
+  ok   a mensagem é de SKU já cadastrado
+  ok   qtdImportada = 0
+  ok   nenhum produto criado (não duplica o existente)
+  ok   o produto original permanece intacto (1 registro)
+
+--- 5. Sucesso falso eliminado ---
+  ok   arquivo vazio -> 400
+  ok   mensagem de arquivo vazio
+  ok   entidade sem rotina de gravação NÃO reporta sucesso falso
+  ok   o motivo é explicado
+  ok   sem confirmação -> status MAPEANDO
+  ok   sem confirmação nada é gravado
+
+--- 6. Entrada inválida -> 400, nada gravado ---
+  ok   dados não-array -> 400
+  ok   5001 linhas -> 400 com limite claro
+  ok   sem mapeamento -> 400
+  ok   mapeamento sem entidade -> 400
+  ok   mapeamento SEM campos usa os mesmos defaults da validação (não 500)
+  ok   o produto do mapeamento sem campos foi gravado
+  ok   dados [null] -> 200 com erro de validação (não 500)
+  ok   a linha nula é reportada como inválida
+
+--- 7. GET /importacoes: persistência, ordenação e isolamento ---
+  ok   GET /importacoes -> 200
+  ok   a listagem devolve os registros criados
+  ok   ordenado do mais recente para o mais antigo
+  ok   registros persistidos para a empresa logada
+  ok   a outra empresa não vê estas importações
+
+--- 8. Permissões e autenticação ---
+  ok   sem token -> 401
+  ok   sem permissão importacao.criar -> 403
+  ok   sem permissão importacao.visualizar -> 403
+  ok   token de outra empresa não lê esta empresa
+
+RESULTADO: 56 ok, 0 falha(s)
+✔ integração: aba importação (1777.1534ms)
+
+1. GET /integracoes agrega registros REAIS
+  ok   GET /integracoes -> 200
+  ok   devolve itens e resumo
+  ok   IA_GEMINI presente
+  ok   EMAIL_TRANSACIONAL presente
+  ok   resumo bate com os itens
+  ok   conectadas + comErro + naoConfiguradas = total
+
+2. Integracao de PDV gravada aparece na Central
+  ok   PDV aparece na lista
+  ok   ultima sincronizacao real devolvida
+  ok   qtdRegistros real devolvido
+
+3. Criar chave: o contrato e NOME + ESCOPOS (nada mais)
+  ok   POST /api-publica/chaves -> 200
+  ok   devolve a chave completa UMA vez
+  ok   devolve prefixo
+  ok   aviso de guardar agora
+
+4. "Expiracao" e "IP Whitelist" NAO existem no contrato
+  ok   ChaveApi nao tem coluna de expiracao
+  ok   ChaveApi nao tem coluna de IP
+  ok   campos extras sao aceitos e IGNORados (nao inventam garantia)
+  ok   a chave "com expiracao" NAO carrega expiracao alguma
+
+5. FLUXO COMPLETO: a chave criada autentica um endpoint publico
+  ok   GET /api/v1/produtos com a chave -> 200
+  ok   devolve o produto da empresa
+  ok   chave SEM o escopo clientes -> 403
+  ok   sem token -> 401
+  ok   chave inventada -> 401
+
+6. Listagem devolve somente metadados, NUNCA o segredo
+  ok   GET /api-publica/chaves -> 200
+  ok   chave gravada aparece na lista
+  ok   a listagem NAO devolve o segredo
+  ok   a listagem devolve o prefixo
+  ok   o banco guarda o HASH, nao a chave
+
+7. Revogar: muda de verdade e a chave deixa de autenticar
+  ok   POST revogar -> 200
+  ok   status = REVOGADA
+  ok   revogadaEm gravado
+  ok   revogacao persistida no PostgreSQL
+  ok   chave revogada NAO autentica mais
+  ok   revogar duas vezes -> 409
+  ok   empresa B nao revoga chave da A -> 404
+
+8. Validacoes
+  ok   nome curto -> 400
+  ok   sem escopos -> 400
+  ok   escopo de escrita recusado -> 400
+  ok   escopo inventado recusado -> 400
+
+9. Permissoes e isolamento multi-tenant
+  ok   GET /integracoes sem permissao -> 403
+  ok   GET /api-publica/chaves sem permissao -> 403
+  ok   POST /api-publica/chaves sem permissao -> 403
+  ok   GET /integracoes sem token -> 401
+  ok   empresa B nao ve as chaves da empresa A
+  ok   empresa B nao ve o PDV da empresa A
+
+10. Mercado Livre: contrato OAuth SEM fingir sucesso
+  ok   GET /integracoes/mercadolivre -> 200
+  ok   sem registro o status e NAO_CONFIGURADO
+  ok   configuradoAmbiente e booleano (nada de credencial exposta)
+  ok   resposta do status NAO carrega tokens/clientSecret
+  ok   Central agrega item MERCADO_LIVRE
+  ok   item ML sem registro e NAO_CONFIGURADO
+  ok   item ML expoe configuradoAmbiente booleano (UI distingue "aguardando credenciais" de "desconectado")
+  ok   item ML sem conta NUNCA marcado como configurado/conectado
+  ok   resumo continua consistente com o novo item
+  ok   GET ML sem token -> 401
+  ok   POST conectar ML sem permissao -> 403
+  ok   DELETE ML sem permissao -> 403
+  ok   conectar sem credenciais -> erro (nao fabrica authUrl)
+  ok   erro aponta as variaveis obrigatorias
+
+10b. Mercado Livre: authUrl oficial com credenciais simuladas (mock de env, sem rede)
+  ok   conectar com credenciais -> 200 com authUrl
+  ok   authUrl aponta para o host oficial auth.mercadolivre.com.br
+  ok   response_type=code (authorization code flow)
+  ok   client_id vem do ambiente (nunca inventado)
+  ok   redirect_uri bate com o configurado
+  ok   scope inclui offline_access (garante refresh_token)
+  ok   scope inclui read
+  ok   state e nonce aleatorio de 24 bytes em base64url (192 bits)
+  ok   cadastro fica CONECTANDO com o mesmo state da URL
+  ok   resposta do conectar NAO expoe clientSecret
+  ok   segundo conectar RETOMA o cadastro com state novo (uso unico renovado)
+  ok   continua existindo UM unico registro ML da empresa (constraint 1:1)
+  ok   Central expoe configuradoAmbiente=true com env preenchido
+  ok   CONECTANDO NAO vira CONECTADO nem "configurado" na Central
+
+11. Mercado Livre: callback e state (nonce, expiracao, uso unico)
+  ok   callback com error do ML -> 302
+  ok   redirect vai para a Central com ml=erro
+  ok   callback com parametro repetido -> 302 (nunca 400/500 JSON)
+  ok   query malformada tambem redireciona para a Central
+  ok   callback sem query nenhuma -> 302 com motivo generico
+  ok   motivo vindo do provedor e limitado (sem URL gigante no redirect)
+  ok   state desconhecido -> 302 ml=erro (nao ha sessao para "conferir")
+  ok   state expirado -> 302 ml=erro
+  ok   state expirado marca o registro como EXPIRADO
+  ok   sem API real o redirect e ml=erro (nunca "conectado")
+  ok   conta NAO marcada CONECTADA sem validar na API
+  ok   state consumido (uso unico)
+  ok   replay do mesmo state -> ml=erro (consumo unico)
+
+12. Mercado Livre: isolamento por tenant no testar/desconectar
+  ok   empresa B testar conta da A -> 404
+  ok   empresa B desconectar conta da A -> 404
+  ok   empresa B ve o PROPRIO status (NAO_CONFIGURADO), nao o da A
+  ok   empresa A em CONECTANDO ainda aparece NAO_CONFIGURADO (sem fingir conexao)
+  ok   empresa A desconecta a propria conta -> 200
+  ok   resposta da desconexao nao expoe tokens
+  ok   registro removido do PostgreSQL
+  ok   desconectar de novo -> 404
+
+13. Mercado Livre: renovacao concorrente usa UMA chamada e rotaciona o token
+  ok   duas renovacoes concorrentes fazem UMA chamada real ao /oauth/token
+  ok   ambas as tentativas recebem o resultado real (nenhum resultado inventado)
+  ok   refresh_token rotacionado e persistido (descriptografavel)
+  ok   access_token novo persistido (descriptografavel)
+  ok   status segue CONECTADO (nenhuma concorrente marcou REAUTENTICAR)
+  ok   tokens persistidos CIFRADOS em repouso (gravacao != texto plano)
+
+13b. Mercado Livre: falha REAL de renovacao (invalid_grant) marca REAUTENTICAR uma vez
+  ok   falha real: as duas tentativas rejeitam com a mensagem do provedor
+  ok   falha real: UMA chamada ao /oauth/token mesmo com duas tentativas
+  ok   invalid_grant marca REAUTENTICAR (erro real, nao mascarado)
+
+14. Callback OAuth: code/state NAO aparecem nos logs do Fastify
+  ok   redigirUrlSensiveis mascara code e state
+  ok   redigirUrlSensiveis preserva URL sem query
+  ok   log da requisicao NAO contem o code OAuth
+  ok   log da requisicao NAO contem o state
+  ok   log da requisicao preserva o caminho util para diagnostico
+
+RESULTADO: 107 ok, 0 falha(s)
+✔ integração: integrações (3097.4625ms)
+✔ Integration Core registra Shopee sem declarar capacidades não implementadas (6.2425ms)
+✔ assinatura Shopee de loja usa HMAC-SHA256 sobre os campos documentados (1.7524ms)
+✔ assinatura pública omite token/loja; paths e identificadores inválidos falham fechados (1.167ms)
+✔ configuração Shopee não retorna valor parcial nem aceita partner_id inválido (1.3448ms)
+✔ URL de autorização assina parâmetros e carrega state no callback cadastrado (1.8218ms)
+✔ cliente aceita identidade somente no envelope response e classifica rate limit sem vazar payload (66.4339ms)
+✔ cliente repete GET transitório, mas nunca repete POST de troca de código (318.8078ms)
+✔ cliente pagina pedidos e catálogo, valida janelas e responde somente com envelope tipado (4.196ms)
+✔ so uma sessao ABERTA aceita contagem (3.4567ms)
+✔ sessao concluida ou cancelada nao volta a abrir (1.1026ms)
+✔ status desconhecido nao transiciona (0.6161ms)
+✔ divergencia: igual bateu, acima sobrou, abaixo faltou (0.5068ms)
+✔ divergencia: nao contado nao e divergencia (0.6268ms)
+✔ divergencia: contar zero quando o sistema tem 10 e FALTOU (1.5278ms)
+✔ resumo: conta total, contados, pendentes e os tres desfechos (1.3771ms)
+✔ resumo: folha com pendencia nao fecha (0.7171ms)
+✔ resumo: folha completa fecha (0.5125ms)
+✔ resumo: folha vazia nao fecha (0.6223ms)
+✔ validarContagem: vazio significa "ainda nao contei" (2.138ms)
+✔ validarContagem: zero e um zero legitimo (0.5517ms)
+✔ validarContagem: negativo e recusado (0.5835ms)
+✖ validarContagem: fracionario e recusado (23.4359ms)
+✔ validarContagem: texto nao numerico e recusado (0.4383ms)
+✔ validarContagem: inteiro valido passa (2.6027ms)
+✔ abertura: nome e filial sao obrigatorios (1.0159ms)
+✔ abertura: filial sem estoque nao abre folha (0.7661ms)
+✔ abertura: uma sessao aberta por filial, e para retomar a existente (0.3369ms)
+✔ abertura: sessao fechada nao bloqueia a proxima (0.4651ms)
+✔ signJwt + verifyJwt: token válido é aceito e payload é preservado (5.8724ms)
+✔ verifyJwt rejeita token expirado (2.7235ms)
+✔ verifyJwt rejeita assinatura adulterada (2.5517ms)
+✔ verifyJwt rejeita token assinado com outro segredo (1.0885ms)
+✔ verifyJwt rejeita token malformado (0.5535ms)
+✔ payload adulterado no meio do token é detectado (payload de outro usuário injetado) (1.1895ms)
+✔ saldo: soma os registros ATIVOS (3.243ms)
+✔ saldo: registro ANULADO deixa de contar (0.5148ms)
+✔ saldo: resgate SOLICITADO NAO consome pontos (so reserva estoque) (0.4899ms)
+✔ saldo: REJEITADO e CANCELADO devolvem os pontos (0.3997ms)
+✔ saldo: ENTREGUE continua consumindo (0.3642ms)
+✔ saldo: NUNCA fica negativo (0.3917ms)
+✔ saldo: sem registro nenhum devolve 0, nao null (0.4479ms)
+✔ saldo: conjunto grande bate com a soma direta (0.7543ms)
+✔ CONSOME_PONTOS: so APROVADO e ENTREGUE debitam (0.545ms)
+✔ elegibilidade: com saldo, estoque e ativa, pode resgatar (0.7531ms)
+✔ elegibilidade: o motivo vem na ordem que o gestor precisa ouvir (0.879ms)
+✔ elegibilidade: um resgate em andamento barra o segundo (0.5874ms)
+✔ elegibilidade: saldo exatamente igual ao custo pode resgatar (0.2886ms)
+✔ transições: o caminho feliz e solicitado → aprovado → entregue (0.415ms)
+✔ transições: nao se entrega o que ninguem aprovou (0.7072ms)
+✔ transições: estados finais nao voltam (0.4562ms)
+✔ transições: um resgate nao e aprovado duas vezes (0.2552ms)
+✔ vitrine: inativa ou esgotada some da vitrine (0.3505ms)
+✔ estoque: nunca aparece negativo na tela (0.279ms)
+✔ catálogos: todo status e categoria tem rotulo legivel (0.5245ms)
+
+1. Inicialização automática (autostart sem clique manual)
+[ml-agendador] iniciado (instancia 22620-cd4fa353, 2 conta(s) conectada(s) provisionada(s)).
+  ok   3 tarefas provisionadas para a conta CONECTADA ao subir o agendador
+  ok   toda tarefa nasce AGUARDANDO com execução FUTURA (nada executado no provisionar)
+  ok   empresa SEM conta ML não recebe tarefas (bootstrap só de CONECTADAS)
+  ok   provisionar e idempotente (chamar de novo nao duplica linha)
+
+2. Processamento automático de produtos, estoque e pedidos (tick)
+  ok   tick executou as 3 tarefas vencidas
+  ok   produtos espelhados automaticamente (2 anuncios do catalogo)
+  ok   pedido BRL 9001 importado como venda sem clique manual
+  ok   pedido USD 9002 recusado (nunca vira venda indevida)
+  ok   tarefa PRODUTOS: sucesso com processados=2, tentativas 0, proxima futura
+  ok   tarefa PEDIDOS: sucesso com processados=2 (9001+9002 consultados)
+  ok   espelho MLB100 criado para montar o cenario de estoque
+  ok   tick do estoque executou (1 tarefa)
+  ok   saldo interno EMPURRADO para o ML (PUT available_quantity=7)
+  ok   saldo interno permanece 7 (sync de estoque NUNCA baixa)
+  ok   NENHUMA movimentacao interna indevida gerada
+
+3. Recuperacao pos-reinicializacao (lease vencido = execucao orfa)
+  ok   tick desengatou a execucao orfa (recuperadas +1) e a re-executou
+  ok   re-execucao consultou o recurso no servidor simulado
+  ok   tarefa recuperada: AGUARDANDO, contador recuperadas=1, ultimoSucessoEm novo
+  ok   recuperacao nao duplicou a venda
+[ml-agendador] iniciado (instancia 22620-cd4fa353, 4 conta(s) conectada(s) provisionada(s)).
+  ok   novo boot preserva 3 tarefas e a agenda (proximaExecucaoEm intacta)
+
+4. Protecao contra processamento conflitante (duas instancias)
+  ok   duas instancias concorrentes: exatamente UMA tomou a tarefa
+  ok   listagem de pedidos consultada UMA vez (trava atomica nao duplica chamada a API)
+  ok   corrida nao gerou segunda venda
+
+5. Deduplicacao de notificacoes repetidas (webhook 2x)
+  FAIL primeira notificacao persistida e consumida (re-consulta autenticada) -> status=200 body={"accepted":true,"queued":true,"duplicate":true,"motivo":"Notificação duplicada já enfileirada."}
+  ok   notificacao repetida deduplicada (motivo 'duplicada', sem nova re-consulta)
+  ok   dedupe manteve 1 unica venda
+
+6. Retentativas apos falha temporaria (backoff da TAREFA)
+[ml-agendador] tarefa cmvn2h2od00aafoeu0d9l9q31 retentativa 1 agendada: Falha ao listar pedidos no Mercado Livre (HTTP 500).
+  ok   tick com falha persistente executou a tentativa (1 tomada)
+  ok   apos falha: AGUARDANDO (nao presa em EXECUTANDO), tentativas=1, proxima no FUTURO (backoff)
+  ok   ultimoErro persistido de forma redigida (motivo + em, sem segredo)
+  ok   falha registrada em Importacao ERRO (visivel, sem fingir sucesso)
+  ok   retentativa de sucesso zerou tentativas e limpou o erro
+
+7. Tratamento de HTTP 429 (Retry-After respeitado)
+  ok   429 com Retry-After: 1s AGUARDADO antes de repetir (>=900ms e <15s)
+  ok   listagem consultada 2x (429 + repeticao de sucesso)
+  ok   tarefa concluiu sem contar tentativa (cliente absorveu o 429)
+
+8. Conta desconectada => tarefa bloqueada (PAUSADA)
+  ok   tarefa PAUSADA com motivo de conta desconectada (sem consumir tentativa)
+  ok   NENHUMA chamada nova a API com a conta desconectada
+  ok   reconexao (provisionar com reativar) devolveu a tarefa a AGUARDANDO
+
+9. Isolamento de dados entre empresas
+  ok   tick processou somente as 3 tarefas vencidas da empresa B
+  ok   tarefas da B pausadas por falta de conta (sem tocar em dados de A)
+  ok   tarefa da A permaneceu intacta (agenda de A nao afetada pelo tick da B)
+  ok   nenhuma chamada a API (B sem conta nao consulta Mercado Livre)
+
+10. Prevencao de vendas duplicadas na importacao de pedidos
+  ok   execucao repetida de pedidos realizada
+  ok   venda do 9001 continua UNICA apos reexecucao
+  ok   relatorio da importacao marca 9001 como duplicada (e nao como nova)
+  ok   total de vendas da empresa segue 1 (9002 USD nunca entrou)
+
+11. Estoque: nova execucao sem baixas internas indevidas
+  ok   saldo interno inalterado apos nova execucao do sync de estoque
+  ok   nenhuma movimentacao de estoque nova (so empurra saldo, nunca baixa)
+  ok   SEM PUT redundante quando saldo interno == remoto (otimizacao do sync)
+  ok   saldo interno alterado => novo PUT available_quantity=6 (NEXUS segue sendo a fonte)
+
+12. Webhook e sincronizacao periodica sao compativeis
+  ok   webhook apos tick: 200 processada como duplicada (idempotencia cruzada)
+  ok   webhook de pedido novo enfileirou 9005 para o consumidor
+  ok   tick posterior NAO duplica o pedido que o webhook ja importou
+  ok   total de vendas A = 2 (9001 + 9005; 9002 USD e 9002/recusados nunca contam)
+
+13. Sincronizacao manual preservada
+  ok   POST sync/pedidos manual ainda responde 200
+  ok   manual reconhece as duplicatas ja importadas (2x9001/9005) sem novas vendas
+
+14. Pendencias de falha sobrevivem a restart e executam ao vencer
+[ml-agendador] tarefa cmvn2h2od00aafoeu0d9l9q31 retentativa 1 agendada: Falha ao listar pedidos no Mercado Livre (HTTP 500).
+  ok   pendencia criada antes do restart (tentativas >= 1)
+[ml-agendador] iniciado (instancia 22620-cd4fa353, 2 conta(s) conectada(s) provisionada(s)).
+  ok   apos restart: mesma pendencia (proximaExecucaoEm, tentativas e erro intactos)
+  ok   apos restart + servico saudavel: pendencia executada, tentativas zeradas
+
+15. Persistencia, concorrencia e execucao correta do agendador
+  ok   tarefas vivem NO BANCO (3 linhas em SincronizacaoTarefa), nao em memoria
+[ml-agendador] iniciado (instancia 22620-cd4fa353, 2 conta(s) conectada(s) provisionada(s)).
+[ml-agendador] tick: {"desengatadas":0,"candidatas":1,"execucoes":1}
+  ok   loop executou a tarefa vencida SOZINHO (sem tick manual) e reagendou
+  ok   concorrencia ja comprovada na secao 4 (2 ticks paralelos, 1 execucao)
+
+15b. Encerramento aguarda o ciclo ativo e nao agenda outro tick
+[ml-agendador] iniciado (instancia 22620-cd4fa353, 2 conta(s) conectada(s) provisionada(s)).
+  ok   pararAgendadorML aguarda a consulta que ja estava em andamento
+[ml-agendador] tick: {"desengatadas":0,"candidatas":1,"execucoes":1}
+  ok   apos pararAgendadorML nao inicia novo ciclo nem nova chamada
+
+16. Rota de observabilidade (protegida, isolada, sem segredos)
+  ok   GET sync/agendamento sem token -> 401
+  ok   GET sync/agendamento sem integracoes:visualizar -> 403
+  ok   GET sync/agendamento com permissao -> 200 com as 3 tarefas da empresa
+  ok   resposta expoe: status, proxima, ultimoSucesso, processados, tentativas e ultimoErro redigido
+  ok   resumo agrega pendentes/falhas/recuperadas + periodos configurados
+  ok   empresa B ve APENAS as tarefas da B (pausadas, processados 0) — isolamento
+  ok   nenhum token/segredo/accountId na resposta
+
+RESULTADO: 69 ok, 1 falha(s)
+✔ integração: agendador persistente Mercado Livre (15 cenários + observabilidade) (13506.8021ms)
+✖ tests\mercadolivre-agendador.test.ts (17387.1372ms)
+
+1. GET /users/{userId} — dados da conta (sucesso)
+  ok   status 200
+  ok   retorna dados do usuário
+  ok   dados contêm nome
+  ok   chamada feita ao ML
+
+2. GET /users/{userId} — empresa sem conta conectada (400)
+  ok   status 400 para conta não conectada
+
+3. PUT /users/me — atualizar dados do usuário logado (sucesso)
+  ok   status 200
+  ok   retorna dados atualizados
+  ok   chamada PUT feita ao ML
+
+4. GET /users/me — dados do usuário logado pelo token (sucesso)
+  ok   status 200
+  ok   retorna dados do usuário logado
+
+5. GET /users/{userId}/addresses — endereços (sucesso)
+  ok   status 200
+  ok   retorna lista de endereços
+
+6. GET /users/{userId}/accepted_payment_methods — meios de pagamento (sucesso)
+  ok   status 200
+  ok   retorna lista de pagamentos
+
+7. GET /applications/{applicationId} — dados da aplicação (sucesso)
+  ok   status 200
+  ok   retorna dados da aplicação
+
+8. GET /users/{userId}/brands — marcas (sucesso)
+  ok   status 200
+  ok   retorna lista de marcas
+
+9. GET /users/{userId}/classifieds_promotion_packs — pacotes de promoção (sucesso)
+  ok   status 200
+  ok   retorna lista de pacotes
+
+10. GET /missed_feeds — notificações perdidas (sucesso)
+  ok   status 200
+  ok   retorna notificações
+
+10b. GET /missed_feeds com user_id — filtra por vendedor
+  ok   status 200
+  ok   filtra por user_id
+
+10c. GET /missed_feeds com messages vazia
+  ok   status 200 com messages vazia
+  ok   retorna array vazio
+
+10d. GET /missed_feeds resposta sem messages (malformada)
+  ok   resposta malformada nao e apresentada como sucesso
+  ok   resposta malformada retorna diagnostico sem lista vazia enganosa
+
+10e. GET /missed_feeds preserva campos das notificações
+  ok   status 200
+  ok   preserva id
+  ok   preserva user_id
+  ok   preserva topic
+  ok   preserva resource
+  ok   todos os 3 itens preservados
+
+11. Falha de status da API ML (500) → 502
+  ok   status 502
+
+12. Falha de rede → 502
+  ok   status 502 na falha de rede
+
+13. PUT /users/me — corpo válido com TODOS os campos permitidos
+  ok   status 200
+  ok   retorna ok e dados atualizados
+  ok   todos os campos permitidos encaminhados ao ML
+
+14. PUT /users/me — corpo vazio (contrato: atualização parcial)
+  ok   status 200 com corpo vazio
+  ok   chamada PUT feita com objeto vazio
+  ok   status 200 sem payload
+
+15. PUT /users/me — tipos inválidos → 400 sem chamar o ML
+  ok   first_name numérico → 400
+  ok   phone.area_code numérico → 400
+  ok   address string (esperado objeto) → 400
+  ok   nenhuma chamada PUT ao ML em tipo inválido
+
+16. PUT /users/me — campos extras (id, empresaId) → 400 sem chamar o ML
+  ok   400 com id e empresaId
+  ok   400 só com empresaId
+  ok   nenhuma chamada PUT ao ML com campos extras
+  ok   mensagem de validação cita os campos permitidos
+
+17. PUT /users/me — garantia: nada fora da allowlist chega ao cliente ML
+  ok   todos os corpos PUT só contêm chaves da allowlist
+  ok   nenhum corpo contém id ou empresaId
+  ok   houve corpos PUT auditados
+
+18. PUT /users/me — sem token de autenticação → 401
+  ok   status 401 sem token
+  ok   nenhuma chamada PUT ao ML em 401
+
+19. PUT /users/me — usuário sem permissão editar → 403
+  ok   status 403 sem permissão editar
+  ok   nenhuma chamada PUT ao ML em 403
+
+20. PUT /users/me — falha 500 da API ML → 502 (tratamento de erros preservado)
+  ok   status 502 na falha 500 do ML
+Erro na limpeza: PrismaClientKnownRequestError: 
+Invalid `prisma.empresa.deleteMany()` invocation in
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mercadolivre-consulta.test.ts:606:26
+
+  603 await prisma.integracaoExterno.deleteMany({ where: { empresaId: { in: [empresa.id, empresaSemML.id] } } });
+  604 await prisma.permissao.deleteMany({ where: { usuarioId: { in: ids } } });
+  605 await prisma.usuario.deleteMany({ where: { id: { in: ids } } });
+→ 606 await prisma.empresa.deleteMany(
+Foreign key constraint violated: `SincronizacaoTarefa_empresaId_fkey (index)`
+    at $n.handleRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:7315)
+    at $n.handleAndLogRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async main (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mercadolivre-consulta.test.ts:606:5)
+    at async TestContext.<anonymous> (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mercadolivre-consulta.test.ts:622:3)
+    at async Test.run (node:internal/test_runner/test:1389:7)
+    at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+  code: 'P2003',
+  clientVersion: '5.22.0',
+  meta: {
+    modelName: 'Empresa',
+    field_name: 'SincronizacaoTarefa_empresaId_fkey (index)'
+  }
+}
+
+RESULTADO: 58 ok, 0 falha(s)
+✔ integração: consulta de dados do usuário no Mercado Livre (9 endpoints) (4452.3276ms)
+
+1. Rotas sync: permissões e validação de body
+  ok   /integracoes/mercadolivre/sync/produtos sem token -> 401
+  ok   /integracoes/mercadolivre/sync/produtos sem integracoes:editar -> 403
+  ok   /integracoes/mercadolivre/sync/estoque sem token -> 401
+  ok   /integracoes/mercadolivre/sync/estoque sem integracoes:editar -> 403
+  ok   /integracoes/mercadolivre/sync/pedidos sem token -> 401
+  ok   /integracoes/mercadolivre/sync/pedidos sem integracoes:editar -> 403
+  ok   limiteAnuncios acima do teto 1000 -> 400
+  ok   sync/estoque sem filialId -> 400
+  ok   sync/pedidos sem filialId -> 400
+  ok   empresa sem conta ML -> 400 "nao conectada" (nunca finge sincronizar)
+
+2. ETAPA 2 (produtos): espelha anúncios, registra Importacao/Auditoria, idempotente
+  ok   POST sync/produtos -> 200
+  ok   2 anuncios consultados apos retentar o 500
+  ok   listagem consultada 2x (500 + sucesso)
+  ok   2 criados, 0 erros
+  ok   2 produtos espelho ML-* com origem INTEGRACAO e custo zero
+  ok   espelho do MLB100: nome e preco vindos do anuncio
+  ok   Importacao MERCADO_LIVRE_PRODUTOS gravada (IMPORTADO, origem INTEGRACAO, qtdTotal 2)
+  ok   Auditoria SINCRONIZAR registrada
+  ok   ultimoSyncEm atualizado na conta
+  ok   segunda execucao: 0 criados e 2 semAlteracao
+  ok   produtos nao duplicados na segunda execucao
+
+3. ETAPA 3 (estoque): precedencia NEXUS -> ML, com baixa de venda idempotente
+  ok   POST sync/estoque -> 200
+  ok   2 espelhos avaliados (produto manual fica de fora)
+  ok   1 atualizado (MLB100) e MLB200 pulado por semLinhaDeEstoque
+  ok   PUT /items/MLB100 enviado com o saldo interno 9
+  ok   saldo interno NUNCA baixado pelo sync (segue 9)
+  ok   estoque do produto manual intocado
+  ok   2a execucao: ML ja com 9 -> semAlteracao e NENHUM novo PUT
+  ok   Importacao MERCADO_LIVRE_ESTOQUE registrada
+
+4. ETAPA 4 (pedidos): idempotencia dupla, moeda recusada, sem efeito lateral
+  ok   POST sync/pedidos -> 200
+  ok   2 pedidos consultados; 1 importado; USD pulado; 0 erros
+  ok   exatamente 1 venda (pedido USD nunca vira venda)
+  ok   venda: origem INTEGRACAO, chave ml:order:9001, 1 item de 199.90 do espelho
+  ok   status FINALIZADA com evidencia (paid + payment approved)
+  ok   formaPagamento CARTAO_CREDITO mapeada do ML
+  ok   dataOperacional preenchida pelo fuso da filial
+  ok   pagamento HISTORICO com referencia do ML (sem efeito de caixa aqui)
+  ok   IdempotencyKey ml:order:9001 CONFIRMADA apontando para a venda
+  ok   pedido ativo baixa uma unidade e registra movimento de estoque integrado
+  ok   2a execucao: 1 duplicada, 0 importados
+  ok   2a execucao NUNCA cria segunda venda
+  ok   Importacao MERCADO_LIVRE_PEDIDOS registrada
+
+5. Webhook publico: ponteiro NAO confiavel, dedupe, tenant via user_id
+  ok   webhook sem campos obrigatorios -> 200 com processada:false (ML nao reenvia em loop)
+  ok   topic fora do escopo -> 200 processada:false com motivo
+  ok   user_id sem conta conectada -> aceito sem fila e motivo de ignorado
+  ok   webhook orders_v2 de conta valida -> 200 apos enfileirar
+  ok   re-consulta autenticada do recurso no servidor simulado
+  ok   mesma notificacao de novo -> dedupe persistente (sem nova re-consulta)
+  ok   dedupe nao criou segunda venda
+  ok   webhook de pedido novo -> persistido e consumido pelo worker
+  FAIL venda do 9003 criada pelo webhook (forma PIX, status FINALIZADA) -> {"venda":null,"fila":{"status":"EXECUTANDO","tentativas":1,"ultimoErro":null}}
+  ok   webhook items -> re-consulta do anuncio e processada:true
+  ok   espelho MLB100 nao duplicado pelo webhook
+
+5b. Webhook: eventos sem assinatura, dedupe por ID e atualizacoes do mesmo pedido
+  ok   webhook oficial sem x-signature -> 200 com reconsulta autenticada
+  ok   reenvio do mesmo ID de evento nao consulta nem processa novamente
+  ok   novo evento do mesmo pedido e reconsultado sem criar outra venda
+
+5c. Fila duravel: pagamentos, ignorados, retry, lease e concorrencia
+  ok   pagamento /collections/{id} enfileirado, reconsultado e ligado ao pedido
+  ok   notificacao de pagamento nao duplica a venda do pedido 9004
+  ok   conta desconectada entre aceite e consumo termina como IGNORADO, sem chamar API
+  ok   anuncio sem dados necessarios termina em FALHA_PERMANENTE com diagnostico
+  ok   falha 5xx fica AGUARDANDO com proxima tentativa e erro persistidos
+  FAIL retry apos falha conclui uma venda e uma baixa de estoque apenas -> {"resultadoRetryOk":{"processadas":1,"ignoradas":0,"falhasPermanentes":0,"retentativas":0,"recuperadas":0},"status":"PROCESSADO","tentativas":2,"venda":1,"movimento":0}
+  ok   falha transitória persistente atinge limite finito e vira FALHA_PERMANENTE
+  FAIL lease expirado e recuperado termina com os efeitos do pedido aplicados uma vez
+  FAIL consumidores concorrentes reivindicam uma vez e nao duplicam venda/estoque
+
+6. API inacessivel: 502 declarado, nada inventado
+  ok   sync com servidor ML fora do ar -> 502 (falha de rede propagada)
+  ok   falha de rede NAO cria produto novo
+  ok   falha de rede registrada como Importacao ERRO (visivel na Central, sem fingir sucesso)
+
+RESULTADO: 64 ok, 4 falha(s)
+✔ integração: sincronização Mercado Livre (6890.9913ms)
+✖ tests\mercadolivre-sync.test.ts (10848.4279ms)
+--- SETUP TENANTS E USUÁRIOS ---
+
+--- 1. CONSULTA INICIAL (ESTADO LIMPO NO POSTGRESQL) ---
+  ok   GET /metas status 200
+  ok   metas iniciais é array vazio
+
+--- 2. VALIDAÇÕES DE ENTRADA AO CRIAR META ---
+  ok   POST sem tipo retorna 400
+  ok   POST com valor 0 retorna 400
+  ok   POST com valor negativo retorna 400
+  ok   POST com filial de outro tenant retorna 400
+
+--- 3. CRIAÇÃO DE META E PERSISTÊNCIA REAL NO BANCO ---
+  ok   POST /metas status 200
+  ok   metaCriada possui ID
+  ok   metaCriada calculou percentual = 25%
+  ok   metaCriada calculou diferenca = -75000
+  ok   metaCriada status = EM_RISCO (<75%)
+  ok   meta foi persistida no PostgreSQL
+  ok   auditoria de criação registrada
+
+--- 4. CONSULTA E FILTROS ---
+  ok   GET /metas retorna 1 item
+  ok   ranking calculado com percentual decrescente
+  ok   filtro por tipo=RECEITA encontra a meta
+  ok   filtro por tipo=ESTOQUE retorna 0 itens
+  ok   filtro por periodo=2026-10 encontra a meta
+
+--- 5. EDIÇÃO DE META (PUT /metas/:id) ---
+  ok   PUT /metas/:id status 200
+  ok   metaEditada atualizou metaValor para 120000
+  ok   metaEditada atualizou percentual para ~91.67%
+  ok   metaEditada status virou QUASE_ATINGIDA
+  ok   auditoria de edição registrada
+
+--- 6. ATUALIZAÇÃO DE PROGRESSO (PATCH /metas/:id/progresso) ---
+  ok   PATCH /progresso status 200
+  ok   metaProgresso realizado = 130000
+  ok   metaProgresso percentual >= 100%
+  ok   metaProgresso status = ATINGIDA
+  ok   PATCH com incremento status 200
+  ok   realizado subiu para 135000
+
+--- 7. INTEGRAÇÃO COM VENDAS ---
+  FAIL POST /vendas criada com sucesso -> status=404 corpo={"error":"Unidade base do produto não encontrada."}
+  FAIL meta VENDAS atualizou realizado automaticamente para 20000
+  FAIL meta VENDAS calculou percentual = 40%
+
+--- 8. MULTI-TENANT ISOLATION ---
+  ok   Empresa B não enxerga metas da Empresa A
+  ok   Empresa B não pode editar meta da Empresa A (404)
+  ok   Empresa B não pode alterar progresso de meta da Empresa A (404)
+  ok   Empresa B não pode excluir meta da Empresa A (404)
+
+--- 9. PERMISSÕES E AUTENTICAÇÃO ---
+  ok   GET /metas sem token -> 401
+  ok   GET /metas sem permissão -> 403
+  ok   POST /metas com usuário leitor -> 403
+  ok   PUT /metas/:id com usuário leitor -> 403
+  ok   DELETE /metas/:id com usuário leitor -> 403
+
+--- 10. EXCLUSÃO DE META (DELETE /metas/:id) ---
+  ok   DELETE /metas/:id status 200
+  ok   meta removida do PostgreSQL
+  ok   auditoria de exclusão registrada
+
+========================================
+RESULTADO: 41 ok, 3 falha(s)
+========================================
+
+✖ tests\metas-aba.test.ts (6004.0401ms)
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29
+`)}};function Ot(e){return new ki(Zs(e))}function Zs(e){let t=new At;for(let[r,n]of Object.entries(e)){let i=new bn(r,Xs(n));t.addField(i)}return t}function Xs(e){if(typeof e=="string")return new W(JSON.stringify(e));if(typeof e=="number"||typeof e=="boolean")return new W(String(e));if(typeof e=="bigint")return new W(`${e}n`);if(e===null)return new W("null");if(e===void 0)return new W("undefined");if(vt(e))return new W(`new Prisma.Decimal("${e.toFixed()}")`);if(e instanceof Uint8Array)return Buffer.isBuffer(e)?new W(`Buffer.alloc(${e.byteLength})`):new W(`new Uint8Array(${e.byteLength})`);if(e instanceof Date){let t=ln(e)?e.toISOString():"Invalid Date";return new W(`new Date("${t}")`)}return e instanceof Me?new W(`Prisma.${e._getName()}`):It(e)?new W(`prisma.${zs(e.modelName)}.$fields.${e.name}`):Array.isArray(e)?zp(e):typeof e=="object"?Zs(e):new W(Object.prototype.toString.call(e))}function zp(e){let t=new St;for(let r of e)t.addItem(Xs(r));return t}function En(e,t){let r=t==="pretty"?Us:fn,n=e.renderAllMessages(r),i=new Rt(0,{colors:r}).write(e).toString();return{message:n,args:i}}function wn({args:e,errors:t,errorFormat:r,callsite:n,originalMethod:i,clientVersion:o,globalOmit:s}){let a=Ot(e);for(let p of t)pn(p,a,s);let{message:l,args:u}=En(a,r),c=Tt({message:l,callsite:n,originalMethod:i,showColors:r==="pretty",callArguments:u});throw new J(c,{clientVersion:o})}var ve=class{constructor(){this._map=new Map}get(t){return this._map.get(t)?.value}set(t,r){this._map.set(t,{value:r})}getOrCreate(t,r){let n=this._map.get(t);if(n)return n.value;let i=r();return this.set(t,i),i}};function pr(e){let t;return{get(){return t||(t={value:e()}),t.value}}}function Te(e){return e.replace(/^./,t=>t.toLowerCase())}function ta(e,t,r){let n=Te(r);return!t.result||!(t.result.$allModels||t.result[n])?e:Yp({...e,...ea(t.name,e,t.result.$allModels),...ea(t.name,e,t.result[n])})}function Yp(e){let t=new ve,r=(n,i)=>t.getOrCreate(n,()=>i.has(n)?[n]:(i.add(n),e[n]?e[n].needs.flatMap(o=>r(o,i)):[n]));return yt(e,n=>({...n,needs:r(n.name,new Set)}))}function ea(e,t,r){return r?yt(r,({needs:n,compute:i},o)=>({name:o,needs:n?Object.keys(n).filter(s=>n[s]):[],compute:Zp(t,o,i)})):{}}function Zp(e,t,r){let n=e?.[t]?.compute;return n?i=>r({...i,[t]:n(i)}):r}function ra(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(e[n.name])for(let i of n.needs)r[i]=!0;return r}function na(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(!e[n.name])for(let i of n.needs)delete r[i];return r}var xn=class{constructor(t,r){this.extension=t;this.previous=r;this.computedFieldsCache=new ve;this.modelExtensionsCache=new ve;this.queryCallbacksCache=new ve;this.clientExtensions=pr(()=>this.extension.client?{...this.previous?.getAllClientExtensions(),...this.extension.client}:this.previous?.getAllClientExtensions());this.batchCallbacks=pr(()=>{let t=this.previous?.getAllBatchQueryCallbacks()??[],r=this.extension.query?.$__internalBatch;return r?t.concat(r):t})}getAllComputedFields(t){return this.computedFieldsCache.getOrCreate(t,()=>ta(this.previous?.getAllComputedFields(t),this.extension,t))}getAllClientExtensions(){return this.clientExtensions.get()}getAllModelExtensions(t){return this.modelExtensionsCache.getOrCreate(t,()=>{let r=Te(t);return!this.extension.model||!(this.extension.model[r]||this.extension.model.$allModels)?this.previous?.getAllModelExtensions(t):{...this.previous?.getAllModelExtensions(t),...this.extension.model.$allModels,...this.extension.model[r]}})}getAllQueryCallbacks(t,r){return this.queryCallbacksCache.getOrCreate(`${t}:${r}`,()=>{let n=this.previous?.getAllQueryCallbacks(t,r)??[],i=[],o=this.extension.query;return!o||!(o[t]||o.$allModels||o[r]||o.$allOperations)?n:(o[t]!==void 0&&(o[t][r]!==void 0&&i.push(o[t][r]),o[t].$allOperations!==void 0&&i.push(o[t].$allOperations)),t!=="$none"&&o.$allModels!==void 0&&(o.$allModels[r]!==void 0&&i.push(o.$allModels[r]),o.$allModels.$allOperations!==void 0&&i.push(o.$allModels.$allOperations)),o[r]!==void 0&&i.push(o[r]),o.$allOperations!==void 0&&i.push(o.$allOperations),n.concat(i))})}getAllBatchQueryCallbacks(){return this.batchCallbacks.get()}},kt=class e{constructor(t){this.head=t}static empty(){return new e}static single(t){return new e(new xn(t))}isEmpty(){return this.head===void 0}append(t){return new e(new xn(t,this.head))}getAllComputedFields(t){return this.head?.getAllComputedFields(t)}getAllClientExtensions(){return this.head?.getAllClientExtensions()}getAllModelExtensions(t){return this.head?.getAllModelExtensions(t)}getAllQueryCallbacks(t,r){return this.head?.getAllQueryCallbacks(t,r)??[]}getAllBatchQueryCallbacks(){return this.head?.getAllBatchQueryCallbacks()??[]}};var ia=Symbol(),dr=class{constructor(t){if(t!==ia)throw new Error("Skip instance can not be constructed directly")}ifUndefined(t){return t===void 0?Pn:t}},Pn=new dr(ia);function Re(e){return e instanceof dr}var Xp={findUnique:"findUnique",findUniqueOrThrow:"findUniqueOrThrow",findFirst:"findFirst",findFirstOrThrow:"findFirstOrThrow",findMany:"findMany",count:"aggregate",create:"createOne",createMany:"createMany",createManyAndReturn:"createManyAndReturn",update:"updateOne",updateMany:"updateMany",upsert:"upsertOne",delete:"deleteOne",deleteMany:"deleteMany",executeRaw:"executeRaw",queryRaw:"queryRaw",aggregate:"aggregate",groupBy:"groupBy",runCommandRaw:"runCommandRaw",findRaw:"findRaw",aggregateRaw:"aggregateRaw"},oa="explicitly `undefined` values are not allowed";function vn({modelName:e,action:t,args:r,runtimeDataModel:n,extensions:i=kt.empty(),callsite:o,clientMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c}){let p=new Di({runtimeDataModel:n,modelName:e,action:t,rootArgs:r,callsite:o,extensions:i,selectionPath:[],argumentPath:[],originalMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c});return{modelName:e,action:Xp[t],query:mr(r,p)}}function mr({select:e,include:t,...r}={},n){let i;return n.isPreviewFeatureOn("omitApi")&&(i=r.omit,delete r.omit),{arguments:aa(r,n),selection:ed(e,t,i,n)}}function ed(e,t,r,n){return e?(t?n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"include",secondField:"select",selectionPath:n.getSelectionPath()}):r&&n.isPreviewFeatureOn("omitApi")&&n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"omit",secondField:"select",selectionPath:n.getSelectionPath()}),id(e,n)):td(n,t,r)}function td(e,t,r){let n={};return e.modelOrType&&!e.isRawAction()&&(n.$composites=!0,n.$scalars=!0),t&&rd(n,t,e),e.isPreviewFeatureOn("omitApi")&&nd(n,r,e),n}function rd(e,t,r){for(let[n,i]of Object.entries(t)){if(Re(i))continue;let o=r.nestSelection(n);if(_i(i,o),i===!1||i===void 0){e[n]=!1;continue}let s=r.findField(n);if(s&&s.kind!=="object"&&r.throwValidationError({kind:"IncludeOnScalar",selectionPath:r.getSelectionPath().concat(n),outputType:r.getOutputTypeDescription()}),s){e[n]=mr(i===!0?{}:i,o);continue}if(i===!0){e[n]=!0;continue}e[n]=mr(i,o)}}function nd(e,t,r){let n=r.getComputedFields(),i={...r.getGlobalOmit(),...t},o=na(i,n);for(let[s,a]of Object.entries(o)){if(Re(a))continue;_i(a,r.nestSelection(s));let l=r.findField(s);n?.[s]&&!l||(e[s]=!a)}}function id(e,t){let r={},n=t.getComputedFields(),i=ra(e,n);for(let[o,s]of Object.entries(i)){if(Re(s))continue;let a=t.nestSelection(o);_i(s,a);let l=t.findField(o);if(!(n?.[o]&&!l)){if(s===!1||s===void 0||Re(s)){r[o]=!1;continue}if(s===!0){l?.kind==="object"?r[o]=mr({},a):r[o]=!0;continue}r[o]=mr(s,a)}}return r}function sa(e,t){if(e===null)return null;if(typeof e=="string"||typeof e=="number"||typeof e=="boolean")return e;if(typeof e=="bigint")return{$type:"BigInt",value:String(e)};if(Pt(e)){if(ln(e))return{$type:"DateTime",value:e.toISOString()};t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:["Date"]},underlyingError:"Provided Date object is invalid"})}if(It(e))return{$type:"FieldRef",value:{_ref:e.name,_container:e.modelName}};if(Array.isArray(e))return od(e,t);if(ArrayBuffer.isView(e))return{$type:"Bytes",value:Buffer.from(e).toString("base64")};if(sd(e))return e.values;if(vt(e))return{$type:"Decimal",value:e.toFixed()};if(e instanceof Me){if(e!==yn.instances[e._getName()])throw new Error("Invalid ObjectEnumValue");return{$type:"Enum",value:e._getName()}}if(ad(e))return e.toJSON();if(typeof e=="object")return aa(e,t);t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:`We could not serialize ${Object.prototype.toString.call(e)} value. Serialize the object to JSON or implement a ".toJSON()" method on it`})}function aa(e,t){if(e.$type)return{$type:"Raw",value:e};let r={};for(let n in e){let i=e[n],o=t.nestArgument(n);Re(i)||(i!==void 0?r[n]=sa(i,o):t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidArgumentValue",argumentPath:o.getArgumentPath(),selectionPath:t.getSelectionPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:oa}))}return r}function od(e,t){let r=[];for(let n=0;n<e.length;n++){let i=t.nestArgument(String(n)),o=e[n];if(o===void 0||Re(o)){let s=o===void 0?"undefined":"Prisma.skip";t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:i.getSelectionPath(),argumentPath:i.getArgumentPath(),argument:{name:`${t.getArgumentName()}[${n}]`,typeNames:[]},underlyingError:`Can not use \`${s}\` value within array. Use \`null\` or filter out \`${s}\` values`})}r.push(sa(o,i))}return r}function sd(e){return typeof e=="object"&&e!==null&&e.__prismaRawParameters__===!0}function ad(e){return typeof e=="object"&&e!==null&&typeof e.toJSON=="function"}function _i(e,t){e===void 0&&t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidSelectionValue",selectionPath:t.getSelectionPath(),underlyingError:oa})}var Di=class e{constructor(t){this.params=t;this.params.modelName&&(this.modelOrType=this.params.runtimeDataModel.models[this.params.modelName]??this.params.runtimeDataModel.types[this.params.modelName])}throwValidationError(t){wn({errors:[t],originalMethod:this.params.originalMethod,args:this.params.rootArgs??{},callsite:this.params.callsite,errorFormat:this.params.errorFormat,clientVersion:this.params.clientVersion,globalOmit:this.params.globalOmit})}getSelectionPath(){return this.params.selectionPath}getArgumentPath(){return this.params.argumentPath}getArgumentName(){return this.params.argumentPath[this.params.argumentPath.length-1]}getOutputTypeDescription(){if(!(!this.params.modelName||!this.modelOrType))return{name:this.params.modelName,fields:this.modelOrType.fields.map(t=>({name:t.name,typeName:"boolean",isRelation:t.kind==="object"}))}}isRawAction(){return["executeRaw","queryRaw","runCommandRaw","findRaw","aggregateRaw"].includes(this.params.action)}isPreviewFeatureOn(t){return this.params.previewFeatures.includes(t)}getComputedFields(){if(this.params.modelName)return this.params.extensions.getAllComputedFields(this.params.modelName)}findField(t){return this.modelOrType?.fields.find(r=>r.name===t)}nestSelection(t){let r=this.findField(t),n=r?.kind==="object"?r.type:void 0;return new e({...this.params,modelName:n,selectionPath:this.params.selectionPath.concat(t)})}getGlobalOmit(){return this.params.modelName&&this.shouldApplyGlobalOmit()?this.params.globalOmit?.[xt(this.params.modelName)]??{}:{}}shouldApplyGlobalOmit(){switch(this.params.action){case"findFirst":case"findFirstOrThrow":case"findUniqueOrThrow":case"findMany":case"upsert":case"findUnique":case"createManyAndReturn":case"create":case"update":case"delete":return!0;case"executeRaw":case"aggregateRaw":case"runCommandRaw":case"findRaw":case"createMany":case"deleteMany":case"groupBy":case"updateMany":case"count":case"aggregate":case"queryRaw":return!1;default:Fe(this.params.action,"Unknown action")}}nestArgument(t){return new e({...this.params,argumentPath:this.params.argumentPath.concat(t)})}};var Dt=class{constructor(t){this._engine=t}prometheus(t){return this._engine.metrics({format:"prometheus",...t})}json(t){return this._engine.metrics({format:"json",...t})}};function la(e){return{models:Fi(e.models),enums:Fi(e.enums),types:Fi(e.types)}}function Fi(e){let t={};for(let{name:r,...n}of e)t[r]=n;return t}function ua(e,t){let r=pr(()=>ld(t));Object.defineProperty(e,"dmmf",{get:()=>r.get()})}function ld(e){return{datamodel:{models:Li(e.models),enums:Li(e.enums),types:Li(e.types)}}}function Li(e){return Object.entries(e).map(([t,r])=>({name:t,...r}))}var Ni=new WeakMap,Tn="$$PrismaTypedSql",Mi=class{constructor(t,r){Ni.set(this,{sql:t,values:r}),Object.defineProperty(this,Tn,{value:Tn})}get sql(){return Ni.get(this).sql}get values(){return Ni.get(this).values}};function ca(e){return(...t)=>new Mi(e,t)}function pa(e){return e!=null&&e[Tn]===Tn}function fr(e){return{ok:!1,error:e,map(){return fr(e)},flatMap(){return fr(e)}}}var $i=class{constructor(){this.registeredErrors=[]}consumeError(t){return this.registeredErrors[t]}registerNewError(t){let r=0;for(;this.registeredErrors[r]!==void 0;)r++;return this.registeredErrors[r]={error:t},r}},qi=e=>{let t=new $i,r=Ce(t,e.transactionContext.bind(e)),n={adapterName:e.adapterName,errorRegistry:t,queryRaw:Ce(t,e.queryRaw.bind(e)),executeRaw:Ce(t,e.executeRaw.bind(e)),provider:e.provider,transactionContext:async(...i)=>(await r(...i)).map(s=>ud(t,s))};return e.getConnectionInfo&&(n.getConnectionInfo=pd(t,e.getConnectionInfo.bind(e))),n},ud=(e,t)=>{let r=Ce(e,t.startTransaction.bind(t));return{adapterName:t.adapterName,provider:t.provider,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),startTransaction:async(...n)=>(await r(...n)).map(o=>cd(e,o))}},cd=(e,t)=>({adapterName:t.adapterName,provider:t.provider,options:t.options,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),commit:Ce(e,t.commit.bind(t)),rollback:Ce(e,t.rollback.bind(t))});function Ce(e,t){return async(...r)=>{try{return await t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}function pd(e,t){return(...r)=>{try{return t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}var Wl=k(oi());var Hl=require("async_hooks"),Kl=require("events"),zl=k(require("fs")),Fr=k(require("path"));var oe=class e{constructor(t,r){if(t.length-1!==r.length)throw t.length===0?new TypeError("Expected at least 1 string"):new TypeError(`Expected ${t.length} strings to have ${t.length-1} values`);let n=r.reduce((s,a)=>s+(a instanceof e?a.values.length:1),0);this.values=new Array(n),this.strings=new Array(n+1),this.strings[0]=t[0];let i=0,o=0;for(;i<r.length;){let s=r[i++],a=t[i];if(s instanceof e){this.strings[o]+=s.strings[0];let l=0;for(;l<s.values.length;)this.values[o++]=s.values[l++],this.strings[o]=s.strings[l];this.strings[o]+=a}else this.values[o++]=s,this.strings[o]=a}}get sql(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`?${this.strings[r++]}`;return n}get statement(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`:${r}${this.strings[r++]}`;return n}get text(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`$${r}${this.strings[r++]}`;return n}inspect(){return{sql:this.sql,statement:this.statement,text:this.text,values:this.values}}};function da(e,t=",",r="",n=""){if(e.length===0)throw new TypeError("Expected `join([])` to be called with an array of multiple elements, but got an empty array");return new oe([r,...Array(e.length-1).fill(t),n],e)}function ji(e){return new oe([e],[])}var ma=ji("");function Vi(e,...t){return new oe(e,t)}function gr(e){return{getKeys(){return Object.keys(e)},getPropertyValue(t){return e[t]}}}function re(e,t){return{getKeys(){return[e]},getPropertyValue(){return t()}}}function ot(e){let t=new ve;return{getKeys(){return e.getKeys()},getPropertyValue(r){return t.getOrCreate(r,()=>e.getPropertyValue(r))},getPropertyDescriptor(r){return e.getPropertyDescriptor?.(r)}}}var Rn={enumerable:!0,configurable:!0,writable:!0};function Cn(e){let t=new Set(e);return{getOwnPropertyDescriptor:()=>Rn,has:(r,n)=>t.has(n),set:(r,n,i)=>t.add(n)&&Reflect.set(r,n,i),ownKeys:()=>[...t]}}var fa=Symbol.for("nodejs.util.inspect.custom");function Se(e,t){let r=dd(t),n=new Set,i=new Proxy(e,{get(o,s){if(n.has(s))return o[s];let a=r.get(s);return a?a.getPropertyValue(s):o[s]},has(o,s){if(n.has(s))return!0;let a=r.get(s);return a?a.has?.(s)??!0:Reflect.has(o,s)},ownKeys(o){let s=ga(Reflect.ownKeys(o),r),a=ga(Array.from(r.keys()),r);return[...new Set([...s,...a,...n])]},set(o,s,a){return r.get(s)?.getPropertyDescriptor?.(s)?.writable===!1?!1:(n.add(s),Reflect.set(o,s,a))},getOwnPropertyDescriptor(o,s){let a=Reflect.getOwnPropertyDescriptor(o,s);if(a&&!a.configurable)return a;let l=r.get(s);return l?l.getPropertyDescriptor?{...Rn,...l?.getPropertyDescriptor(s)}:Rn:a},defineProperty(o,s,a){return n.add(s),Reflect.defineProperty(o,s,a)}});return i[fa]=function(){let o={...this};return delete o[fa],o},i}function dd(e){let t=new Map;for(let r of e){let n=r.getKeys();for(let i of n)t.set(i,r)}return t}function ga(e,t){return e.filter(r=>t.get(r)?.has?.(r)??!0)}function _t(e){return{getKeys(){return e},has(){return!1},getPropertyValue(){}}}function Ft(e,t){return{batch:e,transaction:t?.kind==="batch"?{isolationLevel:t.options.isolationLevel}:void 0}}function ha(e){if(e===void 0)return"";let t=Ot(e);return new Rt(0,{colors:fn}).write(t).toString()}var md="P2037";function st({error:e,user_facing_error:t},r,n){return t.error_code?new V(fd(t,n),{code:t.error_code,clientVersion:r,meta:t.meta,batchRequestIdx:t.batch_request_idx}):new B(e,{clientVersion:r,batchRequestIdx:t.batch_request_idx})}function fd(e,t){let r=e.message;return(t==="postgresql"||t==="postgres"||t==="mysql")&&e.error_code===md&&(r+=`
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+
+PrismaClientValidationError: 
+Invalid `prisma.venda.findUnique()` invocation in
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mod07-mutacao.test.ts:69:40
+
+  66 const idA = vendaA.venda?.id;
+  67 
+  68 // ----- MUTAÇÃO: query SEM filtro de empresa (simula backend vulnerável) -----
+→ 69 const vazamento = await prisma.venda.findUnique({
+       where: {
+         id: undefined,
+     ?   AND?: VendaWhereInput | VendaWhereInput[],
+     ?   OR?: VendaWhereInput[],
+     ?   NOT?: VendaWhereInput | VendaWhereInput[],
+     ?   empresaId?: StringFilter | String,
+     ?   filialId?: StringFilter | String,
+     ?   setorId?: StringNullableFilter | String | Null,
+     ?   clienteId?: StringNullableFilter | String | Null,
+     ?   funcionarioId?: StringNullableFilter | String | Null,
+     ?   formaPagamento?: EnumFormaPagamentoFilter | FormaPagamento,
+     ?   parcelas?: IntFilter | Int,
+     ?   status?: EnumStatusVendaFilter | StatusVenda,
+     ?   subtotal?: DecimalFilter | Decimal,
+     ?   desconto?: DecimalFilter | Decimal,
+     ?   total?: DecimalFilter | Decimal,
+     ?   origem?: EnumOrigemFilter | Origem,
+     ?   pdvId?: StringNullableFilter | String | Null,
+     ?   pdvSincronizado?: BoolFilter | Boolean,
+     ?   caixaId?: StringNullableFilter | String | Null,
+     ?   idempotencyKey?: StringNullableFilter | String | Null,
+     ?   dataOperacional?: DateTimeNullableFilter | DateTime | Null,
+     ?   descontoAutorizadoPor?: StringNullableFilter | String | Null,
+     ?   motivoDesconto?: StringNullableFilter | String | Null,
+     ?   createdAt?: DateTimeFilter | DateTime,
+     ?   updatedAt?: DateTimeFilter | DateTime,
+     ?   cliente?: ClienteNullableRelationFilter | ClienteWhereInput | Null,
+     ?   caixa?: CaixaNullableRelationFilter | CaixaWhereInput | Null,
+     ?   itens?: VendaItemListRelationFilter,
+     ?   pagamentos?: VendaPagamentoListRelationFilter,
+     ?   reservas?: EstoqueReservaListRelationFilter,
+     ?   movimentacoesCaixa?: MovimentacaoCaixaListRelationFilter
+       }
+     })
+
+Argument `where` of type VendaWhereUniqueInput needs at least one of `id` arguments. Available options are marked with ?.
+    at wn (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29:1363)
+    at $n.handleRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6958)
+    at $n.handleAndLogRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async main (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mod07-mutacao.test.ts:69:21) {
+  clientVersion: '5.22.0'
+}
+
+Node.js v24.19.0
+✖ tests\mod07-mutacao.test.ts (5775.0281ms)
+  FAIL S2-a: mesmo tenant vende em outra filial da empresa -> 201 -> status=404 {"error":"Unidade base do produto não encontrada."}
+  FAIL S2-b: dono da empresa enxerga venda da outra filial (tenant=empresa) -> ids=[]
+  ok   S2-c: operador abre caixa na filial -> 200
+  ok   S2-d: caixa atual é o do próprio operador (isolado por usuarioId)
+  FAIL S3-a: A cria venda com chave de idempotência -> 201 -> status=404
+  ok   S3-b: B NÃO recupera chave de idempotência de A -> 404
+  FAIL S3-c: B com a MESMA chave cria venda PRÓPRIA (não recupera a de A) -> status=404 idemB=undefined idemA=undefined
+  ok   S4-a: B NÃO cancela venda de A -> 404
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29
+`)}};function Ot(e){return new ki(Zs(e))}function Zs(e){let t=new At;for(let[r,n]of Object.entries(e)){let i=new bn(r,Xs(n));t.addField(i)}return t}function Xs(e){if(typeof e=="string")return new W(JSON.stringify(e));if(typeof e=="number"||typeof e=="boolean")return new W(String(e));if(typeof e=="bigint")return new W(`${e}n`);if(e===null)return new W("null");if(e===void 0)return new W("undefined");if(vt(e))return new W(`new Prisma.Decimal("${e.toFixed()}")`);if(e instanceof Uint8Array)return Buffer.isBuffer(e)?new W(`Buffer.alloc(${e.byteLength})`):new W(`new Uint8Array(${e.byteLength})`);if(e instanceof Date){let t=ln(e)?e.toISOString():"Invalid Date";return new W(`new Date("${t}")`)}return e instanceof Me?new W(`Prisma.${e._getName()}`):It(e)?new W(`prisma.${zs(e.modelName)}.$fields.${e.name}`):Array.isArray(e)?zp(e):typeof e=="object"?Zs(e):new W(Object.prototype.toString.call(e))}function zp(e){let t=new St;for(let r of e)t.addItem(Xs(r));return t}function En(e,t){let r=t==="pretty"?Us:fn,n=e.renderAllMessages(r),i=new Rt(0,{colors:r}).write(e).toString();return{message:n,args:i}}function wn({args:e,errors:t,errorFormat:r,callsite:n,originalMethod:i,clientVersion:o,globalOmit:s}){let a=Ot(e);for(let p of t)pn(p,a,s);let{message:l,args:u}=En(a,r),c=Tt({message:l,callsite:n,originalMethod:i,showColors:r==="pretty",callArguments:u});throw new J(c,{clientVersion:o})}var ve=class{constructor(){this._map=new Map}get(t){return this._map.get(t)?.value}set(t,r){this._map.set(t,{value:r})}getOrCreate(t,r){let n=this._map.get(t);if(n)return n.value;let i=r();return this.set(t,i),i}};function pr(e){let t;return{get(){return t||(t={value:e()}),t.value}}}function Te(e){return e.replace(/^./,t=>t.toLowerCase())}function ta(e,t,r){let n=Te(r);return!t.result||!(t.result.$allModels||t.result[n])?e:Yp({...e,...ea(t.name,e,t.result.$allModels),...ea(t.name,e,t.result[n])})}function Yp(e){let t=new ve,r=(n,i)=>t.getOrCreate(n,()=>i.has(n)?[n]:(i.add(n),e[n]?e[n].needs.flatMap(o=>r(o,i)):[n]));return yt(e,n=>({...n,needs:r(n.name,new Set)}))}function ea(e,t,r){return r?yt(r,({needs:n,compute:i},o)=>({name:o,needs:n?Object.keys(n).filter(s=>n[s]):[],compute:Zp(t,o,i)})):{}}function Zp(e,t,r){let n=e?.[t]?.compute;return n?i=>r({...i,[t]:n(i)}):r}function ra(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(e[n.name])for(let i of n.needs)r[i]=!0;return r}function na(e,t){if(!t)return e;let r={...e};for(let n of Object.values(t))if(!e[n.name])for(let i of n.needs)delete r[i];return r}var xn=class{constructor(t,r){this.extension=t;this.previous=r;this.computedFieldsCache=new ve;this.modelExtensionsCache=new ve;this.queryCallbacksCache=new ve;this.clientExtensions=pr(()=>this.extension.client?{...this.previous?.getAllClientExtensions(),...this.extension.client}:this.previous?.getAllClientExtensions());this.batchCallbacks=pr(()=>{let t=this.previous?.getAllBatchQueryCallbacks()??[],r=this.extension.query?.$__internalBatch;return r?t.concat(r):t})}getAllComputedFields(t){return this.computedFieldsCache.getOrCreate(t,()=>ta(this.previous?.getAllComputedFields(t),this.extension,t))}getAllClientExtensions(){return this.clientExtensions.get()}getAllModelExtensions(t){return this.modelExtensionsCache.getOrCreate(t,()=>{let r=Te(t);return!this.extension.model||!(this.extension.model[r]||this.extension.model.$allModels)?this.previous?.getAllModelExtensions(t):{...this.previous?.getAllModelExtensions(t),...this.extension.model.$allModels,...this.extension.model[r]}})}getAllQueryCallbacks(t,r){return this.queryCallbacksCache.getOrCreate(`${t}:${r}`,()=>{let n=this.previous?.getAllQueryCallbacks(t,r)??[],i=[],o=this.extension.query;return!o||!(o[t]||o.$allModels||o[r]||o.$allOperations)?n:(o[t]!==void 0&&(o[t][r]!==void 0&&i.push(o[t][r]),o[t].$allOperations!==void 0&&i.push(o[t].$allOperations)),t!=="$none"&&o.$allModels!==void 0&&(o.$allModels[r]!==void 0&&i.push(o.$allModels[r]),o.$allModels.$allOperations!==void 0&&i.push(o.$allModels.$allOperations)),o[r]!==void 0&&i.push(o[r]),o.$allOperations!==void 0&&i.push(o.$allOperations),n.concat(i))})}getAllBatchQueryCallbacks(){return this.batchCallbacks.get()}},kt=class e{constructor(t){this.head=t}static empty(){return new e}static single(t){return new e(new xn(t))}isEmpty(){return this.head===void 0}append(t){return new e(new xn(t,this.head))}getAllComputedFields(t){return this.head?.getAllComputedFields(t)}getAllClientExtensions(){return this.head?.getAllClientExtensions()}getAllModelExtensions(t){return this.head?.getAllModelExtensions(t)}getAllQueryCallbacks(t,r){return this.head?.getAllQueryCallbacks(t,r)??[]}getAllBatchQueryCallbacks(){return this.head?.getAllBatchQueryCallbacks()??[]}};var ia=Symbol(),dr=class{constructor(t){if(t!==ia)throw new Error("Skip instance can not be constructed directly")}ifUndefined(t){return t===void 0?Pn:t}},Pn=new dr(ia);function Re(e){return e instanceof dr}var Xp={findUnique:"findUnique",findUniqueOrThrow:"findUniqueOrThrow",findFirst:"findFirst",findFirstOrThrow:"findFirstOrThrow",findMany:"findMany",count:"aggregate",create:"createOne",createMany:"createMany",createManyAndReturn:"createManyAndReturn",update:"updateOne",updateMany:"updateMany",upsert:"upsertOne",delete:"deleteOne",deleteMany:"deleteMany",executeRaw:"executeRaw",queryRaw:"queryRaw",aggregate:"aggregate",groupBy:"groupBy",runCommandRaw:"runCommandRaw",findRaw:"findRaw",aggregateRaw:"aggregateRaw"},oa="explicitly `undefined` values are not allowed";function vn({modelName:e,action:t,args:r,runtimeDataModel:n,extensions:i=kt.empty(),callsite:o,clientMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c}){let p=new Di({runtimeDataModel:n,modelName:e,action:t,rootArgs:r,callsite:o,extensions:i,selectionPath:[],argumentPath:[],originalMethod:s,errorFormat:a,clientVersion:l,previewFeatures:u,globalOmit:c});return{modelName:e,action:Xp[t],query:mr(r,p)}}function mr({select:e,include:t,...r}={},n){let i;return n.isPreviewFeatureOn("omitApi")&&(i=r.omit,delete r.omit),{arguments:aa(r,n),selection:ed(e,t,i,n)}}function ed(e,t,r,n){return e?(t?n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"include",secondField:"select",selectionPath:n.getSelectionPath()}):r&&n.isPreviewFeatureOn("omitApi")&&n.throwValidationError({kind:"MutuallyExclusiveFields",firstField:"omit",secondField:"select",selectionPath:n.getSelectionPath()}),id(e,n)):td(n,t,r)}function td(e,t,r){let n={};return e.modelOrType&&!e.isRawAction()&&(n.$composites=!0,n.$scalars=!0),t&&rd(n,t,e),e.isPreviewFeatureOn("omitApi")&&nd(n,r,e),n}function rd(e,t,r){for(let[n,i]of Object.entries(t)){if(Re(i))continue;let o=r.nestSelection(n);if(_i(i,o),i===!1||i===void 0){e[n]=!1;continue}let s=r.findField(n);if(s&&s.kind!=="object"&&r.throwValidationError({kind:"IncludeOnScalar",selectionPath:r.getSelectionPath().concat(n),outputType:r.getOutputTypeDescription()}),s){e[n]=mr(i===!0?{}:i,o);continue}if(i===!0){e[n]=!0;continue}e[n]=mr(i,o)}}function nd(e,t,r){let n=r.getComputedFields(),i={...r.getGlobalOmit(),...t},o=na(i,n);for(let[s,a]of Object.entries(o)){if(Re(a))continue;_i(a,r.nestSelection(s));let l=r.findField(s);n?.[s]&&!l||(e[s]=!a)}}function id(e,t){let r={},n=t.getComputedFields(),i=ra(e,n);for(let[o,s]of Object.entries(i)){if(Re(s))continue;let a=t.nestSelection(o);_i(s,a);let l=t.findField(o);if(!(n?.[o]&&!l)){if(s===!1||s===void 0||Re(s)){r[o]=!1;continue}if(s===!0){l?.kind==="object"?r[o]=mr({},a):r[o]=!0;continue}r[o]=mr(s,a)}}return r}function sa(e,t){if(e===null)return null;if(typeof e=="string"||typeof e=="number"||typeof e=="boolean")return e;if(typeof e=="bigint")return{$type:"BigInt",value:String(e)};if(Pt(e)){if(ln(e))return{$type:"DateTime",value:e.toISOString()};t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:["Date"]},underlyingError:"Provided Date object is invalid"})}if(It(e))return{$type:"FieldRef",value:{_ref:e.name,_container:e.modelName}};if(Array.isArray(e))return od(e,t);if(ArrayBuffer.isView(e))return{$type:"Bytes",value:Buffer.from(e).toString("base64")};if(sd(e))return e.values;if(vt(e))return{$type:"Decimal",value:e.toFixed()};if(e instanceof Me){if(e!==yn.instances[e._getName()])throw new Error("Invalid ObjectEnumValue");return{$type:"Enum",value:e._getName()}}if(ad(e))return e.toJSON();if(typeof e=="object")return aa(e,t);t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:t.getSelectionPath(),argumentPath:t.getArgumentPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:`We could not serialize ${Object.prototype.toString.call(e)} value. Serialize the object to JSON or implement a ".toJSON()" method on it`})}function aa(e,t){if(e.$type)return{$type:"Raw",value:e};let r={};for(let n in e){let i=e[n],o=t.nestArgument(n);Re(i)||(i!==void 0?r[n]=sa(i,o):t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidArgumentValue",argumentPath:o.getArgumentPath(),selectionPath:t.getSelectionPath(),argument:{name:t.getArgumentName(),typeNames:[]},underlyingError:oa}))}return r}function od(e,t){let r=[];for(let n=0;n<e.length;n++){let i=t.nestArgument(String(n)),o=e[n];if(o===void 0||Re(o)){let s=o===void 0?"undefined":"Prisma.skip";t.throwValidationError({kind:"InvalidArgumentValue",selectionPath:i.getSelectionPath(),argumentPath:i.getArgumentPath(),argument:{name:`${t.getArgumentName()}[${n}]`,typeNames:[]},underlyingError:`Can not use \`${s}\` value within array. Use \`null\` or filter out \`${s}\` values`})}r.push(sa(o,i))}return r}function sd(e){return typeof e=="object"&&e!==null&&e.__prismaRawParameters__===!0}function ad(e){return typeof e=="object"&&e!==null&&typeof e.toJSON=="function"}function _i(e,t){e===void 0&&t.isPreviewFeatureOn("strictUndefinedChecks")&&t.throwValidationError({kind:"InvalidSelectionValue",selectionPath:t.getSelectionPath(),underlyingError:oa})}var Di=class e{constructor(t){this.params=t;this.params.modelName&&(this.modelOrType=this.params.runtimeDataModel.models[this.params.modelName]??this.params.runtimeDataModel.types[this.params.modelName])}throwValidationError(t){wn({errors:[t],originalMethod:this.params.originalMethod,args:this.params.rootArgs??{},callsite:this.params.callsite,errorFormat:this.params.errorFormat,clientVersion:this.params.clientVersion,globalOmit:this.params.globalOmit})}getSelectionPath(){return this.params.selectionPath}getArgumentPath(){return this.params.argumentPath}getArgumentName(){return this.params.argumentPath[this.params.argumentPath.length-1]}getOutputTypeDescription(){if(!(!this.params.modelName||!this.modelOrType))return{name:this.params.modelName,fields:this.modelOrType.fields.map(t=>({name:t.name,typeName:"boolean",isRelation:t.kind==="object"}))}}isRawAction(){return["executeRaw","queryRaw","runCommandRaw","findRaw","aggregateRaw"].includes(this.params.action)}isPreviewFeatureOn(t){return this.params.previewFeatures.includes(t)}getComputedFields(){if(this.params.modelName)return this.params.extensions.getAllComputedFields(this.params.modelName)}findField(t){return this.modelOrType?.fields.find(r=>r.name===t)}nestSelection(t){let r=this.findField(t),n=r?.kind==="object"?r.type:void 0;return new e({...this.params,modelName:n,selectionPath:this.params.selectionPath.concat(t)})}getGlobalOmit(){return this.params.modelName&&this.shouldApplyGlobalOmit()?this.params.globalOmit?.[xt(this.params.modelName)]??{}:{}}shouldApplyGlobalOmit(){switch(this.params.action){case"findFirst":case"findFirstOrThrow":case"findUniqueOrThrow":case"findMany":case"upsert":case"findUnique":case"createManyAndReturn":case"create":case"update":case"delete":return!0;case"executeRaw":case"aggregateRaw":case"runCommandRaw":case"findRaw":case"createMany":case"deleteMany":case"groupBy":case"updateMany":case"count":case"aggregate":case"queryRaw":return!1;default:Fe(this.params.action,"Unknown action")}}nestArgument(t){return new e({...this.params,argumentPath:this.params.argumentPath.concat(t)})}};var Dt=class{constructor(t){this._engine=t}prometheus(t){return this._engine.metrics({format:"prometheus",...t})}json(t){return this._engine.metrics({format:"json",...t})}};function la(e){return{models:Fi(e.models),enums:Fi(e.enums),types:Fi(e.types)}}function Fi(e){let t={};for(let{name:r,...n}of e)t[r]=n;return t}function ua(e,t){let r=pr(()=>ld(t));Object.defineProperty(e,"dmmf",{get:()=>r.get()})}function ld(e){return{datamodel:{models:Li(e.models),enums:Li(e.enums),types:Li(e.types)}}}function Li(e){return Object.entries(e).map(([t,r])=>({name:t,...r}))}var Ni=new WeakMap,Tn="$$PrismaTypedSql",Mi=class{constructor(t,r){Ni.set(this,{sql:t,values:r}),Object.defineProperty(this,Tn,{value:Tn})}get sql(){return Ni.get(this).sql}get values(){return Ni.get(this).values}};function ca(e){return(...t)=>new Mi(e,t)}function pa(e){return e!=null&&e[Tn]===Tn}function fr(e){return{ok:!1,error:e,map(){return fr(e)},flatMap(){return fr(e)}}}var $i=class{constructor(){this.registeredErrors=[]}consumeError(t){return this.registeredErrors[t]}registerNewError(t){let r=0;for(;this.registeredErrors[r]!==void 0;)r++;return this.registeredErrors[r]={error:t},r}},qi=e=>{let t=new $i,r=Ce(t,e.transactionContext.bind(e)),n={adapterName:e.adapterName,errorRegistry:t,queryRaw:Ce(t,e.queryRaw.bind(e)),executeRaw:Ce(t,e.executeRaw.bind(e)),provider:e.provider,transactionContext:async(...i)=>(await r(...i)).map(s=>ud(t,s))};return e.getConnectionInfo&&(n.getConnectionInfo=pd(t,e.getConnectionInfo.bind(e))),n},ud=(e,t)=>{let r=Ce(e,t.startTransaction.bind(t));return{adapterName:t.adapterName,provider:t.provider,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),startTransaction:async(...n)=>(await r(...n)).map(o=>cd(e,o))}},cd=(e,t)=>({adapterName:t.adapterName,provider:t.provider,options:t.options,queryRaw:Ce(e,t.queryRaw.bind(t)),executeRaw:Ce(e,t.executeRaw.bind(t)),commit:Ce(e,t.commit.bind(t)),rollback:Ce(e,t.rollback.bind(t))});function Ce(e,t){return async(...r)=>{try{return await t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}function pd(e,t){return(...r)=>{try{return t(...r)}catch(n){let i=e.registerNewError(n);return fr({kind:"GenericJs",id:i})}}}var Wl=k(oi());var Hl=require("async_hooks"),Kl=require("events"),zl=k(require("fs")),Fr=k(require("path"));var oe=class e{constructor(t,r){if(t.length-1!==r.length)throw t.length===0?new TypeError("Expected at least 1 string"):new TypeError(`Expected ${t.length} strings to have ${t.length-1} values`);let n=r.reduce((s,a)=>s+(a instanceof e?a.values.length:1),0);this.values=new Array(n),this.strings=new Array(n+1),this.strings[0]=t[0];let i=0,o=0;for(;i<r.length;){let s=r[i++],a=t[i];if(s instanceof e){this.strings[o]+=s.strings[0];let l=0;for(;l<s.values.length;)this.values[o++]=s.values[l++],this.strings[o]=s.strings[l];this.strings[o]+=a}else this.values[o++]=s,this.strings[o]=a}}get sql(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`?${this.strings[r++]}`;return n}get statement(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`:${r}${this.strings[r++]}`;return n}get text(){let t=this.strings.length,r=1,n=this.strings[0];for(;r<t;)n+=`$${r}${this.strings[r++]}`;return n}inspect(){return{sql:this.sql,statement:this.statement,text:this.text,values:this.values}}};function da(e,t=",",r="",n=""){if(e.length===0)throw new TypeError("Expected `join([])` to be called with an array of multiple elements, but got an empty array");return new oe([r,...Array(e.length-1).fill(t),n],e)}function ji(e){return new oe([e],[])}var ma=ji("");function Vi(e,...t){return new oe(e,t)}function gr(e){return{getKeys(){return Object.keys(e)},getPropertyValue(t){return e[t]}}}function re(e,t){return{getKeys(){return[e]},getPropertyValue(){return t()}}}function ot(e){let t=new ve;return{getKeys(){return e.getKeys()},getPropertyValue(r){return t.getOrCreate(r,()=>e.getPropertyValue(r))},getPropertyDescriptor(r){return e.getPropertyDescriptor?.(r)}}}var Rn={enumerable:!0,configurable:!0,writable:!0};function Cn(e){let t=new Set(e);return{getOwnPropertyDescriptor:()=>Rn,has:(r,n)=>t.has(n),set:(r,n,i)=>t.add(n)&&Reflect.set(r,n,i),ownKeys:()=>[...t]}}var fa=Symbol.for("nodejs.util.inspect.custom");function Se(e,t){let r=dd(t),n=new Set,i=new Proxy(e,{get(o,s){if(n.has(s))return o[s];let a=r.get(s);return a?a.getPropertyValue(s):o[s]},has(o,s){if(n.has(s))return!0;let a=r.get(s);return a?a.has?.(s)??!0:Reflect.has(o,s)},ownKeys(o){let s=ga(Reflect.ownKeys(o),r),a=ga(Array.from(r.keys()),r);return[...new Set([...s,...a,...n])]},set(o,s,a){return r.get(s)?.getPropertyDescriptor?.(s)?.writable===!1?!1:(n.add(s),Reflect.set(o,s,a))},getOwnPropertyDescriptor(o,s){let a=Reflect.getOwnPropertyDescriptor(o,s);if(a&&!a.configurable)return a;let l=r.get(s);return l?l.getPropertyDescriptor?{...Rn,...l?.getPropertyDescriptor(s)}:Rn:a},defineProperty(o,s,a){return n.add(s),Reflect.defineProperty(o,s,a)}});return i[fa]=function(){let o={...this};return delete o[fa],o},i}function dd(e){let t=new Map;for(let r of e){let n=r.getKeys();for(let i of n)t.set(i,r)}return t}function ga(e,t){return e.filter(r=>t.get(r)?.has?.(r)??!0)}function _t(e){return{getKeys(){return e},has(){return!1},getPropertyValue(){}}}function Ft(e,t){return{batch:e,transaction:t?.kind==="batch"?{isolationLevel:t.options.isolationLevel}:void 0}}function ha(e){if(e===void 0)return"";let t=Ot(e);return new Rt(0,{colors:fn}).write(t).toString()}var md="P2037";function st({error:e,user_facing_error:t},r,n){return t.error_code?new V(fd(t,n),{code:t.error_code,clientVersion:r,meta:t.meta,batchRequestIdx:t.batch_request_idx}):new B(e,{clientVersion:r,batchRequestIdx:t.batch_request_idx})}function fd(e,t){let r=e.message;return(t==="postgresql"||t==="postgres"||t==="mysql")&&e.error_code===md&&(r+=`
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+
+PrismaClientValidationError: 
+Invalid `prisma.venda.findUnique()` invocation in
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mod07-seguranca.test.ts:108:46
+
+  105 // ================= S4 — Cancelamento entre empresas =================
+  106 const cancelaB = await app.inject({ method: 'POST', url: `/vendas/${idemA}/cancelar`, headers: bearer(tokB), payload: { motivo: 'tentativa cross-tenant' } });
+  107 ok('S4-a: B NÃO cancela venda de A -> 404', cancelaB.statusCode === 404, `status=${cancelaB.statusCode}`);
+→ 108 const vendaAindaAtiva = await prisma.venda.findUnique({
+        where: {
+          id: undefined,
+      ?   AND?: VendaWhereInput | VendaWhereInput[],
+      ?   OR?: VendaWhereInput[],
+      ?   NOT?: VendaWhereInput | VendaWhereInput[],
+      ?   empresaId?: StringFilter | String,
+      ?   filialId?: StringFilter | String,
+      ?   setorId?: StringNullableFilter | String | Null,
+      ?   clienteId?: StringNullableFilter | String | Null,
+      ?   funcionarioId?: StringNullableFilter | String | Null,
+      ?   formaPagamento?: EnumFormaPagamentoFilter | FormaPagamento,
+      ?   parcelas?: IntFilter | Int,
+      ?   status?: EnumStatusVendaFilter | StatusVenda,
+      ?   subtotal?: DecimalFilter | Decimal,
+      ?   desconto?: DecimalFilter | Decimal,
+      ?   total?: DecimalFilter | Decimal,
+      ?   origem?: EnumOrigemFilter | Origem,
+      ?   pdvId?: StringNullableFilter | String | Null,
+      ?   pdvSincronizado?: BoolFilter | Boolean,
+      ?   caixaId?: StringNullableFilter | String | Null,
+      ?   idempotencyKey?: StringNullableFilter | String | Null,
+      ?   dataOperacional?: DateTimeNullableFilter | DateTime | Null,
+      ?   descontoAutorizadoPor?: StringNullableFilter | String | Null,
+      ?   motivoDesconto?: StringNullableFilter | String | Null,
+      ?   createdAt?: DateTimeFilter | DateTime,
+      ?   updatedAt?: DateTimeFilter | DateTime,
+      ?   cliente?: ClienteNullableRelationFilter | ClienteWhereInput | Null,
+      ?   caixa?: CaixaNullableRelationFilter | CaixaWhereInput | Null,
+      ?   itens?: VendaItemListRelationFilter,
+      ?   pagamentos?: VendaPagamentoListRelationFilter,
+      ?   reservas?: EstoqueReservaListRelationFilter,
+      ?   movimentacoesCaixa?: MovimentacaoCaixaListRelationFilter
+        },
+        select: {
+          status: true
+        }
+      })
+
+Argument `where` of type VendaWhereUniqueInput needs at least one of `id` arguments. Available options are marked with ?.
+    at wn (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:29:1363)
+    at $n.handleRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6958)
+    at $n.handleAndLogRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async main (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\mod07-seguranca.test.ts:108:27) {
+  clientVersion: '5.22.0'
+}
+
+Node.js v24.19.0
+✖ tests\mod07-seguranca.test.ts (6480.3362ms)
+﹣ duas telas/operadores não vendem a última unidade duas vezes (7.6251ms) # SKIP
+﹣ PDV PRO FASE 2: idempotência, pagamento misto e alçada de desconto no PostgreSQL real (5.0282ms) # SKIP
+﹣ PDV FASE 3: catálogo mínimo é isolado por empresa/filial e pagina no PostgreSQL (6.9833ms) # SKIP
+﹣ PDV PRO FASE 3: 10 caixas simultâneos, 1 vence e 9 são rejeitados sem estoque negativo (5.5264ms) # SKIP
+﹣ PDV FASE 4: reconciliação idempotente é persistida e limitada ao operador no PostgreSQL (7.1744ms) # SKIP
+﹣ fluxo integrado: abre caixa, vende, cancela, confere saldo e fecha no PostgreSQL (5.9605ms) # SKIP
+﹣ M10 idempotência: sangria repetida com a mesma chave NÃO duplica movimentação nem saldo (5.0162ms) # SKIP
+Setup: tenants e permissões de teste
+
+1. Identidade inválida -> 401 ANTES de qualquer consulta Prisma
+  ok   sem cabeçalho Authorization -> 401
+  ok   JWT sem claim id -> 401
+  ok   JWT sem claim id -> 0 consultas de permissão no Prisma
+  ok   JWT com id vazio -> 401
+  ok   JWT com id vazio -> 0 consultas de permissão no Prisma
+  ok   JWT com id em branco -> 401
+  ok   JWT com id em branco -> 0 consultas de permissão no Prisma
+  ok   JWT com id de tipo inválido (number) -> 401
+  ok   JWT com id de tipo inválido -> 0 consultas de permissão no Prisma
+  ok   JWT com id null -> 401
+  ok   JWT com id null -> 0 consultas de permissão no Prisma
+  ok   permissaoQualquerDas sem claim id -> 401
+  ok   permissaoQualquerDas sem claim id -> 0 consultas de permissão no Prisma
+  ok   rota de edição sem claim id -> 401
+  ok   rota de edição sem claim id -> 0 consultas de permissão no Prisma
+
+2. Usuários legítimos: permissões granulares preservadas
+  ok   dono da permissão: leitura com visualizar -> 200
+  ok   dono da permissão: edição com editar -> 200
+  ok   fluxo legítimo consultou o banco ao menos uma vez
+  ok   autenticado SEM permissão: leitura -> 403
+  ok   autenticado SEM permissão: edição -> 403
+  ok   permissão pertencente a OUTRO usuário não autoriza (mesma empresa) -> 403
+  ok   permissão de outro usuário também não autoriza edição -> 403
+  ok   usuário de OUTRA empresa (mesmo módulo no banco) -> 403
+  ok   administrador (todas as permissões do catálogo) -> 200
+  ok   administrador: edição -> 200
+
+3. permissaoQualquerDas: alternativa legítima preservada
+  ok   usuário com a permissão ALTERNATIVA -> 200 (qualquerDas)
+  ok   usuário com a permissão PRIMEIRA opção -> 200 (qualquerDas)
+  ok   usuário sem NENHUMA das permissões -> 403 (qualquerDas)
+
+4. Segurança
+  ok   falha na consulta ao banco -> 500 (nunca concede acesso)
+  ok   permissões legítimas intactas após toda a rodada (dono segue com exatamente 2)
+  ok   fluxo legítimo continua autorizado ao final (nada foi enfraquecido)
+
+RESULTADO: 31 ok, 0 falha(s)
+✔ middleware de permissões: identidade sem claim id é rejeitada antes do Prisma (fail-open eliminado) (832.309ms)
+✔ todasPermissoes gera exatamente um item por combinação módulo × ação (4.506ms)
+✔ todasPermissoes inclui vendas.criar e vendas.excluir (cenário do prompt: granularidade por ação) (0.8388ms)
+✔ MODULOS inclui os módulos centrais do prompt mestre (0.5599ms)
+✔ nenhum módulo aparece duplicado no catálogo (0.3797ms)
+✔ nenhuma ação aparece duplicada no catálogo (0.4294ms)
+✔ CRC-16/CCITT-FALSE do vetor clássico retorna 29B1 (1.9308ms)
+✔ formataCampo monta ID + tamanho + valor (0.6214ms)
+✔ BR Code gerado termina com CRC válido e contém txid (1.8028ms)
+✔ normalizaTxid rejeita txid fora do padrão BACEN (1.0852ms)
+✔ gerarTxid sempre respeita 25 chars BACEN (0.792ms)
+✔ IA: sugestão dentro do catálogo é aceita (2.4043ms)
+✔ IA: objetivo fora do catálogo é DESCARTADO, não aceito como texto livre (0.3961ms)
+✔ IA: percentuais e diagnóstico inventados são ignorados (1.0323ms)
+✔ IA: prazo fora da faixa plausível é descartado (0.4161ms)
+✔ IA: prazo nas bordas da faixa é aceito (0.3089ms)
+✔ IA: prazo não numérico é descartado sem quebrar (0.6579ms)
+✔ IA: quando nada sobra aproveitável, responde ok:false em vez de devolver lixo (0.6485ms)
+✔ IA: respostas estruturalmente inválidas não lançam exceção (0.3339ms)
+✔ IA: extrai JSON de resposta com cerca de código e prefixo (0.9813ms)
+✔ IA: contexto enviado NÃO carrega dado sensível (0.7565ms)
+✔ IA: contexto leva só o que o gestor precisa ver (0.7907ms)
+✔ ações: NENHUMA nasce concluída sem marcação explícita (0.7666ms)
+✔ ações: só fica concluída quando o gestor mandou true (0.3636ms)
+✔ ações: valores estranhos em `concluida` viram pendente, não verdadeiro (0.458ms)
+✔ ações: tipo e descrição inválidos são descartados (0.448ms)
+✔ progresso: é sempre derivado das ações gravadas (0.6337ms)
+✔ status: cancelado sai do painel de acompanhamento, mas não do histórico (0.2537ms)
+✔ catálogos: todo item do enum tem rótulo legível na tela (0.5309ms)
+✔ catálogos: objetivo e competência são coerentes entre si (0.2627ms)
+✔ sem GEMINI_API_KEY, sugerirPlão falha de forma explícita e não chama a IA (0.6073ms)
+
+1. "GET /usuarios devolve somente os usuarios da sua empresa"
+  ok   a lista nao traz usuario da outra empresa
+  ok   a lista traz o usuario da propria empresa
+
+2. "nenhuma rota autenticada expoe dados de outras empresas"
+  ok   GET /assinatura responde 200 para cada empresa
+  ok   empresa B nao recebe a assinatura da empresa A
+  ok   a resposta e um unico registro, nunca lista multi-empresa
+
+3. Chaves de API: cada chave so alcanca a propria empresa
+  ok   POST /api-publica/chaves -> 200
+  ok   a chave da empresa A autentica num endpoint publico
+  ok   empresa B nao ve a chave da empresa A na listagem
+  ok   a listagem NUNCA devolve o segredo da chave
+
+4. As protecoes que a tela NAO pode prometer
+  ok   requisicoes autenticadas passam normalmente (o rate limit existe)
+  ok   webhook PIX -> 503
+  ok   a propria rota diz que nao ha validacao de assinatura
+  ok   webhook nao aceita corpo e nao devolve evento algum
+
+5. O que a tela diz que funciona, existe mesmo
+  ok   usuarios: rota existe
+  ok   chaves de API publica: rota existe
+  ok   assinatura: rota existe
+  ok   config PIX existe e responde (a tela afirma que e gravada no banco)
+  ok   config PIX devolve um objeto (nao lista)
+  ok   sem provider oficial, PIX não aparece ativo
+  ok   ativação PIX é bloqueada sem provider real
+  ok   geração e consulta PIX devolvem 503 sem provider, sem criar cobrança
+
+RESULTADO: 21 ok, 0 falha(s)
+✔ integração: plataforma (892.6489ms)
+
+1. Marcacao manual grava na COLUNA certa de cada tipo
+  ok   POST /ponto/manual ENTRADA -> 200
+  ok   ENTRADA: resposta traz o dia gravado
+  ok   ENTRADA: resposta traz o fuso
+  ok   ENTRADA: gravado no PostgreSQL
+  ok   ENTRADA: coluna entrada preenchida
+  ok   ENTRADA: nao invade as outras colunas
+  ok   POST /ponto/manual SAIDA_INTERVALO -> 200
+  ok   SAIDA_INTERVALO: resposta traz o dia gravado
+  ok   SAIDA_INTERVALO: resposta traz o fuso
+  ok   SAIDA_INTERVALO: gravado no PostgreSQL
+  ok   SAIDA_INTERVALO: coluna saidaIntervalo preenchida
+  ok   SAIDA_INTERVALO: nao invade as outras colunas
+  ok   POST /ponto/manual RETORNO -> 200
+  ok   RETORNO: resposta traz o dia gravado
+  ok   RETORNO: resposta traz o fuso
+  ok   RETORNO: gravado no PostgreSQL
+  ok   RETORNO: coluna retornoIntervalo preenchida
+  ok   RETORNO: nao invade as outras colunas
+  ok   POST /ponto/manual SAIDA -> 200
+  ok   SAIDA: resposta traz o dia gravado
+  ok   SAIDA: resposta traz o fuso
+  ok   SAIDA: gravado no PostgreSQL
+  ok   SAIDA: coluna saida preenchida
+  ok   SAIDA: nao invade as outras colunas
+
+2. As quatro marcacoes convivem na MESMA linha do dia
+  ok   uma unica linha para o dia inteiro
+  ok   entrada NAO foi apagada pela saida
+  ok   saidaIntervalo gravada
+  ok   retornoIntervalo gravado
+  ok   saida gravada
+  ok   nao duplicou linha
+
+3. GET /ponto devolve o gravado + o fuso da empresa
+  ok   GET /ponto -> 200
+  ok   header X-Fuso-Empresa presente
+  ok   devolve array (formato nao mudou)
+  ok   registro aparece na lista
+  ok   lista traz o nome do funcionario
+  ok   lista traz as 4 marcacoes
+
+4. `data` e meia-noite UTC: e o que fazia a tela errar o dia
+  ok   data vem como string ISO de @db.Date
+  ok   o dia guardado e o dia do registro
+  ok   leitura ingenua devolveria o dia anterior (motivo da correcao)
+
+5. Atraso e hora extra usam o horario PREVISTO do cadastro
+  ok   atraso apurado contra 09:00 do cadastro (30 min)
+  ok   hora extra apurada contra 18:00 do cadastro (30 min)
+  ok   entrada preservada durante o calculo
+  ok   saida preservada durante o calculo
+
+6. Validacoes e permissoes
+  ok   tipo invalido -> 400
+  ok   data fora de AAAA-MM-DD -> 400
+  ok   funcionario inexistente -> 404
+  ok   GET /ponto sem permissao -> 403
+  ok   POST /ponto/manual sem permissao -> 403
+  ok   GET /ponto sem token -> 401
+  ok   POST /ponto/manual sem token -> 401
+
+7. Isolamento multi-tenant
+  ok   empresa B responde 200
+  ok   empresa B nao ve o ponto do funcionario A
+  ok   empresa B nao ve o ponto do outro funcionario da A
+  ok   empresa B nao marca em funcionario da empresa A -> 404
+
+RESULTADO: 54 ok, 0 falha(s)
+✔ integração: aba ponto (1308.1551ms)
+✔ semana completa sem nenhuma batida: 5 dias úteis de falta (17.8212ms)
+✔ sábado e domingo nunca são falta (59.6243ms)
+✔ quem compareceu não tem falta, mesmo com jornada incompleta (0.6884ms)
+✔ antes da admissão não há falta: não havia vínculo (62.816ms)
+✔ a partir do desligamento não há falta: a pessoa já saiu da empresa (6.0829ms)
+✔ admitido e desligado no mesmo dia não gera falta (5.4794ms)
+✔ a batida de outro funcionário não limpa a falta deste (1.7801ms)
+✔ quem compareceu em todos os dias não tem falta nenhuma (1.0348ms)
+✔ a data da batida é comparada no dia UTC, sem deslocamento de fuso (1.0811ms)
+✔ somaDias atravessa virada de mês, ano e ano bissexto (1.3667ms)
+✔ diaDaSemana confere os dias da semana sem depender do fuso da máquina (0.7855ms)
+✔ diaDoPonto devolve meia-noite UTC, como o @db.Date do banco (1.3014ms)
+✔ a ausência de admissão não bloqueia a apuração (1.083ms)
+✔ a apuração respeita o fim pedido: não passa de "ate" (0.5853ms)
+✔ a apuração de um mês isolado não toca nos meses vizinhos (0.9333ms)
+✔ 23 dias úteis de julho é o mês inteiro de falta (1.4502ms)
+✔ cumprE: IGUAL compara exatamente (12.1702ms)
+✔ cumprE: MAIOR_OU_IGUAL aceita o igual e o acima (0.4404ms)
+✔ cumprE: MENOR_OU_IGUAL aceita o igual e o abaixo (0.4133ms)
+✔ cumprE: operador desconhecido nunca credita (0.4265ms)
+✔ cumprE: o mesmo evento da o mesmo resultado com valores de ponto diferentes (0.6092ms)
+✔ chavePeriodo: mensal vira AAAA-MM (0.4674ms)
+✔ chavePeriodo: trimestral vira AAAA-QN e muda no trimestre certo (0.3894ms)
+✔ intervaloPeriodo: setembro cobre o mes inteiro (5.7738ms)
+✔ intervaloPeriodo: fevereiro respeita o ano bissexto (0.5558ms)
+✔ intervaloPeriodo: trimestre vai do primeiro dia ao último do mês 3 (0.7214ms)
+✔ intervaloPeriodo: o inicio nunca passa do fim (0.4245ms)
+✔ descreverCriterio: usa o rotulo e o operador da empresa (0.6543ms)
+✔ descreverCriterio: evento desconhecido nao quebra a tela (0.5065ms)
+✔ descreverEvidencia: mostra o que foi medido e a regra que comparou (0.4384ms)
+✔ descreverEvidencia: um numero diferente do alvo continua aparecendo (0.5423ms)
+✔ validarCriterio: um critério bem formado passa limpo (2.0314ms)
+✔ validarCriterio: nome curto é recusado (0.565ms)
+✔ validarCriterio: evento fora do catálogo é recusado (1.5792ms)
+✔ validarCriterio: evento inválido curto-circuita sem outros avisos (0.5083ms)
+✔ validarCriterio: zero pontos é avisado, porque não credita nada (0.6463ms)
+✔ validarCriterio: pontos negativos são aceitos (empresa pode punir) (0.288ms)
+✔ validarCriterio: pontos fracionários são recusados (0.8754ms)
+✔ validarLancamentoManual: lançamento normal passa (0.7784ms)
+✔ validarLancamentoManual: zero é recusado (0.462ms)
+✔ validarLancamentoManual: sem motivo é recusado (0.3174ms)
+✔ validarLancamentoManual: valor absurdo é barrado (0.3373ms)
+✔ validarLancamentoManual: desconto é aceito (0.2561ms)
+✔ o NEXUS nao define nenhum criterio padrao (0.2791ms)
+✔ validarCriterio: valor de referência negativo é recusado (1.0487ms)
+✔ validarCriterio: contar ausencias so faz sentido contra zero (0.7777ms)
+✔ validarCriterio: "no máximo 2 advertências" com 5 pontos é válido (0.3174ms)
+✔ validarCriterio: meta tem teto de percentual (0.6616ms)
+✔ validarCriterio: meta batida em 100% é uma configuração válida (0.5633ms)
+✔ chavePeriodo: anual vira AAAA (1.3073ms)
+✔ chavePeriodo: o mesmo mes gera sempre a mesma chave (0.5008ms)
+
+1. POST /produtos — criar com os nomes de campo da tela
+  ok   POST /produtos responde com sucesso
+  ok   produto PERSISTIDO no PostgreSQL
+  ok   nome com virgula gravado intacto
+  ok   sku em maiusculo gravado
+  ok   custo gravado
+  ok   margem CALCULADA pelo servidor
+  ok   GET /produtos/:id devolve o produto
+  ok   o produto aparece na listagem por busca
+
+2. PUT parcial (promocao) NAO apaga o resto do produto
+  FAIL PUT parcial da promocao -> 200 -> status=400 corpo={"error":"Estoque máximo não pode ser menor que o estoque mínimo."}
+  FAIL o preco promocional foi gravado -> promo=null
+  ok   o NOME sobreviveu ao PUT parcial
+  ok   o SKU sobreviveu ao PUT parcial
+  ok   o preco de VENDA sobreviveu ao PUT parcial
+  ok   o CUSTO sobreviveu ao PUT parcial
+
+3. PUT de edicao (formulario completo)
+  ok   PUT de edicao -> 200
+  ok   nome editado PERSISTIDO
+  ok   preco editado PERSISTIDO
+  ok   estoque minimo PERSISTIDO
+  ok   preco promocional MAIOR que o de venda -> 400
+  ok   estoque maximo menor que o minimo -> 400
+
+4. Status, arquivar e arquivar em lote
+  ok   PATCH /produtos/:id/status -> 200
+  ok   INATIVO PERSISTIDO
+  ok   reativar -> 200
+  ok   ATIVO PERSISTIDO
+  ok   PATCH /produtos/status-lote -> 200
+  ok   os 3 produtos do lote foram ARQUIVADOS no banco
+  ok   DELETE /produtos/:id -> 200
+  ok   o produto continua no banco como ARQUIVADO (nao e exclusao fisica)
+
+5. Ajustar estoque (POST /estoque/movimentar)
+  ok   POST /estoque/movimentar -> 200
+  ok   o saldo do estoque AUMENTOU de verdade
+  ok   a movimentacao aparece no historico
+  ok   quantidade zero -> recusada
+  ok   movimentar em filial de outra empresa -> recusada
+
+6. Importar CSV (POST /produtos/importar)
+  ok   POST /produtos/importar responde com sucesso
+  ok   a resposta informa quantos foram importados
+  ok   os 2 importados estao no PostgreSQL
+  ok   a quantidade inicial virou saldo de estoque
+
+7. SKU e codigo de barras duplicados
+  ok   SKU duplicado na mesma empresa -> 409
+  ok   codigo de barras duplicado -> 409
+  ok   nome ausente/curto -> 400
+
+8. Mascaramento de custo (sustenta o KPI "Valor Estoque: Oculto")
+  ok   usuario SEM custos.visualizar responde 200
+  ok   para quem TEM custo, podeVerCusto = true
+  ok   para quem NAO tem custo, podeVerCusto = false
+  ok   o valor do estoque some SEM a permissao de custo
+  ok   o valor do estoque aparece COM a permissao
+  ok   nenhum produto devolve o campo custo para quem nao pode ver
+  ok   editar custo sem custos.editar -> 403
+
+9. Isolamento multi-tenant e permissoes
+  ok   empresa B responde 200
+  ok   empresa B nao ve o produto da empresa A
+  ok   empresa B nao edita produto da empresa A -> 404
+  ok   empresa B nao le o produto da empresa A -> 404
+  ok   POST /produtos sem permissao -> 403
+  ok   GET /produtos sem token -> 401
+  ok   POST /produtos sem token -> 401
+
+RESULTADO: 52 ok, 2 falha(s)
+✔ integração: aba produtos (1541.9725ms)
+✖ tests\produtos-aba.test.ts (6129.3263ms)
+﹣ Produtos: CRUD, filtros, paginação e máscara persistem no PostgreSQL real (3.4599ms) # SKIP
+✔ questionário: 12 perguntas, 4 alternativas, um fator por alternativa (4.9488ms)
+✔ soma sempre 100 com respostas completas (2.5654ms)
+✔ quem responde D em tudo obtém 100% D (0.893ms)
+✔ distribuição 5D/4I/2S/1C produz os percentuais esperados (0.7756ms)
+✔ empate desempata na ordem clássica D > I > S > C (1.1611ms)
+✔ respostas repetidas da mesma pergunta contam uma vez (0.5622ms)
+✔ pergunta inexistente ou alternativa inválida é ignorada (0.5588ms)
+✔ nenhuma resposta não quebra e devolve soma 100 (0.3922ms)
+✔ percentual nunca sai negativo nem acima de 100 (25.0741ms)
+✔ vigência: a primeira avaliação é a vigente (6.0867ms)
+✔ vigência: lista vazia não elege ninguém (primeira gravação do func.) (0.6007ms)
+✔ vigência: avaliação nova, mais recente, assume (0.7573ms)
+✔ vigência: avaliação RETROATIVA NÃO rouba a vigência (0.4794ms)
+✔ vigência: sempre sobra EXATAMENTE uma vigente, nunca duas nem zero (0.651ms)
+✔ vigência: empate de data desempata pela gravação mais recente, de forma estável (0.4524ms)
+✔ vigência: a data manda sobre a ordem de gravação (0.5013ms)
+✔ vigência: não muta a lista recebida (0.3918ms)
+
+1. GET /radar/resumo responde com nivelSimulacao real
+  ok   GET /radar/resumo -> 200
+  ok   fonte = dados_reais
+  ok   nivelSimulacao presente no resumo
+  ok   nivelSimulacao com os 3 indicadores
+  ok   periodo devolvido
+  ok   base conta o colaborador
+  ok   resumo gera ao menos um alerta a partir do ponto real
+
+2. Simulador: nivelAtual bate com o nivelSimulacao do resumo
+  ok   POST /radar/simulacao -> 200
+  ok   nivelAtual presente
+  ok   mesma funcao: nivelAtual === nivelSimulacao do resumo
+  ok   cenario calculado pelo servidor
+  ok   deltas devolvidos
+  ok   pressupostos e lista
+
+3. Plano de acao: criar -> atualizar status, acoes e PRAZO
+  ok   POST /radar/acoes -> 201
+  ok   devolve id
+  ok   status nasce ABERTA
+  ok   plano gravado no PostgreSQL
+  ok   prazo gravado no banco
+  ok   PATCH /radar/acoes/:id -> 200
+  ok   status atualizado
+  ok   acoes atualizadas
+  ok   prazo devolvido pela rota
+  ok   PRAZO PERSISTIDO no banco
+  ok   status persistido no banco
+  ok   acoes persistidas no banco
+
+4. PATCH sem prazo preserva o prazo gravado
+  ok   PATCH sem prazo -> 200
+  ok   prazo NAO foi apagado
+
+5. PATCH com prazo invalido e recusado
+  ok   prazo fora de AAAA-MM-DD -> 400
+
+6. O plano volta no resumo (persistencia apos recarregar a tela)
+  ok   alerta do plano reaparece no resumo
+  ok   alerta com plano anexado
+  ok   plano traz o prazo novo
+  ok   status do alerta = Em acao
+  ok   alerta traz as acoes gravadas
+
+7. Cancelar o plano remove o alerta da lista
+  ok   alerta CANCELADO nao aparece mais
+  ok   registro preservado no banco (nao apagado)
+
+8. Avaliacao comportamental e bem-estar
+  ok   POST /radar/avaliacoes -> 201
+  ok   avaliacao vigente
+  ok   perfil gravado no PostgreSQL
+  ok   POST /radar/bem-estar -> 201
+  ok   bem-estar gravado no PostgreSQL
+
+9. Validacao de escala e de funcionario
+  ok   nota fora de 0-100 -> 400
+  ok   funcionario inexistente -> 404
+
+10. Gamificacao: soma por setor e idempotencia
+  ok   POST /radar/gamificacao -> 201
+  ok   pontos gravados
+  ok   nao marcado como duplicado
+  ok   segundo registro -> 201
+  ok   repetir o mesmo evento NAO soma de novo
+  ok   devolve o registro ja existente
+  ok   GET /radar/gamificacao -> 200
+  ok   totalPontos = 150 (100 + 50, sem duplicar)
+  ok   agrupa por setor
+
+11. Isolamento multi-tenant
+  ok   empresa B ve o proprio resumo
+  ok   empresa B nao ve o alerta da empresa A
+  ok   empresa B nao ve a pontuacao da empresa A
+  ok   empresa B nao edita plano da empresa A -> 404
+  ok   empresa B nao grava em funcionario da empresa A -> 404
+
+12. Permissoes e token
+  ok   GET /radar/resumo sem token -> 401
+  ok   GET /radar/resumo sem permissao -> 403
+  ok   POST /radar/acoes sem permissao -> 403
+
+RESULTADO: 59 ok, 0 falha(s)
+✔ integração: radar (1186.0628ms)

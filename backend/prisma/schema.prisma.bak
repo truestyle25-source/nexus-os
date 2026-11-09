@@ -1,0 +1,2870 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Origem {
+  MANUAL
+  IMPORTADO
+  API
+  AUTOMATICO
+  PDV
+  PONTO
+  INTEGRACAO
+  IA
+}
+
+enum StatusGeral {
+  ATIVO
+  INATIVO
+  ARQUIVADO
+}
+
+enum AcaoAuditoria {
+  CRIAR
+  EDITAR
+  EXCLUIR
+  LOGIN
+  LOGOUT
+  IMPORTAR
+  SINCRONIZAR
+  ALTERAR_PERMISSAO
+  ALTERAR_CONFIG
+}
+
+enum TipoMovEstoque {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  INVENTARIO
+  PERDA
+  AVARIA
+  TRANSFERENCIA
+  DEVOLUCAO
+  VENDA
+  COMPRA
+}
+
+enum StatusCompra {
+  SOLICITADA
+  PEDIDO
+  RECEBIDA
+  CANCELADA
+}
+
+model Empresa {
+  id                String       @id @default(cuid())
+  nome              String
+  razaoSocial       String?
+  cnpj              String?      @unique
+  inscricaoEstadual String?
+  responsavelCpf    String?
+  responsavelRg     String?
+  cep               String?
+  endereco          String?
+  cidade            String?
+  estado            String?
+  // Fuso IANA da empresa. O registro de ponto usa para decidir a que DIA
+  // pertence uma marcaÃƒÂ§ÃƒÂ£o: ÃƒÂ s 23h30 em SÃƒÂ£o Paulo a batida ÃƒÂ© do dia 27, e o
+  // mesmo instante em UTC seria do dia 28. Ausente => `America/Sao_Paulo`.
+  fusoHorario       String?      @default("America/Sao_Paulo")
+  status            StatusGeral  @default(ATIVO)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  origem            Origem       @default(MANUAL)
+  filiais           Filial[]
+  usuarios          Usuario[]
+  setores           Setor[]
+  produtos          Produto[]
+  fornecedores      Fornecedor[]
+  clientes          Cliente[]
+  assinatura        Assinatura?
+  importacoes       Importacao[]
+  sincronizacoesML  SincronizacaoTarefa[]
+  notificacoesMercadoLivre NotificacaoMercadoLivre[]
+  shopeeConexoes     ShopeeConexao[]
+  shopeeAutorizacoes ShopeeOAuthState[]
+  producoesKit      ProducaoKit[]
+  dimensoes         Dimensao[]
+  unidades          Unidade[]
+  tiposProduto      TipoProduto[]
+  fatoresConversao  FatorConversao[]
+  consumosInternos  ConsumoInterno[]
+  nexusErpRecords NexusErpRecord[]
+}
+
+// --- ImportaÃƒÂ§ÃƒÂ£o de dados (CSV/API) --------------------------------------------
+// A tabela existe desde a migration 202609130001_importacao; o model entrou no
+// schema na FASE 1 (correÃƒÂ§ÃƒÂ£o das migrations) para manter paridade total entre
+// schema.prisma e a cadeia de migrations (migrate diff vazio).
+model Importacao {
+  id           String   @id
+  empresaId    String
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId    String
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  tipo         String
+  status       String
+  mapeamento   Json?
+  erros        Json?
+  qtdTotal     Int      @default(0)
+  qtdImportada Int      @default(0)
+  qtdErro      Int      @default(0)
+  origem       Origem   @default(IMPORTADO)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([empresaId, createdAt])
+}
+
+model Filial {
+  id                   String                  @id @default(cuid())
+  empresaId            String
+  empresa              Empresa                 @relation(fields: [empresaId], references: [id])
+  nome                 String
+  cnpj                 String?
+  cidade               String?
+  estado               String?
+  // FASE 1 PDV PRO Ã¢â‚¬â€ fuso IANA da filial. Prevalece sobre Empresa.fusoHorario
+  // para data operacional do caixa/vendas. Ausente => America/Sao_Paulo.
+  // UTC continua sendo o instante absoluto (createdAt); o fuso sÃƒÂ³ deriva o DIA operacional.
+  fusoHorario          String?                 @default("America/Sao_Paulo")
+  status               StatusGeral             @default(ATIVO)
+  origem               Origem                  @default(MANUAL)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  setores              Setor[]
+  usuarios             Usuario[]
+  estoques             Estoque[]
+  movimentacoesOrigem  EstoqueMovimentacao[]   @relation("MovOrigem")
+  movimentacoesDestino EstoqueMovimentacao[]   @relation("MovDestino")
+  compras              Compra[]
+  snapshotsEstoque     EstoqueSnapshotDiario[]
+  caixas               Caixa[]
+  producoesKit          ProducaoKit[]
+  consumosInternos      ConsumoInterno[]
+
+  @@index([empresaId])
+  sessoesInventario   SessaoInventario[]
+}
+
+model Setor {
+  id        String      @id @default(cuid())
+  empresaId String
+  filialId  String?
+  empresa   Empresa     @relation(fields: [empresaId], references: [id])
+  filial    Filial?     @relation(fields: [filialId], references: [id])
+  nome      String
+  descricao String?
+  status    StatusGeral @default(ATIVO)
+  origem    Origem      @default(MANUAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  usuarios  Usuario[]
+
+  @@index([empresaId, filialId])
+}
+
+model Usuario {
+  id                String                  @id @default(cuid())
+  empresaId         String
+  filialId          String?
+  setorId           String?
+  empresa           Empresa                 @relation(fields: [empresaId], references: [id])
+  filial            Filial?                 @relation(fields: [filialId], references: [id])
+  setor             Setor?                  @relation(fields: [setorId], references: [id])
+  nome              String
+  email             String                  @unique
+  senhaHash         String
+  status            StatusGeral             @default(ATIVO)
+  origem            Origem                  @default(MANUAL)
+  ultimoLogin       DateTime?
+  permissoes        Permissao[]
+  caixas            Caixa[]
+  auditorias        Auditoria[]
+  documentosEnviados Documento[]
+  folhaFechadaPor   Folha[]
+  movimentacoes     EstoqueMovimentacao[]
+  tokensRecuperacao TokenRecuperacaoSenha[]
+  fichaFuncionario  Funcionario[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([empresaId])
+  sessoesInventarioCriou  SessaoInventario[] @relation("SessaoInventarioCriador")
+  sessoesInventarioFechou  SessaoInventario[] @relation("SessaoInventarioConclusor")
+  contagensInventarioFeitas ContagemInventario[] @relation("ContagemInventarioAutor")
+  importacoes       Importacao[]
+  shopeeAutorizacoes ShopeeOAuthState[]
+  producoesKit      ProducaoKit[]
+  consumosInternos       ConsumoInterno[]
+  consumosInternosAprovou ConsumoInterno[] @relation("ConsumoInternoAprovador")
+}
+
+model Permissao {
+  id        String   @id @default(cuid())
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  modulo    String
+  acao      String
+  permitido Boolean  @default(false)
+  origem    Origem   @default(MANUAL)
+  createdAt DateTime @default(now())
+
+  @@unique([usuarioId, modulo, acao])
+  @@index([usuarioId])
+}
+
+// Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 5 - recupera+Ã¯Â¿Â½+Ã¯Â¿Â½o de senha. Armazena apenas o hash do token; o valor
+// bruto +Ã¯Â¿Â½ entregue uma +Ã¯Â¿Â½nica vez ao usu+Ã¯Â¿Â½rio pelo canal de envio (e-mail),
+// que ainda n+Ã¯Â¿Â½o est+Ã¯Â¿Â½ integrado nesta base (ver PEND+Ã¯Â¿Â½NCIAS no relat+Ã¯Â¿Â½rio).
+model TokenRecuperacaoSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([usuarioId])
+  @@index([expiraEm])
+}
+
+model Auditoria {
+  id            String        @id @default(cuid())
+  usuarioId     String?
+  usuario       Usuario?      @relation(fields: [usuarioId], references: [id])
+  empresaId     String?
+  acao          AcaoAuditoria
+  entidade      String
+  entidadeId    String?
+  valorAnterior Json?
+  valorNovo     Json?
+  origem        Origem
+  ip            String?
+  contexto      String?
+  createdAt     DateTime      @default(now())
+
+  @@index([usuarioId])
+  @@index([entidade, entidadeId])
+  @@index([createdAt])
+}
+
+// --- PARTE 2: Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 8 Produtos ---
+model Categoria {
+  id        String    @id @default(cuid())
+  empresaId String
+  nome      String
+  descricao String?
+  produtos  Produto[]
+  createdAt DateTime  @default(now())
+
+  @@index([empresaId])
+}
+
+model Produto {
+  id               String                  @id @default(cuid())
+  empresaId        String
+  empresa          Empresa                 @relation(fields: [empresaId], references: [id])
+  categoriaId      String?
+  categoria        Categoria?              @relation(fields: [categoriaId], references: [id])
+  fornecedorId     String?
+  fornecedor       Fornecedor?             @relation(fields: [fornecedorId], references: [id])
+  tipoProdutoId    String?
+  tipoProduto      TipoProduto?            @relation(fields: [tipoProdutoId], references: [id])
+  unidadeBaseId    String?
+  unidadeBase      Unidade?                @relation("ProdutoUnidadeBase", fields: [unidadeBaseId], references: [id])
+  politicaCusto    PoliticaCusto           @default(MEDIO_PONDERADO)
+  nome             String
+  marca            String?
+  sku              String?
+  codigoBarras     String?
+  custo            Decimal                 @db.Decimal(14, 6)
+  precoVenda       Decimal                 @db.Decimal(10, 2)
+  margem           Decimal?                @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
+  unidade          String                  @default("UN") // unidade legado Ã¢â‚¬â€ mantida para compatibilidade de leitura antiga
+  estoqueMinimo    Decimal                 @default(5) @db.Decimal(14, 3)
+  estoqueMaximo    Decimal                 @default(100) @db.Decimal(14, 3)
+  pontoPedido      Decimal                 @default(0) @db.Decimal(14, 3)
+  peso             String?
+  ncm              String?
+  precoPromocional Decimal?                @db.Decimal(10, 2)
+  promocaoInicio   DateTime?
+  promocaoFim      DateTime?
+  promocaoLimite   Int?
+  validade         DateTime?
+  imagem           String?
+  descricao        String?
+  status           StatusGeral             @default(ATIVO)
+  ehKit            Boolean                 @default(false)
+  origem           Origem                  @default(MANUAL)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  estoques         Estoque[]
+  movimentacoes    EstoqueMovimentacao[]
+  snapshotsEstoque EstoqueSnapshotDiario[]
+  comprasItens     CompraItem[]
+  composicaoComoKit ComposicaoKit[]          @relation("KitProduto")
+  composicaoComoIngrediente ComposicaoKit[]  @relation("IngredienteProduto")
+  producoesKit      ProducaoKit[]
+  consumosInternos  ConsumoInterno[]
+  fatoresConversao  FatorConversao[]
+
+  @@unique([empresaId, sku])
+  @@unique([empresaId, codigoBarras])
+  @@index([empresaId])
+  @@index([sku])
+  @@index([empresaId, tipoProdutoId])
+}
+
+model ComposicaoKit {
+  id                  String   @id @default(cuid())
+  empresaId           String
+  kitProdutoId        String
+  ingredienteProdutoId String
+  quantidadePorKit    Decimal  @db.Decimal(12, 3)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  kitProduto          Produto  @relation("KitProduto", fields: [kitProdutoId], references: [id], onDelete: Cascade)
+  ingredienteProduto  Produto  @relation("IngredienteProduto", fields: [ingredienteProdutoId], references: [id], onDelete: Restrict)
+
+  @@unique([kitProdutoId, ingredienteProdutoId])
+  @@index([empresaId, kitProdutoId])
+  @@index([empresaId, ingredienteProdutoId])
+}
+
+model ProducaoKit {
+  id                 String   @id @default(cuid())
+  empresaId          String
+  filialId           String
+  produtoKitId       String
+  usuarioId          String?
+  quantidade         Decimal  @db.Decimal(14, 3) // quantidade produzida (na unidade de produÃƒÂ§ÃƒÂ£o)
+  unidadeProducao    String?  // sÃƒÂ­mbolo da unidade de produÃƒÂ§ÃƒÂ£o
+  fatorAplicado      Decimal? @db.Decimal(14, 6) // fator para converter para unidade base do produto
+  quantidadeProduzida Decimal @db.Decimal(14, 3) // quantidade efetivamente produzida (apÃƒÂ³s perdas)
+  perda              Decimal  @default(0) @db.Decimal(14, 3) // perda registrada na produÃƒÂ§ÃƒÂ£o
+  custoUnitario      Decimal  @db.Decimal(14, 6)
+  custoTotal         Decimal  @db.Decimal(14, 2)
+  composicaoSnapshot Json     // cÃƒÂ³pia da ficha tÃƒÂ©cnica, fatores e custos da data da produÃƒÂ§ÃƒÂ£o
+  idempotencyKey     String
+  createdAt          DateTime @default(now())
+  filial             Filial   @relation(fields: [filialId], references: [id], onDelete: Restrict)
+  produtoKit         Produto  @relation(fields: [produtoKitId], references: [id], onDelete: Restrict)
+  empresa            Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuario            Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@unique([empresaId, idempotencyKey])
+  @@index([empresaId, produtoKitId, createdAt])
+  @@index([filialId, createdAt])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 9 Estoque ---
+model Estoque {
+  id         String   @id @default(cuid())
+  empresaId  String
+  filialId   String
+  produtoId  String
+  produto    Produto  @relation(fields: [produtoId], references: [id])
+  filial     Filial   @relation(fields: [filialId], references: [id])
+  quantidade Decimal  @default(0) @db.Decimal(14, 3)
+  valorTotal Decimal  @default(0) @db.Decimal(14, 2)
+  lote       String? // nÃƒÂºmero do lote para controle de validade
+  local      String? // local de armazenamento (prateleira, estante, etc.)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([filialId, produtoId])
+  @@index([empresaId])
+  contagens      ContagemInventario[]
+}
+
+// Decis+Ã¯Â¿Â½o arquitetural (Fase 3, d+Ã¯Â¿Â½vida t+Ã¯Â¿Â½cnica registrada em
+// DEBITO-TECNICO.md item 8): giro real precisa de estoque m+Ã¯Â¿Â½dio no
+// per+Ã¯Â¿Â½odo, que por sua vez precisa de uma s+Ã¯Â¿Â½rie hist+Ã¯Â¿Â½rica de saldo di+Ã¯Â¿Â½rio
+// Ã¯Â¿Â½Ã¯Â¿Â½Ã¯Â¿Â½ a posi+Ã¯Â¿Â½+Ã¯Â¿Â½o atual (Estoque) e o log de eventos (EstoqueMovimentacao) n+Ã¯Â¿Â½o
+// bastam sozinhos porque reconstruir o saldo em cada dia passado a partir
+// s+Ã¯Â¿Â½ do log seria caro de consultar toda vez. Uma linha por
+// produto+Ã¯Â¿Â½filial+Ã¯Â¿Â½dia +Ã¯Â¿Â½ o suficiente (n+Ã¯Â¿Â½o guarda hist+Ã¯Â¿Â½rico de pre+Ã¯Â¿Â½o por
+// unidade nem lote Ã¯Â¿Â½Ã¯Â¿Â½Ã¯Â¿Â½ isso seria over-engineering para o que a Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 9
+// pede). Alimentada por src/scripts/gerarSnapshotsDiarios.ts (rodado uma
+// vez por dia por um agendador externo Ã¯Â¿Â½Ã¯Â¿Â½Ã¯Â¿Â½ este projeto n+Ã¯Â¿Â½o inclui um
+// scheduler) ou por POST /estoque/snapshot/gerar.
+// ===========================================================================
+//  Ciclo 6 Ã¢â‚¬â€ SessÃƒÂ£o de InventÃƒÂ¡rio
+// ===========================================================================
+//
+//  POR QUE UMA SESSÃƒÆ’O E NÃƒÆ’O UM CAMPO NA FOLHA
+//  -----------------------------------------
+//  A folha de inventÃƒÂ¡rio morre com a tela: fechar o navegador perde a contagem
+//  inteira. Um inventÃƒÂ¡rio de depÃƒÂ³sito leva horas ou dias, e a empresa fecha a
+//  loja ÃƒÂ s 18h com metade dela contada. A sessÃƒÂ£o ÃƒÂ© o registro que sobrevive ao
+//  navegador Ã¢â‚¬â€ reabrir amanhÃƒÂ£ continua de onde parou.
+//
+//  O SALDO DO SISTEMA Ãƒâ€° CONGELADO NA ABERTURA
+//  --------------------------------------------
+//  `quantidadeSistema` ÃƒÂ© gravada no momento em que a sessÃƒÂ£o ÃƒÂ© criada e nunca
+//  muda. Isso nÃƒÂ£o ÃƒÂ© economia de consulta, ÃƒÂ© o que dÃƒÂ¡ sentido ao nÃƒÂºmero: se o
+//  estoque muda no meio da contagem (uma venda, uma entrada de compra) e a
+//  divergÃƒÂªncia fosse recalculada a cada leitura, o inventÃƒÂ¡rio compararia a
+//  contagem fÃƒÂ­sica com um alvo que se moveu Ã¢â‚¬â€ e acharia desvio onde sÃƒÂ³ houve
+//  operaÃƒÂ§ÃƒÂ£o normal. Congelado, a divergÃƒÂªncia ÃƒÂ© a diferenÃƒÂ§a entre o que estava
+//  lÃƒÂ¡ quando alguÃƒÂ©m abriu a folha e o que realmente existe.
+//
+//  A IDENTIFICAÃƒâ€¡ÃƒÆ’O DO ITEM Ãƒâ€° COPIADA, NÃƒÆ’O REFERENCIADA
+//  ---------------------------------------------------
+//  Produto, unidade e local sÃƒÂ£o gravados como texto. Um inventÃƒÂ¡rio ÃƒÂ© documento
+//  de trabalho: ele precisa continuar legÃƒÂ­vel depois que o produto foi
+//  renomeado ou desativado, e uma linha que vira "null" porque o cadastro
+//  mudou ÃƒÂ© pior que inÃƒÂºtil. O `estoqueId` fica sÃƒÂ³ como rastro, e pode sumir.
+//
+//  VISÃƒÆ’O CEGA FICA REGISTRADA
+//  --------------------------
+//  `cegas` diz se aquela sessÃƒÂ£o foi contada sem o saldo visÃƒÂ­vel. Um perÃƒÂ­odo
+//  depois, o histÃƒÂ³rico mostra se a contagem foi cega Ã¢â‚¬â€ e o `criadoPorId` diz
+//  quem abriu. Ãƒâ€° a diferenÃƒÂ§a entre "inventÃƒÂ¡rio" e "conferÃƒÂªncia", e precisa ser
+//  auditÃƒÂ¡vel.
+
+enum StatusSessaoInventario {
+  ABERTA
+  CONCLUIDA
+  CANCELADA
+}
+
+model SessaoInventario {
+  id         String @id @default(cuid())
+  empresaId  String
+  /// RÃƒÂ³tulo que a empresa dÃƒÂ¡ ÃƒÂ  contagem ("InventÃƒÂ¡rio 3T2026 Ã¢â‚¬â€ Centro").
+  nome       String
+  filialId   String
+  filial     Filial @relation(fields: [filialId], references: [id])
+  status     StatusSessaoInventario @default(ABERTA)
+  /// `true` quando a folha foi aberta sem o saldo do sistema ÃƒÂ  vista.
+  cegas      Boolean @default(true)
+  /// Quem abriu a folha e quando Ã¢â‚¬â€ a autoria ÃƒÂ© o que dÃƒÂ¡ valor ao histÃƒÂ³rico.
+  criadoPorId String?
+  criadoPor   Usuario? @relation("SessaoInventarioCriador", fields: [criadoPorId], references: [id])
+  criadoEm   DateTime @default(now())
+  /// Quem fechou a contagem. NULL enquanto a sessÃƒÂ£o estÃƒÂ¡ aberta.
+  concluidoPorId String?
+  concluidoPor   Usuario? @relation("SessaoInventarioConclusor", fields: [concluidoPorId], references: [id])
+  concluidoEm DateTime?
+  observacoes String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  contagens  ContagemInventario[]
+
+  /// Duas folhas abertas na mesma filial transformam uma contagem em duas
+  /// versÃƒÂµes diferentes do mesmo nÃƒÂºmero.
+  @@index([empresaId, status])
+  @@index([empresaId, filialId, criadoEm])
+}
+
+model ContagemInventario {
+  id         String @id @default(cuid())
+  empresaId  String
+  sessaoId   String
+  sessao     SessaoInventario @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
+  /// Rastro da linha de estoque contada. `SetNull`: o produto pode ser
+  /// desativado ou a linha removida, e a contagem jÃƒÂ¡ feita continua valendo.
+  estoqueId  String?
+  estoque    Estoque? @relation(fields: [estoqueId], references: [id], onDelete: SetNull)
+
+  // CÃƒÂ³pia do que foi contado Ã¢â‚¬â€ o inventÃƒÂ¡rio precisa continuar legÃƒÂ­vel.
+  produtoId   String
+  produtoNome String
+  unidade     String?
+  local       String?
+  /// Saldo do sistema NO MOMENTO DA ABERTURA. Congelado, nunca recalculado.
+  quantidadeSistema Decimal @db.Decimal(14, 3)
+  /// NULL enquanto ninguÃƒÂ©m contou. Ãƒâ€° o que distingue "nÃƒÂ£o contado" de
+  /// "contado como zero" Ã¢â‚¬â€ os dois sÃƒÂ£oZero no papel, e um deles ÃƒÂ© erro.
+  quantidadeContada Decimal? @db.Decimal(14, 3)
+  /// Quem contou este item e quando.
+  contadoPorId String?
+  contadoPor   Usuario? @relation("ContagemInventarioAutor", fields: [contadoPorId], references: [id])
+  contadoEm   DateTime?
+  observacoes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sessaoId, estoqueId])
+  @@index([empresaId, sessaoId])
+}
+
+// ===========================================================================
+//  Snapshot diario de saldo Ã¢â‚¬â€ base do giro real (ver DEBITO-TECNICO.md item 8).
+// ===========================================================================
+
+
+// ===========================================================================
+//  Snapshot diario de saldo Ã¢â‚¬â€ base do giro real (ver DEBITO-TECNICO.md item 8).
+//  Uma linha por dia, filial e produto: reconstruir o saldo de um dia passado
+//  a partir so do log de movimentos seria caro de consultar toda vez.
+// ===========================================================================
+
+model EstoqueSnapshotDiario {
+  id            String   @id @default(cuid())
+  empresaId     String
+  filialId      String
+  filial        Filial   @relation(fields: [filialId], references: [id])
+  produtoId     String
+  produto       Produto  @relation(fields: [produtoId], references: [id])
+  data          DateTime // truncado para 00:00 do dia
+  quantidade    Decimal  @db.Decimal(14, 3)
+  custoUnitario Decimal  @db.Decimal(14, 6)
+  valorTotal    Decimal  @db.Decimal(14, 2)
+  createdAt     DateTime @default(now())
+
+  @@unique([filialId, produtoId, data])
+  @@index([empresaId, data])
+}
+
+model EstoqueMovimentacao {
+  id              String         @id @default(cuid())
+  empresaId       String
+  produtoId       String
+  produto         Produto        @relation(fields: [produtoId], references: [id])
+  // Filial onde o efeito de estoque desta linha ocorre. Para TRANSFERENCIA,
+  // esta +Ã¯Â¿Â½ a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
+  // aponta a filial que recebe Ã¯Â¿Â½Ã¯Â¿Â½Ã¯Â¿Â½ uma segunda linha (tipo TRANSFERENCIA,
+  // quantidade positiva) +Ã¯Â¿Â½ criada na filial de destino, ligada pelo mesmo
+  // valor de `documento` (ver estoque.service.ts).
+  filialId        String
+  filial          Filial         @relation("MovOrigem", fields: [filialId], references: [id])
+  filialDestinoId String?
+  filialDestino   Filial?        @relation("MovDestino", fields: [filialDestinoId], references: [id])
+  usuarioId       String?
+  usuario         Usuario?       @relation(fields: [usuarioId], references: [id])
+  quantidade      Decimal @db.Decimal(14, 3) // positivo entrada, negativo saida - mas tipo define
+  tipo            TipoMovEstoque
+  motivo          String?
+  documento       String? // NF, pedido, venda id; para TRANSFERENCIA, agrupa as duas pontas
+  origem          Origem
+  createdAt       DateTime       @default(now())
+
+  @@index([empresaId, produtoId])
+  @@index([empresaId, filialId])
+  @@index([createdAt])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 11 Fornecedores ---
+model Fornecedor {
+  // v2 (aba /fornecedores Ã¢â‚¬â€ artefato "nexus-fornecedores-add-v2"):
+  // - status virou TEXT: o design system exige Ativo/CrÃƒÂ­tico/Inativo e o enum
+  //   StatusGeral nÃƒÂ£o tem "CrÃƒÂ­tico" (migraÃƒÂ§ÃƒÂ£o converte ATIVO/INATIVO/ARQUIVADO).
+  // - cnpjCpf renomeado para cnpj (campo do formulÃƒÂ¡rio ADD).
+  // - relaÃƒÂ§ÃƒÂ£o Produto[] renomeada para produtosVinculados para liberar o nome
+  //   `produtos` do CSV textual ("Camisa, BonÃƒÂ©") exigido pelo modal ADD.
+  // - categoria com default "Outros" para o POST legado (tela de Compras)
+  //   continuar gravando sem enviar a coluna.
+  id                 String             @id @default(cuid())
+  empresaId          String
+  empresa            Empresa            @relation(fields: [empresaId], references: [id])
+  nome               String
+  cnpj               String?
+  categoria          String             @default("Outros") // Malharia, Jeans, BonÃƒÂ©s, AcessÃƒÂ³rios, CalÃƒÂ§ados, Outros
+  status             String             @default("Ativo") // Ativo, CrÃƒÂ­tico, Inativo
+  contato            String?
+  whatsapp           String?
+  telefone           String?
+  email              String?
+  endereco           String?
+  produtos           String? // CSV "Camisa, BonÃƒÂ©" Ã¢â‚¬â€ o que o fornecedor fornece
+  condicaoPagamento  String? // Ãƒâ‚¬ vista, 30 dias, 30/60, 30/60/90
+  observacoes        String?
+  totalComprado      Decimal            @default(0) @db.Decimal(12, 2) // soma de CompraFornecedor.valor
+  totalPedidos       Int                @default(0)
+  ultimoPedidoAt     DateTime?
+  origem             Origem             @default(MANUAL)
+  produtosVinculados Produto[]
+  compras            Compra[]
+  comprasFornecedor  CompraFornecedor[]
+  fatoresConversao   FatorConversao[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([empresaId])
+  @@index([empresaId, status])
+  @@index([empresaId, categoria])
+}
+
+// ===== Fornecedores Ã¢â‚¬â€ pedidos de compra por fornecedor (SeÃƒÂ§ÃƒÂ£o 11 v2) =====
+// Uma linha por pedido da aba /fornecedores. `compraId` ÃƒÂ© extensÃƒÂ£o do modelo
+// do artefato: sem o vÃƒÂ­nculo com a Compra original nÃƒÂ£o seria possÃƒÂ­vel
+// estornar/atualizar o pedido quando a compra muda de status.
+model CompraFornecedor {
+  id           String     @id @default(cuid())
+  empresaId    String
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id])
+  compraId     String?    @unique
+  valor        Decimal    @db.Decimal(12, 2)
+  status       String // Pendente, Entregue, Atrasado
+  dataPedido   DateTime   @default(now())
+  dataEntrega  DateTime?
+
+  @@index([empresaId, fornecedorId])
+  @@index([empresaId, status])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 10 Compras ---
+// Decis+Ã¯Â¿Â½o arquitetural (Fase 3): a filial de destino +Ã¯Â¿Â½ definida na CRIA+Ã¯Â¿Â½+Ã¯Â¿Â½O
+// da compra, n+Ã¯Â¿Â½o solta no momento do recebimento. Motivo: uma ordem de
+// compra real j+Ã¯Â¿Â½ nasce sabendo para onde a mercadoria vai (or+Ã¯Â¿Â½amento,
+// centro de custo, planejamento de estoque da filial); aceitar a filial s+Ã¯Â¿Â½
+// no recebimento permitiria receber uma compra numa filial diferente da
+// planejada sem nenhum registro de que isso +Ã¯Â¿Â½ uma exce+Ã¯Â¿Â½+Ã¯Â¿Â½o. Com
+// Compra.filialId fixo, POST /compras/:id/receber deixa de aceitar
+// filialId no corpo e usa sempre compra.filialId Ã¯Â¿Â½Ã¯Â¿Â½Ã¯Â¿Â½ imposs+Ã¯Â¿Â½vel divergir.
+model Compra {
+  id              String       @id @default(cuid())
+  empresaId       String
+  filialId        String
+  filial          Filial       @relation(fields: [filialId], references: [id])
+  fornecedorId    String
+  fornecedor      Fornecedor   @relation(fields: [fornecedorId], references: [id])
+  valorTotal      Decimal      @db.Decimal(12, 2)
+  status          StatusCompra @default(SOLICITADA)
+  condPagamento   String?
+  dataCompra      DateTime     @default(now())
+  dataRecebimento DateTime?
+  origem          Origem       @default(MANUAL)
+  itens           CompraItem[]
+  createdAt       DateTime     @default(now())
+
+  @@index([empresaId])
+  @@index([empresaId, filialId])
+}
+
+model CompraItem {
+  id              String  @id @default(cuid())
+  compraId        String
+  compra          Compra  @relation(fields: [compraId], references: [id], onDelete: Cascade)
+  produtoId       String
+  produto         Produto @relation(fields: [produtoId], references: [id])
+  quantidade      Decimal @db.Decimal(14, 3) // quantidade na unidade de compra
+  unidadeCompra   String? // sÃƒÂ­mbolo da unidade de compra no momento (ex: "saco", "cx", "kg")
+  fatorAplicado   Decimal? @db.Decimal(14, 6) // fator usado para converter para unidade base
+  quantidadeBase  Decimal? @db.Decimal(14, 3) // quantidade convertida para unidade base
+  valorUnit       Decimal @db.Decimal(14, 6) // preÃƒÂ§o por unidade de compra
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 12 Clientes ---
+model Cliente {
+  id                 String      @id @default(cuid())
+  empresaId          String
+  empresa            Empresa     @relation(fields: [empresaId], references: [id])
+  nome               String
+  documento          String?
+  telefone           String?
+  email              String?
+  endereco           String?
+  valorTotalComprado Decimal     @default(0) @db.Decimal(12, 2)
+  ticketMedio        Decimal     @default(0) @db.Decimal(10, 2)
+  ultimaCompra       DateTime?
+  frequencia         Int         @default(0)
+  status             StatusGeral @default(ATIVO)
+  origem             Origem      @default(MANUAL)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  vendas             Venda[]
+
+  @@index([empresaId])
+}
+
+// --- PARTE 3: Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 13 Vendas ---
+enum StatusVenda {
+  ABERTA
+  FINALIZADA
+  CANCELADA
+  DEVOLVIDA
+  ESTORNADA
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
+}
+
+model Venda {
+  id              String         @id @default(cuid())
+  empresaId       String
+  filialId        String
+  setorId         String?
+  clienteId       String?
+  cliente         Cliente?       @relation(fields: [clienteId], references: [id])
+  funcionarioId   String? // Usuario que vendeu
+  formaPagamento  FormaPagamento @default(DINHEIRO)
+  /// Em quantas parcelas o cliente pagou (1 = ÃƒÂ  vista). O PDV oferecia 1x a 6x
+  /// e o cupom imprimia "3x", mas o nÃƒÂºmero nÃƒÂ£o era gravado em lugar nenhum:
+  /// o comprovante do cliente afirmava um parcelamento inexistente no sistema.
+  /// NÃƒÆ’O implica receber em N parcelas no financeiro Ã¢â‚¬â€ a receita continua
+  /// uma linha pelo total; isto registra o que foi combinado na venda.
+  parcelas       Int            @default(1)
+  status          StatusVenda    @default(ABERTA)
+  subtotal        Decimal        @db.Decimal(12, 2)
+  desconto        Decimal        @default(0) @db.Decimal(12, 2)
+  total           Decimal        @db.Decimal(12, 2)
+  origem          Origem         @default(MANUAL)
+  pdvId           String?
+  pdvSincronizado Boolean        @default(false)
+  caixaId         String? // PDV: turno de caixa que fechou a venda
+  caixa           Caixa?         @relation(fields: [caixaId], references: [id])
+  // FASE 1 PDV PRO Ã¢â‚¬â€ idempotÃƒÂªncia: mesma key + mesma empresa = mesma operaÃƒÂ§ÃƒÂ£o.
+  // Nulo nas vendas antigas; novas vendas PDV devem preencher. O backend impÃƒÂµe
+  // unicidade via tabela IdempotencyKey (fonte normativa), este campo ÃƒÂ© ÃƒÂ­ndice auxiliar.
+  idempotencyKey String?
+  // FASE 1 PDV PRO Ã¢â‚¬â€ dia operacional da filial (YYYY-MM-DD como Date UTC meia-noite).
+  // Derivado de createdAt + Filial.fusoHorario no momento da criaÃƒÂ§ÃƒÂ£o; nunca editado.
+  // Backfill cobre vendas antigas; novas vendas sempre preenchem.
+  dataOperacional DateTime? @db.Date
+  troco             Decimal?         @db.Decimal(10, 2)   // troco devolvido ao cliente
+  valorRecebido     Decimal?         @db.Decimal(10, 2)   // valor pago pelo cliente
+  observacao        String?          @db.VarChar(500)   // observa��o livre
+  // FASE 1 PDV PRO Ã¢â‚¬â€ desconto com alÃƒÂ§ada: quem autorizou quando passou do limite do operador.
+  descontoAutorizadoPor String?
+  motivoDesconto String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  itens           VendaItem[]
+  pagamentos      VendaPagamento[]
+  reservas        EstoqueReserva[]
+  movimentacoesCaixa MovimentacaoCaixa[]
+
+  @@index([empresaId, filialId])
+  @@index([caixaId])
+  @@index([createdAt])
+  @@index([empresaId, filialId, dataOperacional])
+  @@index([empresaId, idempotencyKey])
+}
+
+model VendaItem {
+  id              String  @id @default(cuid())
+  vendaId         String
+  venda           Venda   @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  produtoId       String
+  quantidade      Decimal @db.Decimal(14, 3) // quantidade na unidade de venda
+  unidadeVenda    String? // sÃƒÂ­mbolo da unidade de venda no momento (ex: "UN", "dz", "kg")
+  fatorAplicado   Decimal? @db.Decimal(14, 6) // fator usado para converter para unidade base
+  quantidadeBase  Decimal? @db.Decimal(14, 3) // quantidade convertida para unidade base (baixa de estoque)
+  preco           Decimal @db.Decimal(10, 2)
+  custoUnitario   Decimal @db.Decimal(10, 2)
+  desconto        Decimal @default(0) @db.Decimal(10, 2)
+  total           Decimal @db.Decimal(12, 2)
+
+  @@index([vendaId])
+}
+
+// --- SeÃ¯Â¿Â½Ã¯Â¿Â½o 14 PDV Ã¯Â¿Â½ Caixa (turno de operaÃ¯Â¿Â½Ã¯Â¿Â½o de balcÃ¯Â¿Â½o) ---
+enum StatusCaixa {
+  ABERTO
+  FECHADO
+  BLOQUEADO
+  EM_FECHAMENTO
+  DIVERGENCIA
+}
+
+enum TipoMovimentoCaixa {
+  ABERTURA
+  SANGRIA
+  SUPRIMENTO
+  VENDA
+  ESTORNO
+  DEVOLUCAO
+  AJUSTE
+  FECHAMENTO
+}
+
+model Caixa {
+  id                   String              @id @default(cuid())
+  empresaId            String
+  filialId             String
+  filial               Filial              @relation(fields: [filialId], references: [id])
+  numero               Int?
+  usuarioId            String // operador que abriu o turno
+  usuario              Usuario             @relation(fields: [usuarioId], references: [id])
+  status               StatusCaixa         @default(ABERTO)
+  fundoTroco           Decimal             @default(0) @db.Decimal(12, 2)
+  saldo                Decimal             @default(0) @db.Decimal(12, 2) // dinheiro em gaveta: fundo + suprimentos + vendas DINHEIRO - sangrias
+  abertoEm             DateTime            @default(now())
+  fechadoEm            DateTime?
+  valorContado         Decimal?            @db.Decimal(12, 2)
+  diferenca            Decimal?            @db.Decimal(12, 2) // contado - esperado
+  observacaoFechamento String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  vendas               Venda[]
+  movimentacoes        MovimentacaoCaixa[]
+  divergencias         DivergenciaCaixa[]
+
+  @@index([empresaId, filialId])
+  @@index([usuarioId, status])
+  @@unique([filialId, numero])
+}
+
+model MovimentacaoCaixa {
+  id        String             @id @default(cuid())
+  caixaId   String
+  caixa     Caixa              @relation(fields: [caixaId], references: [id], onDelete: Cascade)
+  vendaId   String?
+  venda     Venda?             @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+  tipo      TipoMovimentoCaixa
+  valor     Decimal            @db.Decimal(12, 2)
+  motivo    String?
+  usuarioId String
+  origem    Origem             @default(MANUAL)
+  createdAt DateTime           @default(now())
+
+  @@index([caixaId])
+}
+
+// ============================================================================
+// Etapas 2-9 Ã¢â‚¬â€ Unidades, tipos de produto, conversÃƒÂµes e custos
+// ============================================================================
+
+enum DimensaoTipo {
+  MASSA
+  VOLUME
+  CONTAGEM
+  COMPRIMENTO
+  EMBALAGEM
+}
+
+enum TipoProdutoEnum {
+  MERCADORIA
+  INSUMO
+  FABRICADO
+  USO_INTERNO
+}
+
+enum PoliticaCusto {
+  ULTIMO_CUSTO
+  MEDIO_PONDERADO
+  PADRAO
+}
+
+model Dimensao {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  nome      String   // ex: Massa, Volume, Contagem, Comprimento, Embalagem
+  codigo    String   // ex: MASSA, VOLUME, CONTAGEM, COMPRIMENTO, EMBALAGEM
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  unidades  Unidade[]
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId])
+}
+
+model Unidade {
+  id             String   @id @default(cuid())
+  empresaId      String
+  empresa        Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  dimensaoId     String
+  dimensao       Dimensao @relation(fields: [dimensaoId], references: [id])
+  nome           String   // ex: Kilograma, Grama, Litro, Mililitro, Unidade, Duzia, Caixa
+  simbolo        String   // ex: kg, g, L, mL, UN, dz, cx
+  fatorCanonico  Decimal  @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade canÃƒÂ´nica da dimensÃƒÂ£o
+  ativo          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  produtosBase   Produto[] @relation("ProdutoUnidadeBase")
+  fatoresOrigem  FatorConversao[] @relation("FatorConversaoOrigem")
+  fatoresDestino FatorConversao[] @relation("FatorConversaoDestino")
+  consumosInternos ConsumoInterno[]
+
+  @@unique([empresaId, simbolo])
+  @@index([empresaId, dimensaoId])
+}
+
+model TipoProduto {
+  id             String   @id @default(cuid())
+  empresaId      String
+  empresa        Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  nome           String   // ex: Mercadoria para Revenda, Insumo, Produto Fabricado, Material de Uso Interno
+  codigo         TipoProdutoEnum
+  descricao      String?
+  ativo          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  produtos       Produto[]
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId])
+}
+
+model FatorConversao {
+  id               String      @id @default(cuid())
+  empresaId        String
+  empresa          Empresa     @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId        String
+  produto          Produto     @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  unidadeOrigemId  String
+  unidadeOrigem    Unidade     @relation("FatorConversaoOrigem", fields: [unidadeOrigemId], references: [id])
+  unidadeDestinoId String
+  unidadeDestino   Unidade     @relation("FatorConversaoDestino", fields: [unidadeDestinoId], references: [id])
+  fornecedorId     String?
+  fornecedor       Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  fator            Decimal     @db.Decimal(14, 6) // 1 unidadeOrigem = fator unidadeDestino
+  vigenciaDe       DateTime?
+  vigenciaAte      DateTime?
+  ativo            Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([empresaId, produtoId])
+  @@index([empresaId, unidadeOrigemId, unidadeDestinoId])
+  @@index([empresaId, produtoId, fornecedorId])
+}
+
+model ConsumoInterno {
+  id             String   @id @default(cuid())
+  empresaId      String
+  empresa        Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  filialId       String
+  filial         Filial   @relation(fields: [filialId], references: [id])
+  produtoId      String
+  produto        Produto  @relation(fields: [produtoId], references: [id])
+  usuarioId      String
+  usuario        Usuario  @relation(fields: [usuarioId], references: [id])
+  quantidade     Decimal  @db.Decimal(14, 3) // na unidade de consumo
+  unidadeId      String
+  unidade        Unidade  @relation(fields: [unidadeId], references: [id])
+  quantidadeBase Decimal  @db.Decimal(14, 3) // convertida para unidade base
+  fatorAplicado  Decimal  @db.Decimal(14, 6)
+  custoUnitario  Decimal  @db.Decimal(14, 6) // custo por unidade base no momento
+  custoTotal     Decimal  @db.Decimal(14, 2)
+  motivo         String   // motivo obrigatÃƒÂ³rio do consumo
+  aprovadoPorId  String?  // aprovaÃƒÂ§ÃƒÂ£o quando exigida por polÃƒÂ­tica
+  aprovadoPor    Usuario? @relation("ConsumoInternoAprovador", fields: [aprovadoPorId], references: [id])
+  aprovadoEm     DateTime?
+  documento      String?
+  origem         Origem   @default(MANUAL)
+  createdAt      DateTime @default(now())
+
+  @@index([empresaId, filialId])
+  @@index([empresaId, produtoId])
+  @@index([createdAt])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 14 PDV - Integra+Ã¯Â¿Â½+Ã¯Â¿Â½o oficial ---
+enum StatusIntegracao {
+  CONECTADO
+  ATENCAO
+  ERRO
+  NAO_CONFIGURADO
+}
+
+model IntegracaoPDV {
+  id                   String           @id @default(cuid())
+  empresaId            String
+  nome                 String // ex: PDV Principal
+  tipo                 String // API_OFICIAL, SDK_OFICIAL, WEBHOOK_OFICIAL, BANCO_AUTORIZADO
+  url                  String?
+  status               StatusIntegracao @default(NAO_CONFIGURADO)
+  ultimaSincronizacao  DateTime?
+  proximaSincronizacao DateTime?
+  qtdRegistros         Int              @default(0)
+  erros                Json? // array de erros
+  historico            Json? // array historico
+  origem               Origem           @default(INTEGRACAO)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([empresaId])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 15 Financeiro ---
+enum TipoFinanceiro {
+  RECEITA
+  DESPESA
+}
+
+enum StatusFinanceiro {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+model Financeiro {
+  id          String           @id @default(cuid())
+  empresaId   String
+  filialId    String?
+  tipo        TipoFinanceiro
+  categoria   String // vendas, fornecedores, salarios, servi+Ã¯Â¿Â½os, impostos, operacionais
+  centroCusto String?
+  descricao   String
+  valor       Decimal          @db.Decimal(12, 2)
+  vencimento  DateTime?
+  status      StatusFinanceiro @default(PENDENTE)
+  vendaId     String? // link com venda quando for receita de venda
+  compraId    String?
+  origem      Origem           @default(MANUAL)
+  createdAt   DateTime         @default(now())
+
+  @@index([empresaId, tipo])
+  @@index([vencimento])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 16 DRE ---
+model DRE {
+  id                   String   @id @default(cuid())
+  empresaId            String
+  filialId             String?
+  periodoInicio        DateTime
+  periodoFim           DateTime
+  receitaBruta         Decimal  @db.Decimal(12, 2)
+  deducoes             Decimal  @default(0) @db.Decimal(12, 2)
+  receitaLiquida       Decimal  @db.Decimal(12, 2)
+  custos               Decimal  @db.Decimal(12, 2)
+  despesas             Decimal  @db.Decimal(12, 2)
+  resultadoOperacional Decimal  @db.Decimal(12, 2)
+  lucroPrejuizo        Decimal  @db.Decimal(12, 2)
+  margemBruta          Decimal  @db.Decimal(5, 2)
+  margemLiquida        Decimal  @db.Decimal(5, 2)
+  origem               Origem   @default(AUTOMATICO)
+  createdAt            DateTime @default(now())
+
+  @@index([empresaId, periodoInicio, periodoFim])
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 18 Ticket M+Ã¯Â¿Â½dio e 19 Metas ---
+model IndicadorDiario {
+  id          String   @id @default(cuid())
+  empresaId   String
+  filialId    String?
+  data        DateTime @db.Date
+  faturamento Decimal  @default(0) @db.Decimal(12, 2)
+  qtdVendas   Int      @default(0)
+  ticketMedio Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([empresaId, filialId, data])
+}
+
+model Meta {
+  id            String   @id @default(cuid())
+  empresaId     String
+  filialId      String?
+  setorId       String?
+  funcionarioId String?
+  tipo          String // EMPRESA, FILIAL, SETOR, FUNCIONARIO, VENDAS, FINANCEIRO, PRODUTO, PRODUTIVIDADE, ESTOQUE
+  periodo       String // 2026-09, 2026-Q3, 2026
+  metaValor     Decimal  @db.Decimal(12, 2)
+  realizado     Decimal  @default(0) @db.Decimal(12, 2)
+  percentual    Decimal  @default(0) @db.Decimal(5, 2)
+  diferenca     Decimal  @default(0) @db.Decimal(12, 2)
+  projecao      Decimal  @default(0) @db.Decimal(12, 2)
+  status        String   @default("EM_ANDAMENTO")
+  origem        Origem   @default(MANUAL)
+  createdAt     DateTime @default(now())
+
+  @@index([empresaId, tipo, periodo])
+}
+
+// --- PARTE 5: Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 20 RH ---
+enum StatusFuncionario {
+  ATIVO
+  INATIVO
+  FERIAS
+  AFASTADO
+  DESLIGADO
+  // ApÃƒÂ³s 30 dias de desligamento: sai da operaÃƒÂ§ÃƒÂ£o, vai para o arquivo.
+  // O cadastro e os documentos continuam preservados e consultÃƒÂ¡veis.
+  ARQUIVADO
+}
+
+model Departamento {
+  id           String        @id @default(cuid())
+  empresaId    String
+  nome         String
+  descricao    String?
+  createdAt    DateTime      @default(now())
+  cargos       Cargo[]
+  funcionarios Funcionario[]
+
+  @@index([empresaId])
+}
+
+model Cargo {
+  id             String        @id @default(cuid())
+  empresaId      String
+  departamentoId String?
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  nome           String
+  descricao      String?
+  createdAt      DateTime      @default(now())
+  funcionarios   Funcionario[]
+
+  @@index([empresaId])
+}
+
+model Funcionario {
+  id               String            @id @default(cuid())
+  empresaId        String
+  filialId         String?
+  departamentoId   String?
+  departamento     Departamento?     @relation(fields: [departamentoId], references: [id])
+  cargoId          String?
+  cargo            Cargo?            @relation(fields: [cargoId], references: [id])
+  // VÃ¯Â¿Â½nculo opcional com um usuÃ¯Â¿Â½rio do sistema. Ã¯Â¿Â½ o que permite atribuir as
+  // vendas reais do PDV a um funcionÃ¯Â¿Â½rio na aba Desempenho, sem duplicar cadastro.
+  usuarioId        String?
+  usuario          Usuario?          @relation(fields: [usuarioId], references: [id])
+  nome             String
+  cpf              String? // CPF +Ã¯Â¿Â½nico por empresa
+  idExternoPonto   String? // ID do ControlID iDClass para sincronizar
+  dataAdmissao     DateTime?
+  dataDesligamento DateTime?
+  email            String?
+  telefone         String?
+  rg               String?
+  dataNascimento   DateTime?
+  cep              String?
+  endereco         String?
+  fotoUrl          String?
+  salario          Decimal?          @db.Decimal(12, 2)
+  tipoContrato     String? // CLT, PJ, Estagio
+  cargaHoraria     String? // ex: 44h/semana
+  jornada          String? // ex: 08:00-17:00 (texto livre, mantido como estÃƒÂ¡)
+  // HorÃƒÂ¡rios previstos da jornada, SEPARADOS. `jornada` acima ÃƒÂ© um texto livre
+  // ("08:00-17:00"): serve para o RH escrever o que quiser, mas nÃƒÂ£o ÃƒÂ© comparÃƒÂ¡vel
+  // Ã¢â‚¬â€ nÃƒÂ£o dÃƒÂ¡ para subtrair uma batida real de "08:00-17:00" sem antes extrair e
+  // interpretar a string, e o texto mente quando estÃƒÂ¡ vazio ou escrito de outra
+  // forma. Estes dois campos sÃƒÂ£o a referÃƒÂªncia numÃƒÂ©rica da jornada, e ÃƒÂ© deles que
+  // o Ponto tira o atraso e o Espelho tira o cumprimento.
+  //
+  // SÃƒÂ£o `String` no formato `HH:MM`, e nÃƒÂ£o `@db.Time`, de propÃƒÂ³sito: horÃƒÂ¡rio nÃƒÂ£o
+  // tem fuso, e um tipo de data/hora no banco convida exatamente o bug de
+  // `@db.Date` que o projeto jÃƒÂ¡ cometeu trÃƒÂªs vezes (13Ã‚Âº, indicadores e marcaÃƒÂ§ÃƒÂ£o
+  // de ponto) Ã¢â‚¬â€ o valor lido em UTC e o mostrado em SÃƒÂ£o Paulo divergem. `HH:MM`
+  // ÃƒÂ© texto puro: ordena, subtrai e chega intacto na tela, no PDF e na API.
+  horarioEntradaPrevisto String? // ex: 08:00
+  horarioSaidaPrevisto   String? // ex: 17:00
+  // --- BenefÃƒÂ­cios (VA e VR sÃƒÂ£o independentes: nenhum, um ou os dois) ---
+  // `false`/`0` como padrÃƒÂ£o significam "nÃƒÂ£o recebe", que ÃƒÂ© uma resposta vÃƒÂ¡lida
+  // Ã¢â‚¬â€ e nÃƒÂ£o "ainda nÃƒÂ£o informado". A folha lÃƒÂª estes campos; ela nÃƒÂ£o estima.
+  valeAlimentacao       Boolean  @default(false)
+  valorValeAlimentacao  Decimal  @default(0) @db.Decimal(12, 2)
+  valeRefeicao          Boolean  @default(false)
+  valorValeRefeicao     Decimal  @default(0) @db.Decimal(12, 2)
+  biometriaId      String? // ex: BIO-1006 (digital cadastrada no relÃ¯Â¿Â½gio)
+  matricula        String?
+  pis              String?
+  re               String? // Registro de Empregado
+  status           StatusFuncionario @default(ATIVO)
+  observacoes      String?
+  origem           Origem            @default(MANUAL)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  pontos           Ponto[]
+  advertencias     Advertencia[]
+  ferias           Ferias[]
+  suspensoes       Suspensao[]
+  desligamentos    Desligamento[]
+  documentos       Documento[]
+  lancamentosFolha LancamentoFolha[]
+  pagamentosFolha  PagamentoRH[]
+  decimos          DecimoTerceiro[]
+  // Radar Organizacional (entradas do RH Ã¢â‚¬â€ o Radar sÃƒÂ³ cruza, nÃƒÂ£o diagnostica)
+  avaliacoesComportamentais AvaliacaoComportamental[]
+  pesquisasBemEstar         PesquisaBemEstar[]
+  registrosGamificacao      RegistroGamificacao[]
+  acoesRadar                AcaoRadar[]
+  // Ciclo 1 Ã¢â‚¬â€ Plano de desenvolvimento a partir de uma avaliaÃƒÂ§ÃƒÂ£o DISC.
+  planosDesenvolvimento     PlanoDesenvolvimento[]
+  // Ciclo 2 Ã¢â‚¬â€ Treinamentos em que a pessoa participou (histÃƒÂ³rico real).
+  participacoesTreinamento   ParticipanteTreinamento[]
+  // Ciclo 3 Ã¢â‚¬â€ Feedbacks de lideranÃƒÂ§a recebidos (histÃƒÂ³rico real de conversa).
+  feedbacksLideranca        FeedbackLideranca[]
+
+  @@unique([empresaId, cpf])
+  @@unique([empresaId, idExternoPonto])
+  @@index([empresaId])
+  @@index([cpf])
+  @@index([usuarioId])
+}
+
+/// Documento anexado, guardado em bucket (S3 ou Supabase Storage).
+///
+/// POR QUE EXISTE
+/// -------------
+/// Antes as colunas `documentos` de AdvertÃƒÂªncia/SuspensÃƒÂ£o/Desligamento eram
+ /// `String[]` guardando apenas o NOME do arquivo Ã¢â‚¬â€ sem binÃƒÂ¡rio, sem caminho, sem
+ /// chave. O nome aparecia na tela e no dossie, mas o arquivo nÃƒÂ£o existia em lugar
+ /// nenhum: era metadado de arquivo inexistente.
+ ///
+ /// Aqui fica o endereÃƒÂ§o real: `chave` ÃƒÂ© o caminho dentro do bucket e
+ /// `bucket`/`provedor` dizem ONDE ele estÃƒÂ¡. O download nunca usa `nomeArquivo`
+ /// para montar caminho Ã¢â‚¬â€ usa `chave`, que ÃƒÂ© o que o provedor reconhece.
+ ///
+ /// SEGURANÃƒâ€¡A
+ /// ---------
+ ///   Ã¢â‚¬Â¢ `empresaId` ÃƒÂ© obrigatÃƒÂ³rio e toda leitura filtra por ele: documento de uma
+ ///     empresa nunca ÃƒÂ© acessÃƒÂ­vel por usuÃƒÂ¡rio de outra (isolamento por tenant).
+ ///   Ã¢â‚¬Â¢ O bucket ÃƒÂ© PRIVADO. O acesso ÃƒÂ© por URL assinada com expiraÃƒÂ§ÃƒÂ£o curta
+ ///     (`/rh/documentos/:id/download`), nunca por URL pÃƒÂºblica permanente.
+ ///   Ã¢â‚¬Â¢ `contentType` e `tamanho` gravam o que foi declarado no upload e sÃƒÂ£o
+ ///     devolvidos no download Ã¢â‚¬â€ o `Content-Type` da resposta vem daqui, para o
+ ///     navegador nÃƒÂ£o abrir HTML onde se esperava PDF.
+///
+model Documento {
+  id             String   @id @default(cuid())
+  empresaId      String
+  // Entidade dona do anexo: Funcionario | Advertencia | Suspensao | Desligamento
+  // Guardada como string (e nÃƒÂ£o como relaÃƒÂ§ÃƒÂ£o) porque o mesmo bucket serve a
+  // vÃƒÂ¡rias telas; a validaÃƒÂ§ÃƒÂ£o de que a entidade existe e pertence ÃƒÂ  mesma
+  // empresa acontece na rota de upload.
+  entidadeTipo    String
+  entidadeId      String
+  /// Atalho de relacao quando o anexo e de um funcionÃƒÂ¡rio (dossiÃƒÂª). O
+  /// `Documento` continua genÃƒÂ©rico: anexos de AdvertÃƒÂªncia/SuspensÃƒÂ£o/Desligamento
+  /// usam apenas `entidadeTipo`/`entidadeId`.
+  funcionarioId   String?
+  funcionario     Funcionario? @relation(fields: [funcionarioId], references: [id])
+  // Nome original, sÃƒÂ³ para exibiÃƒÂ§ÃƒÂ£o. NUNCA usado para montar caminho no bucket.
+  nomeOriginal    String
+  // Chave real dentro do bucket, ex.: "empresa-abc/rh/1699999999-contrato.pdf"
+  chave           String   @unique
+  bucket          String
+  provedor        String   @default("s3") // s3 | supabase
+  contentType     String
+  tamanho         Int      // bytes
+  // DescriÃƒÂ§ÃƒÂ£o livre de onde veio (ex.: "Atestado de ponto").
+  descricao       String?
+  // Quem anexou Ã¢â‚¬â€ para auditoria de quem expÃƒÂµe documento de terceiro.
+  enviadoPorId    String?
+  enviadoPor      Usuario? @relation(fields: [enviadoPorId], references: [id])
+  // "disponivel" | "arquivado" Ã¢â‚¬â€ o arquivamento NÃƒÆ’O apaga o objeto do bucket;
+  // sÃƒÂ³ o esconde do acesso operacional (ver janela de 30 dias no RH).
+  situacao         String    @default("disponivel")
+  comprovanteDe    PagamentoRH[]
+  createdAt        DateTime  @default(now())
+
+  @@index([empresaId, entidadeTipo, entidadeId])
+  @@index([funcionarioId])
+  @@index([empresaId, situacao])
+  @@index([entidadeId])
+}
+
+model Advertencia {
+  id                String          @id @default(cuid())
+  empresaId         String
+  funcionarioId     String
+  funcionario       Funcionario     @relation(fields: [funcionarioId], references: [id])
+  tipo              TipoAdvertencia @default(VERBAL)
+  motivo            String
+  descricao         String?
+  data              DateTime        @default(now())
+  aplicadaPor       String? // nome de quem aplicou a advertÃ¯Â¿Â½ncia
+  statusPedido      String          @default("APLICADA") // APLICADA, CIENTE, CONTESTADA
+  documentoNome     String? // nome do PDF gerado (termo de advertÃ¯Â¿Â½ncia)
+  documentoGeradoEm DateTime?
+  origem            Origem          @default(MANUAL)
+  createdAt         DateTime        @default(now())
+
+  @@index([empresaId, funcionarioId])
+}
+
+// SuspensÃ¯Â¿Â½o disciplinar (CLT art. 474). NÃ¯Â¿Â½o existia no schema original: a aba
+// "SuspensÃ¯Â¿Â½es" do RH nÃ¯Â¿Â½o tinha onde persistir nada.
+model Suspensao {
+  id                String      @id @default(cuid())
+  empresaId         String
+  funcionarioId     String
+  funcionario       Funcionario @relation(fields: [funcionarioId], references: [id])
+  dias              Int
+  motivo            String
+  inicio            DateTime    @db.Date
+  fim               DateTime    @db.Date
+  aplicadaPor       String?
+  statusPedido      String      @default("APLICADA") // APLICADA, CUMPRIDA, CANCELADA
+  documentoNome     String? // nome do PDF gerado (notificaÃ¯Â¿Â½Ã¯Â¿Â½o de suspensÃ¯Â¿Â½o)
+  documentoGeradoEm DateTime?
+  origem            Origem      @default(MANUAL)
+  createdAt         DateTime    @default(now())
+
+  @@index([empresaId, funcionarioId])
+}
+
+enum TipoAdvertencia {
+  VERBAL
+  ESCRITA
+  SUSPENSAO
+}
+
+// Desligamento / termo de rescisÃƒÂ£o (CLT art. 477 e seguintes).
+//
+// NÃƒÂ£o existia no schema: a aba "Desligamento" do RH montava o termo e as
+// verbas apenas no estado do navegador, sem gravar nada, e ainda criava um
+// registro DE EXEMPLO quando a lista estava vazia Ã¢â‚¬â€ o usuÃƒÂ¡rio via um termo
+// com dados fictÃƒÂ­cios e, ao recarregar a tela, tudo sumia. Com este modelo o
+// termo passa a ser um registro real, auditÃƒÂ¡vel e persistente.
+model Desligamento {
+  id              String      @id @default(cuid())
+  empresaId       String
+  funcionarioId   String
+  funcionario     Funcionario @relation(fields: [funcionarioId], references: [id])
+  data            DateTime    @db.Date
+  // Motivo: sem-justa-causa | justa-causa | pedido | acordo | ato-improbidade
+  tipo            String
+  tipoLabel       String // rÃƒÂ³tulo exibido no termo (ex.: "Sem justa causa")
+  art             String      // enquadramento legal (ex.: "ART. 487 CLT")
+  motivo          String
+  // aviso: trabalhado | indenizado | dispensado
+  aviso           String      @default("indenizado")
+  saldoDias       Int         @default(0)
+  // Verbas calculadas no momento do registro e gravadas como SNAPSHOT.
+  //
+  // Guardadas separadamente porque o salÃƒÂ¡rio e as datas do cadastro podem
+  // mudar depois, mas o termo jÃƒÂ¡ impresso precisa continuar fiel ao que foi
+  // apurado no ato. A soma de `verbas13 + verbasFerias + verbasAviso +
+  // verbasTotal` NÃƒÆ’O fecha sozinha: `verbasTotal` inclui tambÃƒÂ©m 1/3, fÃƒÂ©rias
+  // proporcionais e saldo de salÃƒÂ¡rio, que ganharam colunas prÃƒÂ³prias.
+  verbas13        Decimal?    @db.Decimal(12, 2) // 13Ã‚Âº proporcional
+  verbasFerias    Decimal?    @db.Decimal(12, 2) // fÃƒÂ©rias vencidas
+  verbasAviso     Decimal?    @db.Decimal(12, 2) // aviso prÃƒÂ©vio indenizado
+  verbasTotal     Decimal?    @db.Decimal(12, 2)
+  // Detalhamento que o Art. 477 exige no termo. Antes estes valores eram
+  // calculados no navegador com percentuais fixos e NÃƒÆ’O eram gravados: o PDF
+  // saÃƒÂ­a com nÃƒÂºmeros que o banco nÃƒÂ£o conseguia reproduzir.
+  verbasTerco          Decimal? @db.Decimal(12, 2) // 1/3 constitucional
+  verbasSaldo          Decimal? @db.Decimal(12, 2) // saldo de salÃƒÂ¡rio (em REAIS)
+  verbasFeriasProporc  Decimal? @db.Decimal(12, 2) // fÃƒÂ©rias proporcionais
+  meses13              Int?     // meses considerados no 13Ã‚Âº (informativo)
+  anosCompletos        Int?     // anos completos de serviÃƒÂ§o (fÃƒÂ©rias vencidas)
+  diasAviso            Int?     // dias de aviso prÃƒÂ©vio gerados
+  // FGTS e multa rescisÃƒÂ³ria dependem do saldo DEPOSITADO do FGTS, que nÃƒÂ£o
+  // existe no schema (nÃƒÂ£o hÃƒÂ¡ tabela de depÃƒÂ³sitos). Ficam nulos de propÃƒÂ³sito:
+  // o termo os exibe como "nÃƒÂ£o apurado" em vez de estimar por percentual.
+  saldoFgts            Decimal? @db.Decimal(12, 2)
+  multaFgts            Decimal? @db.Decimal(12, 2)
+  fgtsApurado          Boolean   @default(false)
+  alineas         String[]    @default([])
+  observacoes     String?
+  documentos      String[]    @default([])
+  // PENDENTE | ASSINADO | HOMOLOGADO | CANCELADO
+  status          String      @default("PENDENTE")
+  documentoNome   String? // nome do PDF gerado
+  documentoGeradoEm DateTime?
+  // Cancelamento (art. 5 CLT): o registro NÃƒÆ’O ÃƒÂ© apagado, entra em CANCELADO
+  // e o funcionÃƒÂ¡rio volta a ATIVO. O histÃƒÂ³rico fica preservado.
+  canceladoEm      DateTime?
+  canceladoPorId   String?
+  motivoCancelamento String?
+  // Arquivamento: 30 dias apÃƒÂ³s o desligamento o cadastro sai da operaÃƒÂ§ÃƒÂ£o e
+  // passa a arquivado. `arquivadoEm` nulo = ainda dentro da janela.
+  arquivadoEm      DateTime?
+  // ImpressÃƒÂ£o do dossiÃƒÂª completo (advertÃƒÂªncias + suspensÃƒÂµes + rescisÃƒÂ£o).
+  dossieGeradoEm   DateTime?
+  origem          Origem      @default(MANUAL)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([empresaId])
+  @@index([empresaId, funcionarioId])
+  @@index([empresaId, status])
+  // Suporta a varredura de "quem venceu os 30 dias": sÃƒÂ³ os desligamentos ainda
+  // dentro da janela entram no ÃƒÂ­ndice com `arquivadoEm` nulo.
+  @@index([arquivadoEm, status])
+}
+
+model Ferias {
+  id            String      @id @default(cuid())
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  inicio        DateTime
+  fim           DateTime
+  status        String      @default("AGENDADA")
+  origem        Origem      @default(MANUAL)
+}
+
+// --- Se+Ã¯Â¿Â½+Ã¯Â¿Â½o 21 Controle de Ponto - ControlID iDClass API oficial ---
+// Documenta+Ã¯Â¿Â½+Ã¯Â¿Â½o oficial ControlID: POST /login.fcgi + POST /load_objects.fcgi com object: access_logs
+model Ponto {
+  id               String      @id @default(cuid())
+  empresaId        String
+  funcionarioId    String
+  funcionario      Funcionario @relation(fields: [funcionarioId], references: [id])
+  data             DateTime    @db.Date
+  entrada          DateTime?
+  saidaIntervalo   DateTime?
+  retornoIntervalo DateTime?
+  saida            DateTime?
+  atrasoMinutos    Int         @default(0)
+  horaExtraMinutos Int         @default(0)
+  falta            Boolean     @default(false)
+  inconsistencia   String? // ex: falta batida, ponto duplicado
+  bancoHoras       Int         @default(0) // minutos
+  saidaAntecipada  Boolean     @default(false)
+  origem           Origem      @default(PONTO) // PONTO quando vem do equipamento
+  idExterno        String? // id do log no iDClass
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@unique([funcionarioId, data])
+  @@index([empresaId, data])
+}
+
+
+// Integra+Ã¯Â¿Â½+Ã¯Â¿Â½o ControlID
+model IntegracaoPonto {
+  id                  String           @id @default(cuid())
+  empresaId           String
+  nome                String
+  url                 String // IP do iDClass ex: http://192.168.1.100
+  usuario             String // usuario do iDClass
+  senhaCriptografada  String?
+  status              StatusIntegracao @default(NAO_CONFIGURADO)
+  ultimaSincronizacao DateTime?
+  qtdRegistros        Int              @default(0)
+  erros               Json?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+// ===== PARTE 6 - IA (mesclado de schema-additions-ia.prisma) =====
+enum TipoAlerta {
+  ESTOQUE_BAIXO
+  ESTOQUE_ZERADO
+  VALIDADE
+  QUEDA_VENDAS
+  META_BAIXA
+  CONTA_VENCIDA
+  DESPESA_ALTA
+  FALTA
+  ATRASO
+  HORA_EXTRA
+  ANOMALIA_IA
+  COMPRA_PENDENTE
+}
+
+enum PrioridadeAlerta {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum StatusAlerta {
+  ABERTO
+  LIDO
+  RESOLVIDO
+}
+
+model Alerta {
+  id         String           @id @default(cuid())
+  empresaId  String
+  tipo       TipoAlerta
+  prioridade PrioridadeAlerta @default(MEDIA)
+  titulo     String
+  descricao  String
+  status     StatusAlerta     @default(ABERTO)
+  entidade   String?
+  entidadeId String?
+  origem     Origem           @default(AUTOMATICO)
+  createdAt  DateTime         @default(now())
+
+  @@index([empresaId, status])
+}
+
+model Notificacao {
+  id         String           @id @default(cuid())
+  empresaId  String
+  usuarioId  String?
+  tipo       String
+  prioridade PrioridadeAlerta @default(MEDIA)
+  titulo     String
+  mensagem   String
+  lida       Boolean          @default(false)
+  origem     String?
+  link       String?
+  createdAt  DateTime         @default(now())
+
+  @@index([empresaId, usuarioId, lida])
+}
+
+model RegraAutomacao {
+  id        String   @id @default(cuid())
+  empresaId String
+  nome      String
+  condicao  String
+  acao      String
+  ativa     Boolean  @default(true)
+  origem    Origem   @default(AUTOMATICO)
+  createdAt DateTime @default(now())
+}
+
+model ConversaIA {
+  id        String   @id @default(cuid())
+  empresaId String
+  usuarioId String
+  pergunta  String
+  resposta  String   @db.Text
+  contexto  Json?
+  origem    Origem   @default(IA)
+  createdAt DateTime @default(now())
+}
+
+// ===== COMERCIAL / ASSINATURA =====
+enum StatusAssinatura {
+  TRIAL
+  ATIVA
+  ATRASADA
+  CANCELADA
+  EXPIRADA
+}
+
+model Assinatura {
+  id              String           @id @default(cuid())
+  empresaId       String           @unique
+  empresa         Empresa          @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  status          StatusAssinatura @default(TRIAL)
+  trialInicio     DateTime
+  trialFim        DateTime
+  proximaCobranca DateTime?
+  valorMensal     Decimal          @default(19.90) @db.Decimal(10, 2)
+  checkoutUrl     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  pagamentos      Pagamento[]
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  FALHOU
+  ESTORNADO
+}
+
+model Pagamento {
+  id           String          @id @default(cuid())
+  assinaturaId String
+  assinatura   Assinatura      @relation(fields: [assinaturaId], references: [id], onDelete: Cascade)
+  valor        Decimal         @db.Decimal(10, 2)
+  status       StatusPagamento @default(PENDENTE)
+  orderNsu     String?
+  externalId   String?
+  pagoEm       DateTime?
+  origem       Origem          @default(INTEGRACAO)
+  createdAt    DateTime        @default(now())
+
+  @@index([assinaturaId, status])
+  @@index([orderNsu])
+}
+
+// ===== RelatÃƒÂ³rios gerados pela IA (SeÃƒÂ§ÃƒÂ£o 33 + IA NEXUS) =====
+model RelatorioGerado {
+  id               String   @id @default(cuid())
+  empresaId        String
+  perguntaOriginal String
+  titulo           String
+  tipo             String
+  dados            Json
+  insights         Json?
+  criadoEm         DateTime @default(now())
+
+  @@index([empresaId, criadoEm])
+}
+
+// ===========================================================================
+//  SeÃƒÂ§ÃƒÂ£o 22 Ã¢â‚¬â€ Folha de Pagamento
+//
+//  DECISÃƒÆ’O DE PROJETO: por que estes modelos sÃƒÂ£o novos e nÃƒÂ£o reaproveitados
+//  --------------------------------------------------------------------------
+//  O `Pagamento` que jÃƒÂ¡ existe no schema ÃƒÂ© da ASSINATURA SaaS (vinculado a
+//  `Assinatura`, com `assinaturaId` e cobranca de 19,90/mÃƒÂªs). NÃƒÂ£o ÃƒÂ© folha de
+//  pagamento de funcionÃƒÂ¡rio Ã¢â‚¬â€ reutilizÃƒÂ¡-lo misturaria a receita da plataforma com
+//  obrigaÃƒÂ§ÃƒÂ£o trabalhista, e aÃ¯Â¿Â½Ã¯Â¿Â½o tÃƒÂ©m empresas deÃ„â€œfusos de vida diferentes. Por
+//  isso a folha tem modelos prÃƒÂ³prios, e `PagamentoRH` ÃƒÂ© o nome deliberado.
+//
+//  O cÃƒÂ¡lculo NÃƒÆ’O fica no schema: `Folha.lancamentos` guarda o resultado apurado
+//  pelo servidor como SNAPSHOT, pelo mesmo motivo das verbas de rescisÃƒÂ£o Ã¢â‚¬â€ folha
+//  fechada nÃƒÂ£o pode mudar porque o salÃƒÂ¡rio foi reajustado depois.
+// ===========================================================================
+
+/// SituaÃƒÂ§ÃƒÂ£o da folha mensal. `FECHADA` impede lanÃƒÂ§amentos (ver rotas).
+enum StatusFolha {
+  ABERTA
+  PROCESSADA
+  FECHADA
+}
+
+/// SituaÃƒÂ§ÃƒÂ£o do pagamento de UM funcionÃƒÂ¡rio dentro da competÃƒÂªncia.
+/// `ATRASADO` ÃƒÂ© DERIVADO, nunca gravado: depende da data prevista e de hoje.
+enum StatusPagamentoFolha {
+  PENDENTE
+  PAGO
+}
+
+/// Provento credita o funcionÃƒÂ¡rio; desconto debita.
+enum TipoLancamento {
+  PROVENTO
+  DESCONTO
+}
+
+/// De onde veio o lanÃƒÂ§amento. `PONTO` sÃƒÂ³ existe se o mÃƒÂ³dulo de ponto tiver
+/// batidas reais na competÃƒÂªncia; `AUTOMATICO` ÃƒÂ© o salÃƒÂ¡rio-base e adicionais
+/// derivados do cadastro.
+enum OrigemLancamento {
+  AUTOMATICO
+  PONTO
+  MANUAL
+}
+
+/// CompetÃƒÂªncia mensal (AAAA-MM). `Folha` ÃƒÂ© ÃƒÂºnica por empresa+competÃƒÂªncia.
+model Folha {
+  id            String       @id @default(cuid())
+  empresaId     String
+  /// AAAA-MM. Texto e nÃƒÂ£o DateTime de propÃƒÂ³sito: competÃƒÂªncia ÃƒÂ© perÃƒÂ­odo, nÃƒÂ£o
+  /// instante, e um DateTime traria fuso e horÃƒÂ¡rio para uma informaÃƒÂ§ÃƒÂ£o que nÃƒÂ£o os tem.
+  competencia   String
+  status        StatusFolha  @default(ABERTA)
+  dataAbertura  DateTime     @default(now())
+  dataProcessamento DateTime?
+  dataFechamento   DateTime?
+  fechadaPorId  String?
+  fechadaPor    Usuario?   @relation(fields: [fechadaPorId], references: [id])
+  /// Totais da competÃƒÂªncia, gravados no fechamento como snapshot do fechamento.
+  /// A listagem usa estes valores em vez de somar linha a linha a cada leitura.
+  totalProventos  Decimal @default(0) @db.Decimal(12, 2)
+  totalDescontos  Decimal @default(0) @db.Decimal(12, 2)
+  totalLiquido    Decimal @default(0) @db.Decimal(12, 2)
+  observacoes   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  lancamentos   LancamentoFolha[]
+  pagamentos    PagamentoRH[]
+
+  @@unique([empresaId, competencia])
+  @@index([empresaId, status])
+}
+
+/// Um lanÃƒÂ§amento de provento ou desconto na folha.
+model LancamentoFolha {
+  id          String           @id @default(cuid())
+  empresaId   String
+  folhaId     String
+  folha       Folha            @relation(fields: [folhaId], references: [id], onDelete: Cascade)
+  funcionarioId String
+  funcionario Funcionario      @relation(fields: [funcionarioId], references: [id])
+  /// CÃƒÂ³digo da rubrica (ex.: "001", "HORA_EXTRA", "INSS"). Label-like, nÃƒÂ£o ÃƒÂºnique
+  /// global: a mesma rubrica pode mudar de descriÃƒÂ§ÃƒÂ£o entre competÃƒÂªncias.
+  codigo      String
+  descricao   String
+  tipo        TipoLancamento
+  /// Quantidade/referÃƒÂªncia (horas, dias, %). NULL quando a rubrica nÃƒÂ£o tem.
+  referencia  Decimal?         @db.Decimal(12, 4)
+  valor       Decimal          @db.Decimal(12, 2)
+  /// SalÃƒÂ¡rio-base no momento do lanÃƒÂ§amento. Guardado para que o histÃƒÂ³rico
+  /// sobreviva a reajuste salarial: o 13Ã‚Âº de marÃƒÂ§o nÃƒÂ£o pode virar 13Ã‚Âº de
+  /// setembro reescalado.
+  salarioBase Decimal?         @db.Decimal(12, 2)
+  /// "% de desconto do empregado sobre o total de proventos", quando o lanÃƒÂ§amento
+  /// representa um percentual (INSS, IRRF, vale-transporte). Guardado como
+  /// REFERÃƒÅ Ncia, nunca aplicado sobre outro total.
+  percentual   Decimal?         @db.Decimal(6, 4)
+  observacoes String?
+  origem      OrigemLancamento @default(MANUAL)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([empresaId, folhaId])
+  @@index([funcionarioId, folhaId])
+}
+
+/// Pagamento do salÃƒÂ¡rio lÃƒÂ­quido de UM funcionÃƒÂ¡rio numa competÃƒÂªncia.
+model PagamentoRH {
+  id            String              @id @default(cuid())
+  empresaId     String
+  folhaId       String
+  folha         Folha               @relation(fields: [folhaId], references: [id], onDelete: Cascade)
+  funcionarioId String
+  funcionario   Funcionario        @relation(fields: [funcionarioId], references: [id])
+  /// LÃƒÂ­quido apurado no fechamento Ã¢â‚¬â€ snapshot. O valor real do pagamento nÃƒÂ£o pode
+  /// divergir do lÃƒÂ­quido (adiantamentos, ajustes); os dois sÃƒÂ£o gravados.
+  valorLiquido  Decimal             @db.Decimal(12, 2)
+  valorPago     Decimal?            @db.Decimal(12, 2)
+  status        StatusPagamentoFolha @default(PENDENTE)
+  dataPrevista  DateTime?
+  dataPagamento DateTime?
+  formaPagamento String?
+  observacoes   String?
+  /// Comprovante em PDF, referÃƒÂªncia a `Documento` (bucket). NULL atÃƒÂ© o anexo.
+  documentoId   String?
+  documento     Documento?          @relation(fields: [documentoId], references: [id])
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([empresaId, folhaId])
+  @@index([funcionarioId, status])
+}
+
+/// 13Ã‚Âº salary: controle por ano-calendÃƒÂ¡rio, com parcelas e proporcionalidade.
+model DecimoTerceiro {
+  id            String   @id @default(cuid())
+  empresaId     String
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  /// Ano-calendÃƒÂ¡rio do 13Ã‚Âº.
+  ano           Int
+  salarioBase   Decimal  @db.Decimal(12, 2)
+  /// Meses de direito proporcional (1..12). Vem da data de admissÃƒÂ£o real.
+  mesesDireito  Int      @default(12)
+  valorBruto    Decimal  @db.Decimal(12, 2)
+  /// Primeira parcela (adiantamento) Ã¢â‚¬â€ 50% do bruto, pago atÃƒÂ© 30/11.
+  valorPrimeiraParcela Decimal? @db.Decimal(12, 2)
+  dataPrimeiraParcela  DateTime?
+  valorSegundaParcela  Decimal? @db.Decimal(12, 2)
+  dataSegundaParcela   DateTime?
+  /// Descontos aplicÃƒÂ¡veis Ã¢â‚¬â€ INSS, IRRF, adiantamentos. Soma dos lanÃƒÂ§amentos
+  /// marcados como desconto NA folha deste funcionÃƒÂ¡rio/ano.
+  totalDescontos Decimal @default(0) @db.Decimal(12, 2)
+  valorLiquido   Decimal @db.Decimal(12, 2)
+  /// Percentual de fgts a cargo da empresa Ã¢â‚¬â€ guardado como REFERÃƒÅ Ncia para o
+  /// pagamento do 13Ã‚Âº. Ver `lib/folha.ts`: sem histÃƒÂ³rico de saldos, isto ÃƒÂ©
+  /// informaÃƒÂ§ÃƒÂ£o, e nÃƒÂ£o cÃƒÂ¡lculo.
+  fgtsReferencia  Decimal? @db.Decimal(6, 4)
+  /// Saldo de FGTS do funcionÃƒÂ¡rio. NULL atÃƒÂ© existir tabela de depÃƒÂ³sitos (nÃƒÂ£o hÃƒÂ¡ no
+  /// schema) Ã¢â‚¬â€ ÃƒÂ© o que impede estimar multa/FGTS por percentual.
+  saldoFgts       Decimal? @db.Decimal(12, 2)
+  /// `null` = "nÃƒÂ£o apurÃƒÂ¡vel com os dados atuais".
+  status          String   @default("PENDENTE")
+  dataPagamento   DateTime?
+  observacoes     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([empresaId, ano])
+  @@index([funcionarioId, ano])
+}
+
+// ===== PIX universal (recebimento direto na conta do lojista) =====
+enum TipoChavePix {
+  CPF
+  CNPJ
+  PHONE
+  EMAIL
+  RANDOM
+}
+
+enum StatusCobrancaPix {
+  PENDENTE
+  PAGO
+  EXPIRADO
+  CANCELADO
+}
+
+model PixSettings {
+  id           String       @id @default(cuid())
+  empresaId    String       @unique
+  enabled      Boolean      @default(false)
+  keyType      TipoChavePix
+  pixKey       String // criptografada com AES (lib/secrets.ts) Ã¢â‚¬â€ nunca em texto puro
+  merchantName String // max 25 (BACEN campo 59)
+  merchantCity String // max 15 (BACEN campo 60)
+  document     String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([empresaId])
+}
+
+model PixCobranca {
+  id        String            @id @default(cuid())
+  empresaId String
+  vendaId   String?
+  txid      String            @unique // BACEN: [A-Za-z0-9]{1,25}
+  valor     Decimal           @db.Decimal(12, 2)
+  payload   String // BR Code EMV (copia e cola)
+  status    StatusCobrancaPix @default(PENDENTE)
+  pagoEm    DateTime?
+  expiraEm  DateTime
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([empresaId, status])
+  @@index([vendaId])
+}
+
+model ChaveApi {
+  id                 String    @id @default(cuid())
+  empresaId          String
+  nome               String
+  prefixo            String
+  chaveHash          String    @unique
+  escopos            String[]
+  criadaPorUsuarioId String?
+  status             String    @default("ATIVA")
+  ultimoUso          DateTime?
+  revogadaEm         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([empresaId])
+  @@index([status])
+}
+
+model IntegracaoExterno {
+  id            String   @id @default(cuid())
+  empresaId     String
+  tipo          String   @default("MERCADO_LIVRE") // MERCADO_LIVRE
+  state         String?  // Nonce OAuth: valor ÃƒÂºnico que valida o callback (gerado com randomBytes(24).base64url)
+  stateExpiraEm DateTime? // Validade do state (uso ÃƒÂºnico, expira em 10 min); nulo quando nÃƒÂ£o hÃƒÂ¡ tentativa pendente
+  nome          String
+  // Credenciais OAuth (clientId / clientSecret / redirectUri). Sempre
+  // criptografadas antes de gravar e NUNCA expostas na resposta.
+  clientId      String?
+  clientSecret  String?
+  redirectUri   String?
+  // InformaÃƒÂ§ÃƒÂµes da conta vinculada apÃƒÂ³s o OAuth
+  accountName   String?
+  accountId     String?
+  // Token de acesso (criptografado)
+  accessToken   String?
+  refreshToken  String?
+  tokenExpiry   DateTime?
+  scope         String?
+  // Controle de estado de sincronizaÃƒÂ§ÃƒÂ£o
+  status        String   @default("NAO_CONFIGURADO") // NAO_CONFIGURADO | CONECTANDO | CONECTADO | EXPIRADO | ERRO | REVOGADO
+  erros         Json?
+  ultimoTesteEm DateTime?
+  ultimoSyncEm  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([empresaId])
+  @@index([tipo])
+  @@index([state])
+  @@unique([empresaId, tipo])
+}
+
+// --- SincronizaÃƒÂ§ÃƒÂ£o automÃƒÂ¡tica do Mercado Livre --------------------------------
+// Estado-mÃƒÂ¡quina das tarefas recorrentes de sync (produtos / estoque /
+// pedidos). POR QUE UMA TABELA PRÃƒâ€œPRIA: o agendamento precisa sobreviver a
+// reinicializaÃƒÂ§ÃƒÂ£o, ser recuperÃƒÂ¡vel e seguro entre mÃƒÂºltiplas instÃƒÂ¢ncias Ã¢â‚¬â€
+// `setInterval` em memÃƒÂ³ria perde o estado no restart e duplica execuÃƒÂ§ÃƒÂ£o com
+// mais de um processo. Uma linha por (empresa, tipo) concentra o que falta
+// executar e a evidÃƒÂªncia do que jÃƒÂ¡ foi feito (sem duplicar a semÃƒÂ¢ntica de
+// `Importacao`, que registra cada execuÃƒÂ§ÃƒÂ£o individual).
+//
+// CONCORRÃƒÅ NCIA: a trava ÃƒÂ© o par status=EXECUTANDO + leaseExpiraEm. A execuÃƒÂ§ÃƒÂ£o
+// ÃƒÂ© tomada com updateMany condicional (count=1 => venceu) Ã¢â‚¬â€ operaÃƒÂ§ÃƒÂ£o atÃƒÂ´mica
+// do PostgreSQL, segura entre instÃƒÂ¢ncias sem lock distribuÃƒÂ­do. Lease vencido
+// = execuÃƒÂ§ÃƒÂ£o ÃƒÂ³rfÃƒÂ£ (processo caiu no meio): o prÃƒÂ³ximo tick desengata e conta
+// a recuperaÃƒÂ§ÃƒÂ£o em `recuperadas`.
+model SincronizacaoTarefa {
+  id                 String    @id @default(cuid())
+  empresaId          String
+  empresa            Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  // Mesmos identificadores dos tipos de Importacao (MERCADO_LIVRE_*): o
+  // histÃƒÂ³rico de execuÃƒÂ§ÃƒÂµes e a tarefa falando a mesma lÃƒÂ­ngua.
+  tipo               String    // MERCADO_LIVRE_PRODUTOS | MERCADO_LIVRE_ESTOQUE | MERCADO_LIVRE_PEDIDOS
+  status             String    @default("AGUARDANDO") // AGUARDANDO | EXECUTANDO | PAUSADA
+  // ExecuÃƒÂ§ÃƒÂ£o vencida = candidata no tick; ÃƒÂ­ndice cobre a fila de vencidas.
+  proximaExecucaoEm  DateTime
+  // Lease da execuÃƒÂ§ÃƒÂ£o em andamento; ao expirar, qualquer instÃƒÂ¢ncia desengata.
+  leaseExpiraEm      DateTime?
+  instanciaId        String?
+  tentativas         Int       @default(0) // falhas consecutivas (backoff exponencial)
+  recuperadas        Int       @default(0) // execuÃƒÂ§ÃƒÂµes ÃƒÂ³rfÃƒÂ£s desengatadas (lease vencido)
+  ultimaExecucaoEm   DateTime?
+  ultimoSucessoEm    DateTime?
+  // Redigido por construÃƒÂ§ÃƒÂ£o: guarda apenas { motivo, em } Ã¢â‚¬â€ nunca token,
+  // segredo, cabeÃƒÂ§alho ou corpo de requisiÃƒÂ§ÃƒÂ£o.
+  ultimoErro         Json?
+  processadosUltima  Int       @default(0)
+  falhasUltima       Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([empresaId, tipo])
+  @@index([status, proximaExecucaoEm])
+}
+
+/// Caixa durÃƒÂ¡vel dos webhooks do Mercado Livre: a rota confirma o recebimento
+/// depois de persistir o ponteiro e um worker os consulta/processa em seguida.
+model NotificacaoMercadoLivre {
+  id                 String   @id @default(cuid())
+  empresaId          String
+  empresa            Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  eventKey           String
+  topic              String
+  resource           String
+  userId             String
+  payload            Json
+  status             String   @default("AGUARDANDO") // AGUARDANDO | EXECUTANDO | PROCESSADO | IGNORADO | FALHA_PERMANENTE
+  tentativas         Int      @default(0)
+  proximaExecucaoEm  DateTime @default(now())
+  leaseExpiraEm      DateTime?
+  processadaEm       DateTime?
+  finalizadaEm       DateTime?
+  ultimoErro         Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([empresaId, eventKey])
+  @@index([status, proximaExecucaoEm])
+}
+
+// ConexÃƒÂµes Shopee sÃƒÂ£o por loja: ao contrÃƒÂ¡rio de IntegracaoExterno (ML), uma
+// empresa pode vincular mais de uma loja autorizada.
+model ShopeeConexao {
+  id                    String   @id @default(cuid())
+  empresaId             String
+  empresa               Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  shopId                String
+  shopName              String?
+  accessToken           String?
+  refreshToken          String?
+  tokenExpiry           DateTime
+  refreshTokenExpiry    DateTime?
+  refreshLeaseExpiraEm  DateTime?
+  pedidosNextSyncAt    DateTime?
+  pedidosLeaseExpiraEm DateTime?
+  pedidosSyncTentativas Int      @default(0)
+  pedidosJanelaDe      DateTime?
+  pedidosJanelaAte     DateTime?
+  pedidosCursor        String?
+  status                String   @default("CONECTADO")
+  connectedAt           DateTime @default(now())
+  ultimoTesteEm         DateTime?
+  ultimoSyncEm          DateTime?
+  erros                 Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([empresaId, shopId])
+  @@unique([id, empresaId])
+  @@index([empresaId, status])
+  @@index([tokenExpiry])
+  @@index([refreshLeaseExpiraEm])
+  @@index([pedidosNextSyncAt, pedidosLeaseExpiraEm])
+  pedidos               ShopeePedido[]
+}
+
+// Guarda somente o hash do state OAuth; o valor bruto existe apenas no
+// navegador durante a autorizaÃƒÂ§ÃƒÂ£o. Empresa e usuÃƒÂ¡rio vÃƒÂªm da sessÃƒÂ£o NEXUS.
+model ShopeeOAuthState {
+  id          String    @id @default(cuid())
+  stateHash   String    @unique
+  empresaId   String
+  empresa     Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  usuarioId   String
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@index([empresaId, usuarioId])
+}
+
+// Snapshot de identidade/status de pedido, sem PII nem payload bruto. Este
+// registro serve para polling/reconciliaÃƒÂ§ÃƒÂ£o; nÃƒÂ£o representa uma Venda NEXUS.
+model ShopeePedido {
+  id                 String       @id @default(cuid())
+  empresaId          String
+  conexaoId          String
+  conexao            ShopeeConexao @relation(fields: [conexaoId, empresaId], references: [id, empresaId], onDelete: Restrict)
+  orderSn            String
+  statusExterno      String
+  externalUpdatedAt  DateTime
+  externalCreatedAt  DateTime?
+  lastSeenAt         DateTime     @default(now())
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([conexaoId, orderSn])
+  @@index([empresaId, statusExterno])
+  @@index([conexaoId, externalUpdatedAt])
+}
+
+model TokenRevogado {
+  id        String   @id @default(cuid())
+  jti       String   @unique
+  expiraEm  DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiraEm])
+}
+
+// =============================================================================
+// Radar Organizacional Ã¢â‚¬â€ camada de inteligÃƒÂªncia que cruza os mÃƒÂ³dulos
+// =============================================================================
+//
+// POR QUE CADA TABELA EXISTE (nenhuma duplica estrutura existente):
+//
+// 1) AvaliacaoComportamental Ã¢â‚¬â€ o prompt do Radar diz que o perfil DISC ÃƒÂ©
+//    "informaÃƒÂ§ÃƒÂ£o levantada pelo RH", ou seja, ENTRADA humana, nÃƒÂ£o mediÃƒÂ§ÃƒÂ£o
+//    automÃƒÂ¡tica. Sem um lugar para o RH registrar, o campo ÃƒÂ© sempre null e o
+//    Radar mostraria um espaÃƒÂ§o permanentemente vazio. Nenhum modelo existente
+//    guarda isso.
+//
+// 2) PesquisaBemEstar Ã¢â‚¬â€ mesma lÃƒÂ³gica: bem-estar ÃƒÂ© perception humana coletada
+//    pelo RH. O Radar sÃƒÂ³ faz o cruzamento; quem mede ÃƒÂ© a pessoa.
+//
+// 3) RegistroGamificacao Ã¢â‚¬â€ o prompt proÃƒÂ­be localStorage para informaÃƒÂ§ÃƒÂ£o
+//    empresarial. Pontos, conquistas e reconhecimento precisam sobreviver a
+//    troca de navegador e ser auditÃƒÂ¡veis.
+//
+// 4) AcaoRadar Ã¢â‚¬â€ o botÃƒÂ£o "Criar Plano de AÃƒÂ§ÃƒÂ£o" precisa persistir o que o
+//    gestor planejou a partir de um alerta. Hoje ele nÃƒÂ£o grava nada.
+//
+// Ponto comum: as quatro sÃƒÂ£o multi-tenant (empresaId) e ficam fora do modelo
+// de decisÃƒÂ£o Ã¢â‚¬â€ o Radar mostra sinais, nÃƒÂ£o diagnostica.
+
+enum PerfilDisc {
+  D
+  I
+  S
+  C
+}
+
+// ===========================================================================
+//  Ciclo 1 Ã¢â‚¬â€ Plano de Desenvolvimento DISC
+// ===========================================================================
+//  Transforma uma avaliaÃƒÂ§ÃƒÂ£o DISC REAL em um plano de desenvolvimento
+//  individual.
+//
+//  POR QUE UMA TABELA NOVA E NÃƒÆ’O REAPROVEITAR `AcaoRadar`
+//  --------------------------------------------------
+//  `AcaoRadar` ÃƒÂ© o plano de aÃƒÂ§ÃƒÂ£o derivado de um ALERTA. O plano de
+//  desenvolvimento parte de uma AVALIAÃƒâ€¡ÃƒÆ’O, e a diferenÃƒÂ§a nÃƒÂ£o ÃƒÂ© de campo, ÃƒÂ© de
+//  domÃƒÂ­nio: `AcaoRadar.alertaRef` e `alertaTitulo` sÃƒÂ£o NOT NULL porque a linha
+//  sÃƒÂ³ existe quando existe um alerta, e ÃƒÂ© esse `alertaRef` que faz o badge do
+//  alerta virar "Em aÃƒÂ§ÃƒÂ£o"/"Resolvido" (radar.routes.ts). Um plano de
+//  desenvolvimento nÃƒÂ£o tem alerta de origem.
+//
+//  ForÃƒÂ§ar o reuso exigiria tornar as duas colunas opcionais e acrescentar
+//  seis campos (avaliacaoId, objetivo, competencia, descricao, dataInicio,
+//  analiseIA) Ã¢â‚¬â€ e a tabela passaria a guardar duas coisas diferentes com o
+//  mesmo nome. Criar a entidade prÃƒÂ³pria ÃƒÂ© o caminho mais simples de explicar e
+//  de manter, que ÃƒÂ© o critÃƒÂ©rio que o prÃƒÂ³prio schema usa nas outras decisÃƒÂµes.
+//
+//  RELAÃƒâ€¡Ãƒâ€¢ES
+//  ----------
+//  * `funcionario` Ã¢â‚¬â€ de quem ÃƒÂ© o plano (CASCADE: plano nÃƒÂ£o sobrevive ÃƒÂ  pessoa).
+//  * `avaliacao`   Ã¢â‚¬â€ a avaliaÃƒÂ§ÃƒÂ£o que o originou. Guardar o id, e nÃƒÂ£o sÃƒÂ³ o
+//                    perfil, permite responder "com qual avaliaÃƒÂ§ÃƒÂ£o este plano
+//                    foi feito?" depois que a vigente mudar.
+//
+//  SNAPSHOT
+//  --------
+//  `perfil` e `scores` sÃƒÂ£o cÃƒÂ³pia do momento da criaÃƒÂ§ÃƒÂ£o. Sem eles, o histÃƒÂ³rico
+//  mudaria de significado sozinho quando uma avaliaÃƒÂ§ÃƒÂ£o nova entrasse: o plano
+//  de 2026 passaria a exibir o perfil de 2027.
+//
+//  `analiseIA` guarda o que a IA sugeriu e o que o gestor aceitou, editou ou
+//  recusou. A IA escreve em UM campo sÃƒÂ³, nunca em `perfil`/`scores`.
+
+enum StatusPlanoDesenvolvimento {
+  PLANEJADO
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum ObjetivoDesenvolvimento {
+  COMUNICACAO
+  LIDERANCA
+  ORGANIZACAO
+  TRABALHO_EM_EQUIPE
+  GESTAO_DE_CONFLITOS
+  ATENDIMENTO
+  OUTRO
+}
+
+enum CompetenciaDesenvolvimento {
+  COMUNICACAO
+  LIDERANCA
+  ORGANIZACAO
+  TRABALHO_EM_EQUIPE
+  GESTAO_DE_CONFLITOS
+  ATENDIMENTO
+  PROATIVIDADE
+  ADAPTABILIDADE
+  OUTRO
+}
+
+enum TipoAcaoDesenvolvimento {
+  TREINAMENTO
+  ACOMPANHAMENTO
+  FEEDBACK
+  EXERCICIO_PRATICO
+  MENTORIA
+  OUTRO
+}
+
+model PlanoDesenvolvimento {
+  id           String   @id @default(cuid())
+  empresaId    String
+  funcionarioId String
+  funcionario  Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  /// AvaliaÃƒÂ§ÃƒÂ£o que originou o plano. Snapshot do que foi visto na criaÃƒÂ§ÃƒÂ£o.
+  avaliacaoId  String
+  avaliacao    AvaliacaoComportamental @relation(fields: [avaliacaoId], references: [id])
+  perfil       PerfilDisc?
+  scores       Json?
+
+  objetivo     ObjetivoDesenvolvimento
+  competencia  CompetenciaDesenvolvimento
+  descricao    String
+  /// [{ tipo, descricao, concluida }] Ã¢â‚¬â€ `concluida` ÃƒÂ© o progresso do gestor.
+  acoes        Json
+  /// Quem conduz o plano. Coluna escalar como `AcaoRadar.responsavelId` e
+  /// `AvaliacaoComportamental.aplicadoPorId` Ã¢â‚¬â€ o padrÃƒÂ£o do projeto ÃƒÂ© nÃƒÂ£o
+  /// declarar relaÃƒÂ§ÃƒÂ£o para `Usuario` e resolver o nome numa consulta ÃƒÂ  parte.
+  /// Mantido assim por consistÃƒÂªncia; a rota valida que o responsÃƒÂ¡vel ÃƒÂ© desta
+  /// empresa antes de gravar.
+  responsavelId String?
+  dataInicio   DateTime  @db.Date
+  prazo        DateTime? @db.Date
+  status       StatusPlanoDesenvolvimento @default(PLANEJADO)
+  /// SugestÃƒÂ£o da IA + o que foi aceito. `null` quando a IA nÃƒÂ£o respondeu: o
+  /// plano continua vÃƒÂ¡lido e ÃƒÂ© montado ÃƒÂ  mÃƒÂ£o.
+  analiseIA    Json?
+  observacoes  String?
+  origem       Origem     @default(MANUAL)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([empresaId, status])
+  @@index([empresaId, funcionarioId])
+  @@index([empresaId, createdAt])
+}
+
+// ===========================================================================
+//  Ciclo 2 Ã¢â‚¬â€ Treinamentos, participantes e presenÃƒÂ§a
+// ===========================================================================
+//  POR QUE ENTIDADES NOVAS
+//  -----------------------
+//  NÃƒÂ£o existe nada de capacitaÃƒÂ§ÃƒÂ£o no schema: um treinamento ÃƒÂ© um EVENTO com
+//  data, hora, instrutor e local, e nada disso existe em `AvaliacaoComportamental`
+//  (que ÃƒÂ© uma mediÃƒÂ§ÃƒÂ£o pontual), em `PlanoDesenvolvimento` (que ÃƒÂ© um compromisso
+//  de desenvolvimento) ou em `AcaoRadar` (que ÃƒÂ© reaÃƒÂ§ÃƒÂ£o a um alerta). A aÃƒÂ§ÃƒÂ£o
+//  `TREINAMENTO` do plano de desenvolvimento ÃƒÂ© um TEXTO dentro de um array Ã¢â‚¬â€ nÃƒÂ£o
+//  tem data, nÃƒÂ£o tem sala, nÃƒÂ£o tem lista de quem compareceu. Usar um desses
+//  para "agendar" seria guardar um evento como se fosse uma nota.
+//
+//  RELAÃƒâ€¡ÃƒÆ’O COM O PLANO DE DESENVOLVIMENTO (Ciclo 1)
+//  ------------------------------------------------
+//  SÃƒÂ£o entidades diferentes e complementares: o plano diz O QUE desenvolver, o
+//  treinamento ÃƒÂ© UM evento que pode servir a esse plano. Por isso a ligaÃƒÂ§ÃƒÂ£o ÃƒÂ©
+//  explÃƒÂ­cita e opcional (`planoDesenvolvimentoId`), e nÃƒÂ£o implÃƒÂ­cita: um
+//  treinamento de seguranÃƒÂ§a pode existir sem plano, e um plano pode ter aÃƒÂ§ÃƒÂµes
+//  que nÃƒÂ£o viram treinamento.
+//
+//  POR QUE `ParticipanteTreinamento` E NÃƒÆ’O UM ARRAY JSON
+//  ---------------------------------------------------
+//  Os outros objetos do projeto guardam listas em `Json` (`acoes` do plano,
+//  `causas` do alerta) porque sÃƒÂ£o texto livre, consultado nunca. Aqui a lista
+//  Ãƒâ€° a consulta: quantas pessoas tomado presenÃƒÂ§a, quem faltou, o histÃƒÂ³rico
+//  de um funcionÃƒÂ¡rio. Isso exige linha, ÃƒÂ­ndice e chave ÃƒÂºnica Ã¢â‚¬â€ o que o schema
+//  jÃƒÂ¡ faz com `@@unique([funcionarioId, data])` no `Ponto`.
+//
+//  RELAÃƒâ€¡ÃƒÆ’O COM O PONTO
+//  -------------------
+//  Deliberadamente SEPARADA. PresenÃƒÂ§a em treinamento nÃƒÂ£o ÃƒÂ© batida de ponto:
+//  nÃƒÂ£o gera falta, nÃƒÂ£o gera hora extra, nÃƒÂ£o entra no espelho de ponto. Um
+//  treinamento de 2h nÃƒÂ£o pode aparecer como "2 horas trabalhadas" na folha.
+//  Misturar os dois contaminaria o cÃƒÂ¡lculo de jornada com capacitaÃƒÂ§ÃƒÂ£o.
+//
+//  HORÃƒÂRIO
+//  --------
+//  `horaInicio`/`horaFim` sÃƒÂ£o `String` no formato `HH:MM`, e nÃƒÂ£o `@db.Time`, por
+//  exatamente a mesma razÃƒÂ£o documentada em `Funcionario.horarioEntradaPrevisto`:
+//  horÃƒÂ¡rio nÃƒÂ£o tem fuso, e um tipo de data/hora no banco convida o bug de
+//  fuso que o projeto jÃƒÂ¡ cometeu trÃƒÂªs vezes.
+
+enum StatusTreinamento {
+  PLANEJADO
+  AGENDADO
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum PrioridadeTreinamento {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+/// `CONVIDADO` e `CONFIRMADO` descrevem a intenÃƒÂ§ÃƒÂ£o; `PRESENTE`/`AUSENTE`
+/// descrevem o que aconteceu. SÃƒÂ£o estados diferentes de propÃƒÂ³sito: um
+/// treinamento CONCLUIDO com gente ainda em `CONFIRMADO` tem ausÃƒÂªncia nÃƒÂ£o
+/// registrada, e a tela precisa poder dizer isso em vez de mostrar 100%
+/// presente por omissÃƒÂ£o.
+enum StatusParticipante {
+  CONVIDADO
+  CONFIRMADO
+  PRESENTE
+  AUSENTE
+  CANCELADO
+}
+
+model Treinamento {
+  id            String   @id @default(cuid())
+  empresaId     String
+  titulo        String
+  descricao     String
+  /// CatÃƒÂ¡logo livre de texto (ex.: "COMUNICACAO", "SEGURANCA"). Sem tabela de
+  /// categorias: o projeto usa `categoria String` no `Produto` e `tipo String`
+  /// na `Meta`, e uma tabela a mais sÃƒÂ³ traria rigidez sem ganho Ã¢â‚¬â€ o filtro ÃƒÂ©
+  /// por valor, e o valor ÃƒÂ© legÃƒÂ­vel.
+  categoria     String
+  objetivo      String
+  /// Nome de quem ministra. Texto, e nÃƒÂ£o relaÃƒÂ§ÃƒÂ£o com `Usuario`: o instrutor
+  /// quase nunca ÃƒÂ© alguÃƒÂ©m com login no sistema (consultor, parceiro), e criar
+  /// um cadastro de usuÃƒÂ¡rio para ele seria inventar dado.
+  instrutor     String
+  /// Quem responde pelo registro. Coluna escalar, como `AcaoRadar.responsavelId`.
+  responsavelId String?
+  data          DateTime @db.Date
+  /// `HH:MM`. Ver a nota sobre horÃƒÂ¡rio acima.
+  horaInicio    String
+  horaFim       String
+  /// Minutos. DEDITO, nunca estimado: se a rota conseguir calcular
+  /// (horaFim - horaInicio), o valor gravado ÃƒÂ© o cÃƒÂ¡lculo; a tela nÃƒÂ£o inventa.
+  duracaoMinutos Int
+  local         String
+  /// `null` = sem limite. `0` nÃƒÂ£o ÃƒÂ© o mesmo que "sem limite": 0 significaria
+  /// "ninguÃƒÂ©m pode participar", que ÃƒÂ© uma decisÃƒÂ£o, nÃƒÂ£o ausÃƒÂªncia de decisÃƒÂ£o.
+  limiteParticipantes Int?
+  status        StatusTreinamento @default(PLANEJADO)
+  /// Opcional: liga o treinamento ao plano de desenvolvimento que o motivou.
+  planoDesenvolvimentoId String?
+  /// SugestÃƒÂ£o da IA que o gestor revisou. NULL quando nÃƒÂ£o houve IA Ã¢â‚¬â€ o
+  /// treinamento ÃƒÂ© vÃƒÂ¡lido de qualquer forma, e a origem (`MANUAL`/`IA`) jÃƒÂ¡ diz
+  /// como ele nasceu.
+  analiseIA     Json?
+  observacoes   String?
+  origem        Origem    @default(MANUAL)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  participantes ParticipanteTreinamento[]
+
+  @@index([empresaId, status])
+  @@index([empresaId, data])
+  @@index([empresaId, createdAt])
+}
+
+/// N:N entre treinamento e funcionÃƒÂ¡rio, com o registro de presenÃƒÂ§a.
+///
+/// `empresaId` ÃƒÂ© redundante com o do treinamento, e mesmo assim fica: ÃƒÂ© o que
+/// permite as consultas de multi-tenant rodarem em UMA tabela sÃƒÂ³
+/// (`where: { empresaId }`) sem joins, e o que garante que um `DELETE` em massa
+/// de uma empresa nÃƒÂ£o alcance registros de outra.
+model ParticipanteTreinamento {
+  id             String       @id @default(cuid())
+  empresaId      String
+  treinamentoId  String
+  treinamento    Treinamento  @relation(fields: [treinamentoId], references: [id], onDelete: Cascade)
+  funcionarioId  String
+  funcionario    Funcionario  @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  status         StatusParticipante @default(CONVIDADO)
+  observacao     String?
+  dataRegistro   DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Impede o mesmo funcionÃƒÂ¡rio entrar duas vezes no mesmo treinamento.
+  @@unique([treinamentoId, funcionarioId])
+  // HistÃƒÂ³rico do funcionÃƒÂ¡rio: a ordem de quem treinou quando.
+  @@index([empresaId, funcionarioId, dataRegistro])
+  // Chamada de presenÃƒÂ§a: quem estÃƒÂ¡ em cada treinamento.
+  @@index([empresaId, treinamentoId, status])
+}
+
+model AvaliacaoComportamental {
+  id             String      @id @default(cuid())
+  empresaId      String
+  funcionarioId  String
+  funcionario    Funcionario @relation(fields: [funcionarioId], references: [id])
+  /// Planos de desenvolvimento criados a partir desta avaliaÃƒÂ§ÃƒÂ£o.
+  planos         PlanoDesenvolvimento[]
+  perfil         PerfilDisc?
+  /// Scores brutos por eixo (0-100). JSON porque o NEXUS nÃƒÂ£o tem um eixo
+  /// comportamental guardado em colunas.
+  scores         Json?
+  /// Texto do RH sobre o contexto profissional avaliado (apoiado, nÃƒÂ£o decisÃƒÂ³rio).
+  observacoes    String?
+  /// Quem aplicou a avaliaÃƒÂ§ÃƒÂ£o. Auditoria: perfil comportamental ÃƒÂ© dado sensÃƒÂ­vel.
+  aplicadoPorId  String?
+  dataAvaliacao  DateTime    @db.Date
+  vigente        Boolean     @default(true)
+  origem         Origem      @default(MANUAL)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([empresaId, funcionarioId])
+  @@index([empresaId, dataAvaliacao])
+}
+
+model PesquisaBemEstar {
+  id            String      @id @default(cuid())
+  empresaId     String
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id])
+  /// 0-100, autodeclarado pelo colaborador ou registrado pelo RH.
+  nota          Int
+  /// Uma pergunta livre por resposta guarda a causa apontada pela pessoa.
+  resposta      String?
+  dataPesquisa  DateTime    @db.Date
+  aplicadoPorId String?
+  origem        Origem      @default(MANUAL)
+  createdAt     DateTime    @default(now())
+
+  @@index([empresaId, dataPesquisa])
+  @@index([empresaId, funcionarioId])
+}
+
+model RegistroGamificacao {
+  id            String      @id @default(cuid())
+  empresaId     String
+  /// FuncionÃƒÂ¡rio recebeu; opcional quando o registro ÃƒÂ© da equipe inteira.
+  funcionarioId String?
+  funcionario   Funcionario? @relation(fields: [funcionarioId], references: [id])
+  /// 'meta' | 'objetivo' | 'conquista' | 'reconhecimento'
+  tipo          String
+  descricao     String
+  pontos        Int         @default(0)
+  /// Regra que gerou o ponto. No Ciclo 5 passou a ser o `id` de um
+  /// `CriterioPontuacao` da prÃƒÂ³pria empresa Ã¢â‚¬â€ o valor gravado aqui ÃƒÂ© o que
+  /// A EMPRESA configurou, nunca um valor padrÃƒÂ£o do NEXUS.
+  regraId       String?
+  /// Ciclo 5: quando o ponto veio da apuraÃƒÂ§ÃƒÂ£o automÃƒÂ¡tica de um critÃƒÂ©rio da
+  /// empresa. LanÃƒÂ§amento manual do gestor fica com este campo NULO Ã¢â‚¬â€ sÃƒÂ£o dois
+  /// caminhos distintos para o mesmo saldo, e a tela precisa saber qual ÃƒÂ©.
+  criterioId    String?
+  criterio      CriterioPontuacao? @relation(fields: [criterioId], references: [id], onDelete: SetNull)
+  /// De onde veio o evento real (ex.: 'ponto_sem_atraso', 'venda_finalizada').
+  eventoOrigem  String?
+  eventoId      String?
+  data          DateTime    @db.Date
+  status        String      @default("ATIVO") // ATIVO, ANULADO
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([empresaId, data])
+  @@index([empresaId, tipo])
+  /// Ciclo 5: quem automatizou este registro, e o quando Ã¢â‚¬â€ ÃƒÂ© o que separa um
+  /// ponto de apuraÃƒÂ§ÃƒÂ£o de um lanÃƒÂ§amento manual do gestor.
+  @@index([empresaId, criterioId])
+}
+
+// ===========================================================================
+//  Ciclo 4 Ã¢â‚¬â€ Loja de Recompensas e Resgates
+// ===========================================================================
+//  POR QUE DUAS TABELAS E NÃƒÆ’O UMA
+//  --------------------------
+//  A `Recompensa` ÃƒÂ© o CATÃƒÂLOGO: o que a empresa oferece, quanto custa, quanto
+//  tem. O `Resgate` ÃƒÂ© a TRANSAÃƒâ€¡ÃƒÆ’O: quem pegou o quÃƒÂª, quando e em que status.
+//  Uma tabela sÃƒÂ³ misturaria "a empresa tem 10 vale-presente" com "a Ana pegou
+//  um deles" Ã¢â‚¬â€ e o estoque nÃƒÂ£o se contaria.
+//
+//  SALDO DE PONTOS Ã¢â‚¬â€ A CONTA CORRETA
+//  -------------------------------
+//  `RegistroGamificacao` sÃƒÂ³ SOMA pontos. Um resgate precisa DEBITAR, e o
+//  saldo nÃƒÂ£o pode ser `soma(pontos)` por trÃƒÂªs motivos:
+//    1. resgate cancelado devolve os pontos;
+//    2. registro com status ANULADO precisa deixar de contar;
+//    3. saldo ÃƒÂ© histÃƒÂ³rico de saldo, nÃƒÂ£o soma de coluna.
+//
+//  Por isso o saldo ÃƒÂ© SEMPRE: soma(registros ATIVOS) Ã¢Ë†â€™ soma(resgates que
+//  consumiram pontos). Ãƒâ€° a fÃƒÂ³rmula que `saldoDePontos` aplica, e ela estÃƒÂ¡
+//  testada. Nenhum nÃƒÂºmero de saldo ÃƒÂ© gravado em coluna Ã¢â‚¬â€ se fosse, deixaria de
+//  bater com os registros no primeiro lanÃƒÂ§amento.
+//
+//  ESTOQUE
+//  -------
+//  `quantidadeDisponivel` ÃƒÂ© o estoque real, e um resgate SOLICITADO jÃƒÂ¡ o
+//  reserva: ÃƒÂ© o que impede que 3 pessoas resgatem o ÃƒÂºltimo vale-presente antes
+//  de alguÃƒÂ©m aprovar. Cancelar e rejeitar devolvem ao estoque, na mesma
+//  transaÃƒÂ§ÃƒÂ£o que muda o status.
+//
+//  ESTORNO
+//  -------
+//  Rejeitar/cancelar NÃƒÆ’O apaga a linha: ela vira histÃƒÂ³rico. E o dÃƒÂ©bito dos
+//  pontos ÃƒÂ© desfeito pela prÃƒÂ³pria fÃƒÂ³rmula do saldo (o resgate deixa de contar),
+//  e nÃƒÂ£o por um segundo lanÃƒÂ§amento negativo Ã¢â‚¬â€ que duplicaria a conta e
+//  esconderia o erro.
+
+enum CategoriaRecompensa {
+  BENEFICIO
+  EXPERIENCIA
+  CURSO
+  ALIMENTACAO
+  FOLGA
+  BRINDE
+  OUTRO
+}
+
+enum StatusResgate {
+  SOLICITADO
+  APROVADO
+  ENTREGUE
+  REJEITADO
+  CANCELADO
+}
+
+model Recompensa {
+  id            String   @id @default(cuid())
+  empresaId     String
+  nome          String
+  descricao     String
+  categoria     CategoriaRecompensa @default(OUTRO)
+  /// Quanto custa em pontos. `Int`, porque ponto ÃƒÂ© contagem.
+  custoPontos   Int
+  /// Estoque REAL. `0` significa "esgotado" e some da vitrine Ã¢â‚¬â€ nÃƒÂ£o
+  /// "sem limite", que seria outra decisÃƒÂ£o e teria outro campo.
+  quantidadeDisponivel Int    @default(0)
+  /// `false` esconde da loja sem apagar o histÃƒÂ³rico de quem jÃƒÂ¡ resgatou.
+  ativa         Boolean  @default(true)
+  observacoes   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  resgates ResgateRecompensa[]
+
+  @@index([empresaId, ativa])
+  @@index([empresaId, categoria])
+}
+
+model ResgateRecompensa {
+  id            String   @id @default(cuid())
+  empresaId     String
+  recompensaId  String
+  recompensa    Recompensa @relation(fields: [recompensaId], references: [id], onDelete: Cascade)
+  /// Quem resgatou. Coluna escalar, padrÃƒÂ£o do projeto; o nome ÃƒÂ© resolvido em
+  /// consulta ÃƒÂ  parte.
+  funcionarioId String
+  /// Custo congelado no momento do resgate. Se a empresa reajustar o preÃƒÂ§o
+  /// depois, o histÃƒÂ³rico continua dizendo o que a pessoa pagou Ã¢â‚¬â€ sem isso, o
+  /// registro mentiria sobre a transaÃƒÂ§ÃƒÂ£o antiga.
+  pontosUtilizados Int
+  status        StatusResgate @default(SOLICITADO)
+  /// Quem aprovou/rejeitou/cancelou. NULL enquanto ninguÃƒÂ©m decidiu.
+  aprovadoPorId String?
+  data          DateTime @db.Date
+  aprovadoEm    DateTime? @db.Date
+  entregueEm    DateTime? @db.Date
+  observacoes   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([empresaId, funcionarioId, data])
+  @@index([empresaId, status])
+}
+
+// ===========================================================================
+//  Ciclo 5 Ã¢â‚¬â€ PontuaÃƒÂ§ÃƒÂ£o CONFIGURÃƒÂVEL por empresa
+// ===========================================================================
+//
+//  A REGRA DO CICLO, EM UMA FRASE
+//  ---------------------------------
+//  O NEXUS nÃƒÂ£o tem opiniÃƒÂ£o sobre quanto vale absenceiro. A EMPRESA decide quais
+//  critÃƒÂ©rios existem, qual condiÃƒÂ§ÃƒÂ£o cada um exige, quantos pontos vale e como o
+//  saldo se gasta. O NEXUS sÃƒÂ³ faz seis coisas, e nenhuma delas ÃƒÂ© opinar:
+//    1. lÃƒÂª o evento real do funcionÃƒÂ¡rio (falta, meta, advertÃƒÂªncia, treinoÃ¢â‚¬Â¦);
+//    2. compara com a condiÃƒÂ§ÃƒÂ£o que A EMPRESA configurou;
+//    3. credita a quantidade de pontos que A EMPRESA configurou;
+//    4. guarda o histÃƒÂ³rico;
+//    5. calcula o saldo;
+//    6. deixa o saldo ser gasto nas recompensas que A EMPRESA cadastrou.
+//
+//  POR QUE NÃƒÆ’O HÃƒÂ VALOR PADRÃƒÆ’O NESTE ARQUIVO
+//  -------------------------------------------
+//  Um `pontos: 10` aqui seria uma polÃƒÂ­tica do NEXUS valendo para toda empresa
+//  que usa o sistema Ã¢â‚¬â€ exatamente o que este ciclo veio desfazer. Por isso os
+//  campos de valor e pontos sÃƒÂ£o obrigatÃƒÂ³rios na criaÃƒÂ§ÃƒÂ£o e a empresa nasce com
+//  ZERO critÃƒÂ©rios: sem configuraÃƒÂ§ÃƒÂ£o, nada ÃƒÂ© creditado, e a tela diz isso.
+//
+//  A TABELA Ãƒâ€° POR EMPRESA
+//  ---------------------
+//  `empresaId` estÃƒÂ¡ em todas as consultas, e os dois ÃƒÂ­ndices comeÃƒÂ§am por ele.
+//  Duas empresas podem ter exatamente os mesmos nomes de critÃƒÂ©rio com valores
+//  completamente diferentes Ã¢â‚¬â€ e isso ÃƒÂ© o comportamento correto, nÃƒÂ£o um bug.
+//
+//  `AvaliacaoCriterio` ÃƒÂ© o que impede a pontuaÃƒÂ§ÃƒÂ£o de inflar: um critÃƒÂ©rio sÃƒÂ³
+//  credita UMA vez por funcionÃƒÂ¡rio por perÃƒÂ­odo. Rodar a avaliaÃƒÂ§ÃƒÂ£o dez vezes no
+//  mesmo mÃƒÂªs continua valendo o mesmo ponto, e a evidÃƒÂªncia do que foi medido
+//  fica congelada na linha Ã¢â‚¬â€ se a falta da empresa mudar depois, o histÃƒÂ³rico
+//  continua dizendo o que o NEXUS viu na apuraÃƒÂ§ÃƒÂ£o.
+
+/// Eventos que o NEXUS consegue VERIFICAR no banco. NÃƒÂ£o sÃƒÂ£o uma lista de
+/// metas: sÃƒÂ£o as perguntas que os dados da empresa permitem responder.
+enum EventoPontuacao {
+  /// Nenhuma falta registrada no perÃƒÂ­odo.
+  SEM_FALTA
+  /// Nenhum atraso somado no perÃƒÂ­odo.
+  SEM_ATRASO
+  /// Nenhuma advertÃƒÂªncia no perÃƒÂ­odo.
+  SEM_ADVERTENCIA
+  /// Percentual de uma `Meta` do tipo FUNCIONARIO atingiu o parametro.
+  META_BATIDA
+  /// Quantos treinamentos o funcionÃƒÂ¡rio PRESENDEU no perÃƒÂ­odo. O enum
+  /// `StatusParticipante` tem PRESENTE/AUSENTE, e nao "CONCLUIDO": o evento
+  /// mede presenca, que e o dado que existe de fato.
+  TREINAMENTO_PRESENTE
+  /// Horas extras somadas no perÃƒÂ­odo.
+  HORAS_EXTRAS
+  /// Valor vendido no perÃƒÂ­odo.
+  VENDAS_NO_PERIODO
+}
+
+/// Como a condiÃƒÂ§ÃƒÂ£o do critÃƒÂ©rio ÃƒÂ© comparada com o valor medido.
+enum OperadorCriterio {
+  /// medido == valor  (ex.: 0 faltas)
+  IGUAL
+  /// medido >= valor (ex.: 100% da meta)
+  MAIOR_OU_IGUAL
+  /// medido <= valor (ex.: no mÃƒÂ¡ximo 2 atrasos)
+  MENOR_OU_IGUAL
+}
+
+/// Janela em que o critÃƒÂ©rio ÃƒÂ© medido. Define tambÃƒÂ©m a chave de idempotÃƒÂªncia.
+enum PeriodoCriterio {
+  MENSAL
+  TRIMESTRAL
+  ANUAL
+}
+
+model CriterioPontuacao {
+  id            String   @id @default(cuid())
+  empresaId     String
+  /// Nome que A EMPRESA dÃƒÂ¡ ao seu critÃƒÂ©rio. Texto livre: "Zero falta", "Bateu
+  /// a meta do trimestre", "Ajudou a equipe" Ã¢â‚¬â€ o NEXUS nÃƒÂ£o padroniza a polÃƒÂ­tica.
+  nome          String
+  descricao     String?
+  evento        EventoPontuacao
+  operador      OperadorCriterio @default(IGUAL)
+  /// Limiar comparado com o valor medido. Significado conforme o evento:
+  /// 0 faltas, 100 (percentual), 2 treinamentos, 10 horasÃ¢â‚¬Â¦
+  valor         Int      @default(0)
+  /// Quantos pontos A EMPRESA paga por este critÃƒÂ©rio. Pode ser NEGATIVO: ÃƒÂ©
+  /// assim que uma empresa pune atraso ou advertÃƒÂªncia sem inventar um segundo
+  /// tipo de registro. Zero ÃƒÂ© vÃƒÂ¡lido e significa "criterio de observacao".
+  pontos        Int
+  periodo       PeriodoCriterio @default(MENSAL)
+  /// `false` desliga o critÃƒÂ©rio sem apagar o histÃƒÂ³rico jÃƒÂ¡ creditado.
+  ativo         Boolean  @default(true)
+  observacoes   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  avaliacoes    AvaliacaoCriterio[]
+  /// Pontos que este critÃƒÂ©rio jÃƒÂ¡ creditou. `SetNull` no outro lado: apagar o
+  /// critÃƒÂ©rio nÃƒÂ£o pode apagar o saldo que ele gerou.
+  registros    RegistroGamificacao[]
+
+  @@index([empresaId, ativo])
+  @@index([empresaId, evento])
+}
+
+model AvaliacaoCriterio {
+  id            String   @id @default(cuid())
+  empresaId     String
+  criterioId    String
+  criterio      CriterioPontuacao @relation(fields: [criterioId], references: [id], onDelete: Cascade)
+  funcionarioId String
+  /// O que o NEXUS mediu de fato ("faltas=0", "meta=104%"). Ãƒâ€° a prova de que
+  /// o ponto veio de dado real e nÃƒÂ£o de um chute Ã¢â‚¬â€ e fica congelado.
+  evidencia    String
+  /// Valor medido no momento da apuraÃƒÂ§ÃƒÂ£o, para a tela mostrar o porquÃƒÂª.
+  valorMedido  Int      @default(0)
+  /// Pontos creditados, congelados. Se a empresa mudar `pontos` no critÃƒÂ©rio
+  /// depois, o histÃƒÂ³rico continua dizendo quanto foi pago naquele dia.
+  pontos       Int
+  /// Identificador do perÃƒÂ­odo ("2026-09", "2026-Q1", "2026"). Entra na chave
+  /// de idempotÃƒÂªncia, e ÃƒÂ© o que impede o mesmo mÃƒÂªs de pagar duas vezes.
+  periodo      String
+  /// Registro de gamificaÃƒÂ§ÃƒÂ£o gerado por esta avaliaÃƒÂ§ÃƒÂ£o, se houver.
+  registroId   String?
+  createdAt    DateTime @default(now())
+
+  /// Um critÃƒÂ©rio credita UMA vez por funcionÃƒÂ¡rio por perÃƒÂ­odo. Rodar a
+  /// avaliaÃƒÂ§ÃƒÂ£o de novo no mesmo mÃƒÂªs nÃƒÂ£o soma o mesmo ponto duas vezes.
+  @@unique([criterioId, funcionarioId, periodo])
+  @@index([empresaId, periodo])
+  @@index([empresaId, funcionarioId])
+}
+
+model AcaoRadar {
+  id            String      @id @default(cuid())
+  empresaId     String
+  /// Alerta de origem. Guardamos o cÃƒÂ³digo/tÃƒÂ­tulo para o plano nÃƒÂ£o quebrar se
+  /// o alerta for reclassificado depois.
+  alertaRef     String
+  alertaTitulo  String
+  funcionarioId String?
+  funcionario   Funcionario? @relation(fields: [funcionarioId], references: [id])
+  responsavelId String?
+  acoes         Json        // [{ texto, concluida }]
+  prazo         DateTime?   @db.Date
+  status        String      @default("ABERTA") // ABERTA, EM_ANDAMENTO, CONCLUIDA, CANCELADA
+  observacoes   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([empresaId, status])
+  @@index([empresaId, createdAt])
+}
+
+// ===========================================================================
+//  Ciclo 3 Ã¢â‚¬â€ LideranÃƒÂ§a EmpÃƒÂ¡tica (registro de feedback)
+// ===========================================================================
+//  POR QUE UMA TABELA NOVA E NÃƒÆ’O REAPROVEITAR `RegistroGamificacao`
+//  ---------------------------------------------------------------------
+//  `RegistroGamificacao` ÃƒÂ© PLACAR: guarda pontos, a regra que gerou o ponto e o
+//  evento de origem. Ele responde "quantos pontos a pessoa tem".
+//
+//  Feedback de lideranÃƒÂ§a ÃƒÂ© CONVERSA: precisa guardar o que foi reconhecido, o
+//  que precisa desenvolver, o que ficou acordado e QUANDO serÃƒÂ¡ revisado. Nada
+//  disso cabe em `descricao String` + `pontos Int` Ã¢â‚¬â€ forÃƒÂ§ar significaria
+//  transformar "o gestor conversou com a pessoa" em "+20 pontos", que ÃƒÂ© o
+//  oposto de lideranÃƒÂ§a empÃƒÂ¡tica.
+//
+//  A mesma lÃƒÂ³gica jÃƒÂ¡ valeu para `PlanoDesenvolvimento` e `Treinamento`: cada
+//  entidade nova ÃƒÂ© porque o DOMÃƒÂNIO ÃƒÂ© outro, nÃƒÂ£o porque a anterior estava
+//  "ocupada".
+//
+//  QUEM Ãƒâ€° "LÃƒÂDER" Ã¢â‚¬â€ DECIDIDO COM VOCÃƒÅ 
+//  ---------------------------------
+//  NÃƒÂ£o existe campo `lideranca` no `Funcionario`, e nÃƒÂ£o foi criado um. A
+//  lideranÃƒÂ§a ÃƒÂ© inferida do CARGO, que jÃƒÂ¡ existe e jÃƒÂ¡ ÃƒÂ© do gestor. A lista de
+//  termos estÃƒÂ¡ em `src/modules/rh/lideranca.ts` (`TERMOS_LIDERANCA`) e ÃƒÂ©
+//  VISÃƒÂVEL na tela Ã¢â‚¬â€ se ninguÃƒÂ©m cadastrar o cargo como "LÃƒÂ­der", ninguÃƒÂ©m ÃƒÂ©
+//  considerado lÃƒÂ­der, e o sistema diz isso em vez de inventar.
+//
+//  `proximoAcompanhamento` ÃƒÂ© DATE e nÃƒÂ£o TIMESTAMP pelo mesmo motivo do resto
+//  do schema: ÃƒÂ© o dia do fato, sem hora e sem fuso.
+
+enum TipoFeedback {
+  /// Reconhecimento do que foi bem feito.
+  POSITIVO
+  /// Conversa sobre o que precisa desenvolver.
+  DESENVOLVIMENTO
+  /// Alinhamento de expectativas e acordos.
+  ACORDO
+}
+
+enum StatusAcompanhamento {
+  PENDENTE
+  REALIZADO
+  CANCELADO
+}
+
+model FeedbackLideranca {
+  id            String   @id @default(cuid())
+  empresaId     String
+  /// Quem recebeu o feedback.
+  funcionarioId String
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  /// Quem deu o feedback. Coluna escalar, como `AcaoRadar.responsavelId`: o
+  /// aplicador ÃƒÂ© sempre um `Usuario` desta empresa.
+  aplicadoPorId String
+  data          DateTime @db.Date
+  tipo          TipoFeedback @default(POSITIVO)
+
+  /// Os trÃƒÂªs blocos que o gestor escreve. `acordos` ÃƒÂ© o que ficou combinado
+  /// Ã¢â‚¬â€ ÃƒÂ© o campo que diferencia um feedback de um registro de conversa.
+  pontosPositivos    String
+  pontosADesenvolver String
+  acordos            String?
+
+  /// Quando a conversa volta. NULL significa "sem data marcada", que ÃƒÂ© uma
+  /// escolha do gestor Ã¢â‚¬â€ nÃƒÂ£o "esquecido pelo sistema".
+  proximoAcompanhamento DateTime? @db.Date
+  status         StatusAcompanhamento @default(PENDENTE)
+
+  /// Data em que o acompanhamento marcado aconteceu.
+  realizadoEm    DateTime? @db.Date
+  observacoes    String?
+  origem         Origem    @default(MANUAL)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([empresaId, data])
+  @@index([empresaId, funcionarioId])
+  /// A fila de acompanhamento: quem estÃƒÂ¡ devendo conversa.
+  @@index([empresaId, status, proximoAcompanhamento])
+}
+
+// --- FASE 1 PDV PRO - nucleo transacional (append incremental) ---
+model VendaPagamento {
+  id String @id @default(cuid())
+  vendaId String
+  venda Venda @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  empresaId String
+  forma FormaPagamento
+  valor Decimal @db.Decimal(12, 2)
+  ordem Int @default(1)
+  referencia String?
+  status String @default("CONFIRMADO")
+  createdAt DateTime @default(now())
+  @@index([vendaId])
+  @@index([empresaId, forma])
+}
+enum StatusReserva {
+  ATIVA
+  CONVERTIDA
+  EXPIRADA
+  CANCELADA
+}
+model EstoqueReserva {
+  id String @id @default(cuid())
+  empresaId String
+  filialId String
+  produtoId String
+  vendaId String?
+  venda Venda? @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+  caixaId String?
+  operadorId String?
+  quantidade Int
+  status StatusReserva @default(ATIVA)
+  expiraEm DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([empresaId, filialId, produtoId, status])
+  @@index([vendaId])
+  @@index([expiraEm])
+}
+enum StatusIdempotencia {
+  PROCESSANDO
+  CONFIRMADA
+  REJEITADA
+}
+model IdempotencyKey {
+  id String @id @default(cuid())
+  key String
+  empresaId String
+  filialId String?
+  caixaId String?
+  operadorId String?
+  vendaId String?
+  status StatusIdempotencia @default(PROCESSANDO)
+  responseStatus Int?
+  responseBody Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([empresaId, key])
+  @@index([vendaId])
+  @@index([caixaId])
+}
+enum StatusDivergencia {
+  ABERTA
+  JUSTIFICADA
+  RESOLVIDA
+}
+model DivergenciaCaixa {
+  id String @id @default(cuid())
+  empresaId String
+  caixaId String
+  caixa Caixa @relation(fields: [caixaId], references: [id], onDelete: Cascade)
+  tipo String
+  descricao String
+  valorEsperado Decimal? @db.Decimal(12, 2)
+  valorInformado Decimal? @db.Decimal(12, 2)
+  diferenca Decimal? @db.Decimal(12, 2)
+  status StatusDivergencia @default(ABERTA)
+  operadorId String?
+  autorizadoPor String?
+  justificativa String?
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  @@index([caixaId])
+  @@index([empresaId, status])
+}
+
+
+// --- Tentativas de login (rate limit persistente no banco) ---
+// Armazena cada tentativa de login para aplicar rate limit por IP e por email,
+// sobrevivendo a reinÃƒÂ­cios do servidor e funcionando corretamente atrÃƒÂ¡s de
+// proxies (Vercel etc.) graÃƒÂ§as ao `trustProxy: true` do Fastify.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  ip        String   // IP real do cliente (extraÃƒÂ­do de X-Forwarded-For com trustProxy)
+  email     String?  // email informado no corpo da requisiÃƒÂ§ÃƒÂ£o (pode ser null)
+  sucesso   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([email, createdAt])
+}
+}
+
+// --- Se+Ã¯Â¿Â½Ã¯Â¿Â½o 17: NexusErpRecord ---
+// Modelo de registros empresariais do pacote Enterprise (aprovacoes, notas fiscais, etc.)
+model NexusErpRecord {
+  id          String   @id @default(cuid())
+  empresaId   String
+  empresa     Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  module      String
+  title       String
+  status      String   @default("rascunho")
+  data        Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+// // approvals NexusErpApproval (comentado)[]
+// // auditLogs NexusErpAuditLog (comentado)[]
+
+  @@index([empresaId, module, createdAt])
+  @@index([empresaId, status])
+  @@index([empresaId, title])
+}
+
+// model NexusErpApproval (comentado) {
+  id          String   @id @default(cuid())
+  empresaId   String
+  recordId    String
+  record      NexusErpRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  requestedBy String?
+  decidedBy   String?
+  status      String   @default("pendente")
+  comment     String?
+  createdAt   DateTime @default(now())
+  decidedAt   DateTime?
+
+  @@index([empresaId, status, createdAt])
+  @@index([recordId, status])
+}
+
+// model NexusErpAuditLog (comentado) {
+  id          String   @id @default(cuid())
+  empresaId   String
+  recordId    String?
+  record      NexusErpRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  actorId     String?
+  action      String
+  beforeData  Json?
+  afterData   Json?
+  createdAt   DateTime @default(now())
+
+  @@index([empresaId, createdAt])
+  @@index([recordId, createdAt])
+}
+
+
+

@@ -1,0 +1,10 @@
+  ▲ Next.js 14.2.5
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+  ▲ Next.js 14.2.5
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+
+c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend>

@@ -1,0 +1,32 @@
+✖ integração: aba estoque (1583.9136ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2840.5121
+
+✖ failing tests:
+
+test at tests\estoque-aba.test.ts:305:1
+✖ integração: aba estoque (1583.9136ms)
+  PrismaClientUnknownRequestError: 
+  Invalid `prisma.produto.create()` invocation in
+  c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\estoque-aba.test.ts:103:40
+  
+    100 const saldo = async (filialId: string, produtoId: string) =>
+    101   Number((await prisma.estoque.findUnique({ where: { filialId_produtoId: { filialId, produtoId } } }))?.quantidade ?? 0);
+    102 
+  → 103 const produto = await prisma.produto.create(
+  Error occurred during query execution:
+  ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "42704", message: "type \"public.PoliticaCusto\" does not exist", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+      at $n.handleRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:7505)
+      at $n.handleAndLogRequestError (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6623)
+      at $n.request (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:121:6307)
+      at async l (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\node_modules\@prisma\client\runtime\library.js:130:9633)
+      at async main (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\estoque-aba.test.ts:103:19)
+      at async TestContext.<anonymous> (c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\estoque-aba.test.ts:306:3)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

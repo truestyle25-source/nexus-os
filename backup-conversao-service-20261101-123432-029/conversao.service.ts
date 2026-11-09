@@ -1,0 +1,323 @@
+import { prisma } from '../../lib/prisma.js';
+import { NaoEncontrado, ErroDeNegocio } from '../../lib/erros.js';
+import { Decimal } from '@prisma/client/runtime/library';
+
+// ============================================================================
+// Etapa 3 — Camada de conversão e cálculo decimal
+// ============================================================================
+
+export class ErroConversao extends ErroDeNegocio {
+  constructor(
+    mensagem: string,
+    public readonly contexto: Record<string, unknown>,
+    status = 400,
+  ) {
+    super(mensagem, status);
+  }
+}
+
+export interface ConversaoResult {
+  quantidadeOrigem: Decimal;
+  unidadeOrigem: string;
+  quantidadeDestino: Decimal;
+  unidadeDestino: string;
+  fator: Decimal;
+  mesmaDimensao: boolean;
+}
+
+const MAX_CASAS_FATOR = 6;
+const MAX_CASAS_QUANTIDADE = 6;
+
+async function buscarUnidadePorSimbolo(
+  empresaId: string,
+  simbolo: string,
+) {
+  const unidade = await prisma.unidade.findFirst({
+    where: { empresaId, simbolo, ativo: true },
+    select: { id: true, dimensaoId: true, fatorCanonico: true },
+  });
+  if (!unidade) return null;
+  return {
+    id: unidade.id,
+    dimensaoId: unidade.dimensaoId,
+    fatorCanonico: unidade.fatorCanonico,
+  };
+}
+
+async function buscarFatorConversao({
+  empresaId,
+  produtoId,
+  unidadeOrigemId,
+  unidadeDestinoId,
+  fornecedorId,
+}: {
+  empresaId: string;
+  produtoId: string;
+  unidadeOrigemId: string;
+  unidadeDestinoId: string;
+  fornecedorId?: string | null;
+}) {
+  const agora = new Date();
+  return prisma.fatorConversao.findFirst({
+    where: {
+      empresaId,
+      produtoId,
+      unidadeOrigemId,
+      unidadeDestinoId,
+      ativo: true,
+      ...(fornecedorId ? { fornecedorId } : { fornecedorId: null }),
+      vigenciaDe: { lte: agora },
+      vigenciaAte: { gte: agora },
+    },
+    orderBy: [{ fornecedorId: fornecedorId ? 'desc' : 'asc' }, { createdAt: 'desc' }],
+  });
+}
+
+export async function converterUnidade({
+  empresaId,
+  produtoId,
+  quantidade,
+  unidadeOrigemSimbolo,
+  unidadeDestinoSimbolo,
+  fornecedorId,
+}: {
+  empresaId: string;
+  produtoId: string;
+  quantidade: number | string | Decimal;
+  unidadeOrigemSimbolo: string;
+  unidadeDestinoSimbolo: string;
+  fornecedorId?: string | null;
+}): Promise<ConversaoResult> {
+  const qtd = new Decimal(quantidade);
+
+  if (qtd.lessThanOrEqualTo(0)) {
+    throw new ErroConversao('Quantidade deve ser maior que zero.', {
+      empresaId, produtoId, quantidade: qtd.toString(),
+    });
+  }
+
+  const origem = await buscarUnidadePorSimbolo(empresaId, unidadeOrigemSimbolo);
+  if (!origem) {
+    throw new ErroConversao(`Unidade de origem "${unidadeOrigemSimbolo}" não encontrada nesta empresa.`, {
+      empresaId, produtoId, unidadeOrigem: unidadeOrigemSimbolo,
+    });
+  }
+  const destino = await buscarUnidadePorSimbolo(empresaId, unidadeDestinoSimbolo);
+  if (!destino) {
+    throw new ErroConversao(`Unidade de destino "${unidadeDestinoSimbolo}" não encontrada nesta empresa.`, {
+      empresaId, produtoId, unidadeDestino: unidadeDestinoSimbolo,
+    });
+  }
+
+  if (origem.id === destino.id) {
+    return {
+      quantidadeOrigem: qtd,
+      unidadeOrigem: unidadeOrigemSimbolo,
+      quantidadeDestino: qtd,
+      unidadeDestino: unidadeDestinoSimbolo,
+      fator: new Decimal(1),
+      mesmaDimensao: true,
+    };
+  }
+
+  const mesmaDimensao = origem.dimensaoId === destino.dimensaoId;
+
+  if (mesmaDimensao) {
+    const fator = origem.fatorCanonico.div(destino.fatorCanonico);
+    validarFator(fator, origem.id, destino.id);
+    const qtdDestino = qtd.times(fator).decimalPlaces(MAX_CASAS_QUANTIDADE);
+    return {
+      quantidadeOrigem: qtd,
+      unidadeOrigem: unidadeOrigemSimbolo,
+      quantidadeDestino: qtdDestino,
+      unidadeDestino: unidadeDestinoSimbolo,
+      fator: fator.decimalPlaces(MAX_CASAS_FATOR),
+      mesmaDimensao: true,
+    };
+  }
+
+  const fatorRegistro = await buscarFatorConversao({
+    empresaId,
+    produtoId,
+    unidadeOrigemId: origem.id,
+    unidadeDestinoId: destino.id,
+    fornecedorId,
+  });
+
+  if (!fatorRegistro) {
+    throw new ErroConversao(
+      `Conversão entre "${unidadeOrigemSimbolo}" e "${unidadeDestinoSimbolo}" não permitida para este produto. Dimensões diferentes exigem fator de conversão específico (ex: densidade para kg↔L).`,
+      {
+        empresaId, produtoId,
+        unidadeOrigem: unidadeOrigemSimbolo,
+        unidadeDestino: unidadeDestinoSimbolo,
+        fornecedorId: fornecedorId ?? null,
+        mesmaDimensao: false,
+      },
+    );
+  }
+
+  const fator = new Decimal(fatorRegistro.fator);
+  validarFator(fator, origem.id, destino.id);
+
+  const agora = new Date();
+  if (fatorRegistro.vigenciaDe && fatorRegistro.vigenciaDe > agora) {
+    throw new ErroConversao('Fator de conversão ainda não está vigente.', {
+      empresaId, produtoId, vigenciaDe: fatorRegistro.vigenciaDe,
+    });
+  }
+  if (fatorRegistro.vigenciaAte && fatorRegistro.vigenciaAte < agora) {
+    throw new ErroConversao('Fator de conversão expirado.', {
+      empresaId, produtoId, vigenciaAte: fatorRegistro.vigenciaAte,
+    });
+  }
+
+  const qtdDestino = qtd.times(fator).decimalPlaces(MAX_CASAS_QUANTIDADE);
+  return {
+    quantidadeOrigem: qtd,
+    unidadeOrigem: unidadeOrigemSimbolo,
+    quantidadeDestino: qtdDestino,
+    unidadeDestino: unidadeDestinoSimbolo,
+    fator: fator.decimalPlaces(MAX_CASAS_FATOR),
+    mesmaDimensao: false,
+  };
+}
+
+function validarFator(fator: Decimal, unidadeOrigemId: string, unidadeDestinoId: string) {
+  if (fator.lessThanOrEqualTo(0)) {
+    throw new ErroConversao('Fator de conversão deve ser positivo.', {
+      unidadeOrigemId, unidadeDestinoId, fator: fator.toString(),
+    });
+  }
+  fator.decimalPlaces(MAX_CASAS_FATOR);
+}
+
+export async function converterParaUnidadeBaseCompra({
+  empresaId,
+  produtoId,
+  unidadeBaseId,
+  quantidadeCompra,
+  unidadeCompraSimbolo,
+  fornecedorId,
+}: {
+  empresaId: string;
+  produtoId: string;
+  unidadeBaseId?: string;
+  quantidadeCompra: number | string | Decimal;
+  unidadeCompraSimbolo: string;
+  fornecedorId?: string | null;
+}) {
+  // Se unidadeBaseId não estiver definida, usa a unidade do produto como base
+  let simboloUnidadeBase: string;
+  if (unidadeBaseId) {
+    const unidadeBase = await prisma.unidade.findUnique({
+      where: { id: unidadeBaseId },
+      select: { id: true, simbolo: true },
+    });
+    if (!unidadeBase) {
+      throw new NaoEncontrado('Unidade base do produto não encontrada.');
+    }
+    simboloUnidadeBase = unidadeBase.simbolo;
+  } else {
+    // Unidade base não definida explicitamente; usa a unidade do produto como base
+    const produto = await prisma.produto.findFirst({
+      where: { id: produtoId, empresaId },
+      select: { id: true, unidade: true },
+    });
+    if (!produto) throw NaoEncontrado(`Produto ${produtoId} inválido para esta empresa.`);
+    simboloUnidadeBase = produto.unidade;
+  }
+
+  return converterUnidade({
+    empresaId,
+    produtoId,
+    quantidade: quantidadeCompra,
+    unidadeOrigemSimbolo: unidadeCompraSimbolo,
+    unidadeDestinoSimbolo: simboloUnidadeBase,
+    fornecedorId,
+  });
+}
+
+export async function converterParaUnidadeBaseVenda({
+  empresaId,
+  produtoId,
+  unidadeBaseId,
+  quantidadeVenda,
+  unidadeVendaSimbolo,
+}: {
+  empresaId: string;
+  produtoId: string;
+  unidadeBaseId?: string;
+  quantidadeVenda: number | string | Decimal;
+  unidadeVendaSimbolo: string;
+}) {
+  let simboloUnidadeBase: string;
+  if (unidadeBaseId) {
+    const unidadeBase = await prisma.unidade.findUnique({
+      where: { id: unidadeBaseId },
+      select: { id: true, simbolo: true },
+    });
+    if (!unidadeBase) {
+      throw new NaoEncontrado('Unidade base do produto não encontrada.');
+    }
+    simboloUnidadeBase = unidadeBase.simbolo;
+  } else {
+    // Unidade base não definida explicitamente; usa a unidade do produto como base
+    const produto = await prisma.produto.findFirst({
+      where: { id: produtoId, empresaId },
+      select: { id: true, unidade: true },
+    });
+    if (!produto) throw NaoEncontrado(`Produto ${produtoId} inválido para esta empresa.`);
+    simboloUnidadeBase = produto.unidade;
+  }
+
+  return converterUnidade({
+    empresaId,
+    produtoId,
+    quantidade: quantidadeVenda,
+    unidadeOrigemSimbolo: unidadeVendaSimbolo,
+    unidadeDestinoSimbolo: simboloUnidadeBase,
+  });
+}
+
+export async function converterParaUnidadeBaseConsumo({
+  empresaId,
+  produtoId,
+  unidadeBaseId,
+  quantidadeConsumo,
+  unidadeConsumoSimbolo,
+}: {
+  empresaId: string;
+  produtoId: string;
+  unidadeBaseId?: string;
+  quantidadeConsumo: number | string | Decimal;
+  unidadeConsumoSimbolo: string;
+}) {
+  let simboloUnidadeBase: string;
+  if (unidadeBaseId) {
+    const unidadeBase = await prisma.unidade.findUnique({
+      where: { id: unidadeBaseId },
+      select: { id: true, simbolo: true },
+    });
+    if (!unidadeBase) {
+      throw new NaoEncontrado('Unidade base do produto não encontrada.');
+    }
+    simboloUnidadeBase = unidadeBase.simbolo;
+  } else {
+    // Unidade base não definida explicitamente; usa a unidade do produto como base
+    const produto = await prisma.produto.findFirst({
+      where: { id: produtoId, empresaId },
+      select: { id: true, unidade: true },
+    });
+    if (!produto) throw NaoEncontrado(`Produto ${produtoId} inválido para esta empresa.`);
+    simboloUnidadeBase = produto.unidade;
+  }
+
+  return converterUnidade({
+    empresaId,
+    produtoId,
+    quantidade: quantidadeConsumo,
+    unidadeOrigemSimbolo: unidadeConsumoSimbolo,
+    unidadeDestinoSimbolo: simboloUnidadeBase,
+  });
+}

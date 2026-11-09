@@ -1,0 +1,18 @@
+  ▲ Next.js 14.2.5
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+Failed to compile.
+
+./components/relatorios/FormularioDisc.tsx
+Error: Failed to read source code from c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\relatorios\FormularioDisc.tsx
+
+Caused by:
+    stream did not contain valid UTF-8
+
+Import trace for requested module:
+./components/relatorios/FormularioDisc.tsx
+./app/(dashboard)/relatorios/page.tsx
+
+
+> Build failed because of webpack errors

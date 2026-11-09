@@ -105,11 +105,11 @@ export type TipoResposta = 'objeto' | 'lista';
 export function classificarErroML(erro: unknown, padrao: string): EstadoSecao {
   const status = (erro as { status?: unknown } | null | undefined)?.status;
   if (typeof status !== 'number') {
-    return { estado: 'falha_comunicacao', mensagem: 'Falha de comunicacao com o servidor.' };
+    return { estado: 'falha_comunicacao', mensagem: 'Falha de comunicação com o servidor.' };
   }
   const mensagem = mensagemDeErroApi(erro, padrao);
   if (status === 401) {
-    return { estado: 'sessao_invalida', mensagem: 'Sessao invalida ou expirada. Entre novamente.' };
+    return { estado: 'sessao_invalida', mensagem: 'Sessão inválida ou expirada. Entre novamente.' };
   }
   if (status === 403) {
     return { estado: 'sem_permissao', mensagem };
@@ -131,7 +131,7 @@ export async function executarConsulta(
   try {
     ({ data } = await chamada());
   } catch (erro) {
-    return classificarErroML(erro, opcoes.padrao ?? 'Nao foi possivel consultar os dados.');
+    return classificarErroML(erro, opcoes.padrao ?? 'Não foi possível consultar os dados.');
   }
   const corpo = data ?? {};
   if (corpo.ok !== true || corpo.dados === undefined || corpo.dados === null) {
@@ -213,7 +213,7 @@ export function montarCorpoAtualizacaoML(form: FormAtualizacaoML): { corpo?: Atu
 /** 1. GET /users/{userId} - dados de qualquer usuario pelo ID. */
 export async function consultarUsuarioPorIdML(cliente: ClienteApiML, userId: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuario do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuário do Mercado Livre.' };
   return executarConsulta(() => cliente.get(`${BASE_ML}/users/${encodeURIComponent(id)}`), { tipo: 'objeto' });
 }
 
@@ -228,7 +228,7 @@ export async function atualizarUsuarioML(cliente: ClienteApiML, corpo: Atualizar
     }
     return { estado: 'sucesso', dados };
   } catch (erro) {
-    return classificarErroML(erro, 'Nao foi possivel atualizar os dados no Mercado Livre.');
+    return classificarErroML(erro, 'Não foi possível atualizar os dados no Mercado Livre.');
   }
 }
 
@@ -240,46 +240,46 @@ export async function consultarUsuarioLogadoML(cliente: ClienteApiML): Promise<E
 /** 4. GET /users/{userId}/addresses - enderecos (lista). */
 export async function consultarEnderecosML(cliente: ClienteApiML, userId: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuario do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuário do Mercado Livre.' };
   return executarConsulta(() => cliente.get(`${BASE_ML}/users/${encodeURIComponent(id)}/addresses`), { tipo: 'lista' });
 }
 
 /** 5. GET /users/{userId}/accepted_payment_methods - meios de pagamento (lista). */
 export async function consultarMeiosPagamentoML(cliente: ClienteApiML, userId: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuario do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuário do Mercado Livre.' };
   const path = `${BASE_ML}/users/${encodeURIComponent(id)}/accepted_payment_methods`;
   return executarConsulta(() => cliente.get(path), { tipo: 'lista' });
 }
 
-/** 6. GET /applications/{applicationId} - detalhes da aplicacao. */
+/** 6. GET /applications/{applicationId} - detalhes da aplicação. */
 export async function consultarAplicacaoML(cliente: ClienteApiML, applicationId: string): Promise<EstadoSecao> {
   const id = typeof applicationId === 'string' ? applicationId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID da aplicacao do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID da aplicação do Mercado Livre.' };
   return executarConsulta(() => cliente.get(`${BASE_ML}/applications/${encodeURIComponent(id)}`), { tipo: 'objeto' });
 }
 
 /** 7. GET /users/{userId}/brands - marcas (lista). */
 export async function consultarMarcasML(cliente: ClienteApiML, userId: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuario do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuário do Mercado Livre.' };
   return executarConsulta(() => cliente.get(`${BASE_ML}/users/${encodeURIComponent(id)}/brands`), { tipo: 'lista' });
 }
 
 /** 8. GET /users/{userId}/classifieds_promotion_packs - pacotes (lista). */
 export async function consultarPacotesPromocaoML(cliente: ClienteApiML, userId: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
-  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuario do Mercado Livre.' };
+  if (!id) return { estado: 'validacao', mensagem: 'Informe o ID do usuário do Mercado Livre.' };
   const path = `${BASE_ML}/users/${encodeURIComponent(id)}/classifieds_promotion_packs`;
   return executarConsulta(() => cliente.get(path), { tipo: 'lista' });
 }
 
-/** 9. GET /missed_feeds?user_id= - notificacoes perdidas (somente leitura). */
+/** 9. GET /missed_feeds?user_id= - notificações perdidas (somente leitura). */
 export async function consultarNotificacoesPerdidasML(cliente: ClienteApiML, userId?: string): Promise<EstadoSecao> {
   const id = typeof userId === 'string' ? userId.trim() : '';
   const params = id ? { user_id: id } : undefined;
   return executarConsulta(() => cliente.get(`${BASE_ML}/missed_feeds`, params ? { params } : undefined), {
     tipo: 'lista',
-    padrao: 'Nao foi possivel consultar as notificacoes do Mercado Livre.',
+    padrao: 'Não foi possível consultar as notificações do Mercado Livre.',
   });
 }

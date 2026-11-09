@@ -1,0 +1,881 @@
+﻿
+========== .\src\modules\vendas\vendas.routes.ts | LINHA 300 ==========
+300:           const caixas = await tx.$queryRaw<Array<{ id: string }>>`
+301:             SELECT "id" FROM "Caixa"
+302:             WHERE "id" = ${data.caixaId}
+303:               AND "empresaId" = ${user.empresaId}
+304:               AND "usuarioId" = ${user.id}
+305:               AND "status" = 'ABERTO'::"StatusCaixa"
+306:             FOR UPDATE
+307:           `;
+308:           caixaTurno = caixas[0] ?? null;
+309:           if (!caixaTurno) throw new ErroDeNegocio('Caixa informado nÃƒÂ£o estÃƒÂ¡ aberto para este usuÃƒÂ¡rio.', 422);
+310:         }
+311: 
+312:         const itensCalculados: Array<{ produto: { id: string; nome: string; custo: Prisma.Decimal; unidade: string }; quantidade: number; preco: number; desconto: number; total: number }> = [];
+313:         let subtotal = 0;
+314:         // Base BRUTA (sem descontos) e total de desconto aplicado (itens + venda).
+315:         // A alÃƒÂ§ada ÃƒÂ© calculada sobre esta base e sobre este desconto TOTAL: sem
+316:         // isso, um desconto por item escapava de qualquer autorizaÃƒÂ§ÃƒÂ£o (bypass) e
+317:         // o percentual da alÃƒÂ§ada era medido sobre base jÃƒÂ¡ lÃƒÂ­quida.
+318:         let subtotalBruto = 0;
+319:         let descontoTotal = 0;
+320:         for (const item of data.itens) {
+321:           const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true } });
+322:           if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} nÃƒÂ£o encontrado.`);
+323:           const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
+324:           const qtdAtual = Number(estoque?.quantidade ?? 0);
+325:           if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
+326:           const promocaoDentroDaJanela = produto.precoPromocional != null
+327:             && (!produto.promocaoInicio || produto.promocaoInicio <= agoraUtc)
+328:             && (!produto.promocaoFim || produto.promocaoFim >= agoraUtc);
+329:           const preco = arred2(Number(promocaoDentroDaJanela ? produto.precoPromocional : produto.precoVenda));
+330:           const descontoItem = arred2(item.desconto);
+331:           const brutoItem = arred2(preco * item.quantidade);
+332:           const totalItem = arred2(brutoItem - descontoItem);
+333:           if (totalItem < 0) throw new ErroDeNegocio('Desconto do item nÃƒÂ£o pode superar o valor do item.', 422);
+334:           subtotalBruto = arred2(subtotalBruto + brutoItem);
+335:           descontoTotal = arred2(descontoTotal + descontoItem);
+336:           subtotal = arred2(subtotal + totalItem);
+337:           itensCalculados.push({ produto, quantidade: item.quantidade, preco, desconto: descontoItem, total: totalItem });
+338:         }
+339:         const total = arred2(subtotal - data.desconto);
+340:         if (total < 0) throw new ErroDeNegocio('Desconto da venda nÃƒÂ£o pode superar o subtotal.', 422);
+341: 
+342:         // FASA 2 Ã¢â‚¬â€ alÃƒÂ§ada de desconto validada NO BACKEND (nÃƒÂ£o confia no front).
+343:         // Avalia o desconto TOTAL (itens + venda) sobre a base BRUTA: impede que
+344:         // um desconto por item contorne a alÃƒÂ§ada e mede o percentual correto.
+345:         await validarAlcadaDesconto(user.id, arred2(descontoTotal + data.desconto), subtotalBruto, tx);
+346: 
+347:         // FASA 2 Ã¢â‚¬â€ pagamento misto: a soma precisa bater EXATAMENTE com o total.
+348:         if (data.pagamentos) {
+349:           const somaPagamentos = arred2(data.pagamentos.reduce((s, p) => s + p.valor, 0));
+350:           if (difere(somaPagamentos, total)) {
+351:             throw new ErroDeNegocio(
+352:               `Soma dos pagamentos (R$ ${somaPagamentos.toFixed(2)}) nÃƒÂ£o confere com o total da venda (R$ ${total.toFixed(2)}).`,
+353:               422,
+354:             );
+355:           }
+356:         }
+357: 
+358:         const venda = await tx.venda.create({
+359:           data: {
+360:             empresaId: user.empresaId,
+361:             filialId: data.filialId,
+362:             setorId: data.setorId,
+363:             clienteId: data.clienteId,
+364:             funcionarioId: user.id,
+365:             formaPagamento: data.formaPagamento,
+366:             parcelas: data.parcelas,
+367:             subtotal,
+368:             desconto: data.desconto,
+369:             total,
+370:             origem: data.origem,
+371:             pdvId: data.pdvId,
+372:             caixaId: caixaTurno?.id,
+373:             idempotencyKey: idemKey,
+374:             status: 'FINALIZADA',
+375:             createdAt: agoraUtc,
+376:             dataOperacional,
+377:             itens: { create: itensCalculados.map((i) => ({ produtoId: i.produto.id, quantidade: i.quantidade, preco: i.preco, custoUnitario: Number(i.produto.custo), desconto: i.desconto, total: i.total })) },
+378:           },
+379:           include: { itens: true },
+380:         });
+381: 
+382:         // FASA 2 Ã¢â‚¬â€ pagamento misto: registra cada parcela. A primeira linha
+383:         // espelha a forma principal (compatibilidade), as demais sÃƒÂ³ entram
+384:         // quando o PDV envia `pagamentos`. `total` grava o valor recebido.
+385:         const linhasPagamento: Array<{ forma: FormaPagamento; valor: number; ordem: number; referencia: string | null }> = [];
+386:         if (data.pagamentos) {
+387:           data.pagamentos.forEach((p, i) => linhasPagamento.push({ forma: p.forma, valor: arred2(p.valor), ordem: i + 1, referencia: p.referencia ?? null }));
+388:         }
+389:         // Valor efetivamente recebido em DINHEIRO Ã¢â‚¬â€ sÃƒÂ³ isso entra na gaveta.
+390:         const dinheiroRecebido = data.pagamentos
+391:           ? data.pagamentos.filter((p) => p.forma === 'DINHEIRO').reduce((s, p) => s + arred2(p.valor), 0)
+392:           : data.formaPagamento === 'DINHEIRO' ? total : 0;
+393: 
+394:         // PDV: venda em dinheiro entra na gaveta do turno na hora
+395:         if (caixaTurno && dinheiroRecebido > 0) {
+396:           await tx.caixa.update({ where: { id: caixaTurno.id }, data: { saldo: { increment: dinheiroRecebido } } });
+397:         }
+398: 
+399:         if (linhasPagamento.length > 0) {
+400:           await tx.vendaPagamento.createMany({
+401:             data: linhasPagamento.map((lp) => ({ vendaId: venda.id, empresaId: user.empresaId, forma: lp.forma, valor: lp.valor, ordem: lp.ordem, referencia: lp.referencia })),
+402:           });
+403:         }
+404:         // Baixa de estoque via service compartilhado (Fase 3): a mesma
+405:         // lÃƒÂ³gica de concorrÃƒÂªncia segura jÃƒÂ¡ vive em estoque.service.ts e
+406:         // ÃƒÂ© usada por Estoque/Compras Ã¢â‚¬â€ elimina duplicaÃƒÂ§ÃƒÂ£o que existia
+407:         // aqui antes.
+408: 
+409:         for (const item of itensCalculados) {
+410:           const produto = await tx.produto.findFirst({ where: { id: item.produto.id, empresaId: user.empresaId } });
+411:           if (!produto) throw NaoEncontrado('Produto nÃƒÂ£o encontrado nesta empresa.');
+412: 
+413:           const unidadeBase = await tx.unidade.findFirst({ where: { id: produto.unidadeId, empresaId: user.empresaId } });
+414:           if (!unidadeBase) throw NaoEncontrado('Unidade base do produto nÃƒÂ£o encontrada.');
+415: 
+416:           const conversao = await converterParaUnidadeBaseVenda({
+417:             empresaId: user.empresaId,
+418:             produtoId: item.produto.id,
+419:             unidadeBaseId: unidadeBase.id,
+420:             quantidadeVenda: item.quantidade,
+421:             unidadeVendaSimbolo: item.produto.unidade,
+422:           });
+423: 
+424:           await aplicarMovimento(tx, {
+425:             empresaId: user.empresaId,
+426:             filialId: data.filialId,
+427:             produtoId: item.produto.id,
+428:             usuarioId: user.id,
+429:             tipo: 'VENDA',
+430:             quantidade: conversao.quantidadeDestino.toNumber(),
+431:             motivo: `Venda ${venda.id}`,
+432:             documento: venda.id,
+433:             origem: data.origem,
+434:           });
+435: 
+436:           // Preservar snapshot da conversÃƒÂ£o para cancelamento/devoluÃƒÂ§ÃƒÂ£o
+437:           item.quantidadeBase = conversao.quantidadeDestino;
+438:           item.fatorAplicado = conversao.fator;
+439:           item.unidadeVenda = item.produto.unidade;
+440:           item.unidadeBase = unidadeBase.simbolo;
+441:           item.custoUnitarioBase = Number(produto.custo) / Number(conversao.quantidadeDestino);
+442: 
+443:           // Tratar produto fabricado e kits
+444:           // Se produto fabricado (tipo = 'PRODUzido'): apenas o acabado ÃƒÂ© baixado
+445:           // (jÃƒÂ¡ feito acima - sÃƒÂ³ decrementamos o produto atual, nÃƒÂ£o os ingredientes)
+446:           // Se kit virtual: baixar componentes na venda
+447:           if (produto.ehKit) {
+448:             const componentes = await tx.composicaoKit.findMany({
+449:               where: { empresaId: user.empresaId, kitProdutoId: item.produto.id },
+450:               select: { ingredienteProdutoId: true, quantidadePorKit: true },
+451:             });
+452: 
+453:             for (const comp of componentes) {
+454:               // Verificar se o ingrediente tem unidade diferente da base e converter se necessÃƒÂ¡rio
+455:               const ingrediente = await tx.produto.findFirst({
+456:                 where: { id: comp.ingredienteProdutoId, empresaId: user.empresaId },
+457:               });
+458:               if (!ingrediente) throw NaoEncontrado('Ingrediente do kit nÃƒÂ£o encontrado.');
+459: 
+460:               const unidadeBaseIng = await tx.unidade.findFirst({
+461:                 where: { id: ingrediente.unidadeId, empresaId: user.empresaId },
+462:               });
+463:               if (!unidadeBaseIng) throw NaoEncontrado('Unidade base do ingrediente nÃƒÂ£o encontrada.');
+464: 
+465:               const convIng = await converterParaUnidadeBaseVenda({
+466:                 empresaId: user.empresaId,
+467:                 produtoId: comp.ingredienteProdutoId,
+468:                 unidadeBaseId: unidadeBaseIng.id,
+469:                 quantidadeVenda: comp.quantidadePorKit,
+470:                 unidadeVendaSimbolo: ingrediente.unidade,
+471:               });
+472: 
+473:               await aplicarMovimento(tx, {
+474:                 empresaId: user.empresaId,
+475:                 filialId: data.filialId,
+476:                 produtoId: comp.ingredienteProdutoId,
+477:                 usuarioId: user.id,
+478:                 tipo: 'VENDA',
+479:                 quantidade: convIng.quantidadeDestino.toNumber(),
+480:                 motivo: `Consumo de kit ${venda.id}`,
+481:                 documento: venda.id,
+482:                 origem: data.origem,
+483:               });
+484: 
+485:               // Preservar snapshot do componente consumido
+486:               item.componentesConsumidos = item.componentesConsumidos || [];
+487:               item.componentesConsumidos.push({
+488:                 produtoId: comp.ingredienteProdutoId,
+489:                 quantidadeBase: convIng.quantidadeDestino,
+490:                 fator: convIng.fator,
+491:                 unidadeVenda: ingrediente.unidade,
+492:                 unidadeBase: unidadeBaseIng.simbolo,
+493:               });
+494:             }
+495:           } else if (produto.tipo === 'PRODUzido') {
+496:             // Produto fabricado: garantir que apenas o acabado foi baixado
+497:             // (jÃƒÂ¡ que aplicarMovimento jÃƒÂ¡ chamou pelo produto acabado)
+498:             // NÃƒÂ£o fazer nada adicional - os ingredientes jÃƒÂ¡ foram consumidos na produÃƒÂ§ÃƒÂ£o
+499:           }
+500:         }
+501: 
+502:         const hoje = dataOperacional;
+503:         const indicador = await tx.indicadorDiario.upsert({
+504:           where: { empresaId_filialId_data: { empresaId: user.empresaId, filialId: data.filialId, data: hoje } },
+505:           update: { faturamento: { increment: total }, qtdVendas: { increment: 1 } },
+506:           create: { empresaId: user.empresaId, filialId: data.filialId, data: hoje, faturamento: total, qtdVendas: 1, ticketMedio: total },
+507:         });
+508:         await tx.indicadorDiario.update({ where: { id: indicador.id }, data: { ticketMedio: Number(indicador.faturamento) / indicador.qtdVendas } });
+509: 
+
+========== .\src\modules\vendas\vendas.routes.ts | LINHA 610 ==========
+610: 
+611:         // O status vira CANCELADA AQUI, antes de qualquer recÃƒÂ¡lculo derivado.
+612:         // Este era um defeito real: o bloco do cliente lÃƒÂ¡ embaixo filtra
+613:         // `status: 'FINALIZADA'` Ã¢â‚¬â€ e como a venda AINDA era FINALIZADA naquele
+614:         // instante, ela continuava contada, e estornar nunca reduzia
+615:         // valorTotalComprado/frequencia/ticketMedio. Como tudo roda numa
+616:         // transaÃƒÂ§ÃƒÂ£o, se algo falhar depois o rollback desfaz esta escrita.
+617:         const vendaJaCancelada = await tx.venda.update({ where: { id }, data: { status: 'CANCELADA' } });
+618: 
+619:         for (const item of body.estornarEstoque ? venda.itens : []) {
+620:           await aplicarMovimento(tx, {
+621:             empresaId: venda.empresaId,
+622:             filialId: venda.filialId,
+623:             produtoId: item.produtoId,
+624:             usuarioId: user.id,
+625:             tipo: 'DEVOLUCAO',
+626:             quantidade: item.quantidade,
+627:             motivo: motivoCancelamento,
+628:             documento: id,
+629:             origem: 'MANUAL',
+630:           });
+631:         }
+632: 
+633:         if (body.estornarFinanceiro) await tx.financeiro.updateMany({ where: { vendaId: id, empresaId: user.empresaId }, data: { status: 'CANCELADO' } });
+634: 
+635:         const filialVenda = await tx.filial.findFirst({
+636:           where: { id: venda.filialId, empresaId: venda.empresaId },
+637:           select: { fusoHorario: true },
+638:         });
+639:         const diaOperacional = venda.dataOperacional
+
+========== .\src\modules\estoque\conversao.service.ts | LINHA 1 ==========
+1: import { prisma } from '../../lib/prisma.js';
+2: import { NaoEncontrado, ErroDeNegocio } from '../../lib/erros.js';
+3: import { Decimal } from '@prisma/client/runtime-library';
+4: 
+5: // ============================================================================
+6: // Etapa 3 â€” Camada de conversÃ£o e cÃ¡lculo decimal
+7: // ============================================================================
+8: 
+9: export class ErroConversao extends ErroDeNegocio {
+10:   constructor(
+11:     mensagem: string,
+12:     public readonly contexto: Record<string, unknown>,
+13:     status = 400,
+14:   ) {
+15:     super(mensagem, status);
+16:   }
+17: }
+18: 
+19: export interface ConversaoResult {
+20:   quantidadeOrigem: Decimal;
+21:   unidadeOrigem: string;
+22:   quantidadeDestino: Decimal;
+23:   unidadeDestino: string;
+24:   fator: Decimal;
+25:   mesmaDimensao: boolean;
+26: }
+27: 
+28: const MAX_CASAS_FATOR = 6;
+29: const MAX_CASAS_QUANTIDADE = 6;
+30: 
+
+========== .\src\modules\estoque\conversao.service.ts | LINHA 115 ==========
+115:       unidadeOrigem: unidadeOrigemSimbolo,
+116:       quantidadeDestino: qtd,
+117:       unidadeDestino: unidadeDestinoSimbolo,
+118:       fator: new Decimal(1),
+119:       mesmaDimensao: true,
+120:     };
+121:   }
+122: 
+123:   const mesmaDimensao = origem.dimensaoId === destino.dimensaoId;
+124: 
+125:   if (mesmaDimensao) {
+126:     const fator = origem.fatorCanonico.div(destino.fatorCanonico);
+127:     validarFator(fator, origem.id, destino.id);
+128:     const qtdDestino = qtd.times(fator).decimalPlaces(MAX_CASAS_QUANTIDADE);
+129:     return {
+130:       quantidadeOrigem: qtd,
+131:       unidadeOrigem: unidadeOrigemSimbolo,
+132:       quantidadeDestino: qtdDestino,
+133:       unidadeDestino: unidadeDestinoSimbolo,
+134:       fator: fator.decimalPlaces(MAX_CASAS_FATOR),
+135:       mesmaDimensao: true,
+136:     };
+137:   }
+138: 
+139:   const fatorRegistro = await buscarFatorConversao({
+140:     empresaId,
+141:     produtoId,
+142:     unidadeOrigemId: origem.id,
+143:     unidadeDestinoId: destino.id,
+144:     fornecedorId,
+145:   });
+146: 
+147:   if (!fatorRegistro) {
+148:     throw new ErroConversao(
+149:       `ConversÃ£o entre "${unidadeOrigemSimbolo}" e "${unidadeDestinoSimbolo}" nÃ£o permitida para este produto. DimensÃµes diferentes exigem fator de conversÃ£o especÃ­fico (ex: densidade para kgâ†”L).`,
+
+========== .\src\modules\estoque\conversao.service.ts | LINHA 205 ==========
+205:   unidadeBaseId?: string;
+206:   quantidadeCompra: number | string | Decimal;
+207:   unidadeCompraSimbolo: string;
+208:   fornecedorId?: string | null;
+209: }) {
+210:   // Se unidadeBaseId nÃ£o estiver definida, usa a unidade do produto como base
+211:   let simboloUnidadeBase: string;
+212:   if (unidadeBaseId) {
+213:     const unidadeBase = await prisma.unidade.findUnique({
+214:       where: { id: unidadeBaseId },
+215:       select: { id: true, simbolo: true },
+216:     });
+217:     if (!unidadeBase) {
+218:       throw new NaoEncontrado('Unidade base do produto nÃ£o encontrada.');
+219:     }
+220:     simboloUnidadeBase = unidadeBase.simbolo;
+221:   } else {
+222:     // Unidade base nÃ£o definida explicitamente; usa a unidade do produto como base
+223:     const produto = await prisma.produto.findFirst({
+224:       where: { id: produtoId, empresaId },
+225:       select: { id: true, unidade: true },
+226:     });
+227:     if (!produto) throw NaoEncontrado(`Produto ${produtoId} invÃ¡lido para esta empresa.`);
+228:     simboloUnidadeBase = produto.unidade;
+229:   }
+230: 
+231:   return converterUnidade({
+232:     empresaId,
+233:     produtoId,
+234:     quantidade: quantidadeCompra,
+235:     unidadeOrigemSimbolo: unidadeCompraSimbolo,
+236:     unidadeDestinoSimbolo: simboloUnidadeBase,
+237:     fornecedorId,
+238:   });
+239: }
+240: 
+241: export async function converterParaUnidadeBaseVenda({
+242:   empresaId,
+243:   produtoId,
+244:   unidadeBaseId,
+245:   quantidadeVenda,
+246:   unidadeVendaSimbolo,
+247: }: {
+248:   empresaId: string;
+249:   produtoId: string;
+250:   unidadeBaseId?: string;
+251:   quantidadeVenda: number | string | Decimal;
+252:   unidadeVendaSimbolo: string;
+253: }) {
+254:   let simboloUnidadeBase: string;
+255:   if (unidadeBaseId) {
+256:     const unidadeBase = await prisma.unidade.findUnique({
+257:       where: { id: unidadeBaseId },
+258:       select: { id: true, simbolo: true },
+259:     });
+260:     if (!unidadeBase) {
+261:       throw new NaoEncontrado('Unidade base do produto nÃ£o encontrada.');
+262:     }
+263:     simboloUnidadeBase = unidadeBase.simbolo;
+264:   } else {
+265:     // Unidade base nÃ£o definida explicitamente; usa a unidade do produto como base
+266:     const produto = await prisma.produto.findFirst({
+267:       where: { id: produtoId, empresaId },
+268:       select: { id: true, unidade: true },
+269:     });
+270:     if (!produto) throw NaoEncontrado(`Produto ${produtoId} invÃ¡lido para esta empresa.`);
+271:     simboloUnidadeBase = produto.unidade;
+272:   }
+273: 
+274:   return converterUnidade({
+275:     empresaId,
+276:     produtoId,
+277:     quantidade: quantidadeVenda,
+278:     unidadeOrigemSimbolo: unidadeVendaSimbolo,
+279:     unidadeDestinoSimbolo: simboloUnidadeBase,
+280:   });
+281: }
+282: 
+283: export async function converterParaUnidadeBaseConsumo({
+284:   empresaId,
+285:   produtoId,
+286:   unidadeBaseId,
+287:   quantidadeConsumo,
+288:   unidadeConsumoSimbolo,
+289: }: {
+290:   empresaId: string;
+291:   produtoId: string;
+292:   unidadeBaseId?: string;
+293:   quantidadeConsumo: number | string | Decimal;
+294:   unidadeConsumoSimbolo: string;
+295: }) {
+296:   let simboloUnidadeBase: string;
+297:   if (unidadeBaseId) {
+298:     const unidadeBase = await prisma.unidade.findUnique({
+299:       where: { id: unidadeBaseId },
+300:       select: { id: true, simbolo: true },
+301:     });
+302:     if (!unidadeBase) {
+303:       throw new NaoEncontrado('Unidade base do produto nÃ£o encontrada.');
+304:     }
+305:     simboloUnidadeBase = unidadeBase.simbolo;
+306:   } else {
+307:     // Unidade base nÃ£o definida explicitamente; usa a unidade do produto como base
+308:     const produto = await prisma.produto.findFirst({
+309:       where: { id: produtoId, empresaId },
+310:       select: { id: true, unidade: true },
+311:     });
+312:     if (!produto) throw NaoEncontrado(`Produto ${produtoId} invÃ¡lido para esta empresa.`);
+313:     simboloUnidadeBase = produto.unidade;
+314:   }
+
+========== .\src\modules\gestao\gestao.routes.ts | LINHA 315 ==========
+315:     const financeiros = await prisma.financeiro.findMany({ where: whereFin });
+316:     const receitas = financeiros.filter((f:any)=>f.tipo==='RECEITA');
+317:     const despesas = financeiros.filter((f:any)=>f.tipo==='DESPESA');
+318: 
+319:     const receitaBruta = receitas.reduce((s:number,f:any)=>s+Number(f.valor),0);
+320:     // DeduÃ§Ãµes = impostos sobre vendas e devoluÃ§Ãµes. SÃ³ contam lanÃ§amentos de
+321:     // DESPESA: um lanÃ§amento de RECEITA com categoria "impostos" (estorno,
+322:     // por exemplo) NÃƒO reduz a receita â€” ele jÃ¡ entra em `receitaBruta` pelo
+323:     // prÃ³prio tipo, e descontÃ¡-lo aqui contaria o mesmo valor duas vezes.
+324:     const deducoes = despesas.filter((f:any)=>ehDeducao(f.categoria)).reduce((s:number,f:any)=>s+Number(f.valor),0);
+325:     const receitaLiquida = receitaBruta - deducoes;
+326: 
+327:     // Custos = custo dos produtos vendidos - calcular pelas vendas no perÃ­odo
+328:     const vendasPeriodo = await prisma.venda.findMany({ where: { empresaId: req.user.empresaId, createdAt: { gte: inicio, lte: fim }, status: 'FINALIZADA', ...(filialId?{filialId}:{}) }, include: { itens: true } });
+329:     const custos = vendasPeriodo.reduce((s,v)=>s+v.itens.reduce((si,item)=>si+Number(item.custoUnitario)*item.quantidade,0),0);
+330: 
+331:     const despesasOperacionais = despesas.filter((f:any)=>!CATEGORIAS_DEDUCAO.includes(f.categoria)).reduce((s:number,f:any)=>s+Number(f.valor),0);
+332:     const resultadoOperacional = receitaLiquida - custos - despesasOperacionais;
+333:     const lucroPrejuizo = resultadoOperacional; // simplificado sem IR
+334: 
+335:     // â”€â”€ MARGEM SEM RECEITA NÃƒO Ã‰ "0%", Ã© "nÃ£o calculÃ¡vel" â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+336:     // Antes: `receitaLiquida ? ... : 0`. Uma empresa com R$ 0 de receita e
+337:     // R$ 5.000 de CMV recebia margem bruta de 0,0% â€” que se lÃª como
+338:     // "empate", quando na verdade nÃ£o vendeu nada e perdeu tudo. O valor
+339:     // impossÃ­vel de calcular volta como `null`, e a interface mostra "â€”"
+
+========== .\src\modules\integracoes\mercadolivre-sync.service.ts | LINHA 720 ==========
+720:     if (!atual) return 'semAlteracao';
+721:     const documento = `ml:order:${contexto.pedidoId}`;
+722:     const movimentos = await tx.estoqueMovimentacao.findMany({
+723:       where: { empresaId: contexto.empresaId, documento, tipo: { in: ['VENDA', 'DEVOLUCAO'] } },
+724:       select: { tipo: true },
+725:     });
+726:     const baixado = movimentos.some((m) => m.tipo === 'VENDA');
+727:     const devolvido = movimentos.some((m) => m.tipo === 'DEVOLUCAO');
+728: 
+729:     // Reserva/baixa qualquer pedido ainda ativo para que a prÃ³xima publicaÃ§Ã£o
+730:     // automÃ¡tica de estoque nÃ£o devolva ao anÃºncio uma unidade jÃ¡ vendida.
+731:     if (contexto.aplicarEstoque && novoStatus !== 'CANCELADA' && !baixado) {
+732:       for (const item of atual.itens) {
+733:         await aplicarMovimento(tx, {
+734:           empresaId: contexto.empresaId, filialId: contexto.filialId,
+735:           produtoId: item.produtoId, usuarioId: contexto.usuarioId, tipo: 'VENDA',
+736:           quantidade: item.quantidade, motivo: `Pedido Mercado Livre ${contexto.pedidoId}`,
+737:           documento, origem: 'INTEGRACAO',
+738:         });
+739:       }
+740:     }
+741:     // Cancelamento devolve ao saldo apenas uma vez, na mesma transaÃ§Ã£o da
+742:     // mudanÃ§a de estado. DevoluÃ§Ãµes fÃ­sicas seguem como fluxo pÃ³s-venda.
+743:     if (novoStatus === 'CANCELADA' && baixado && !devolvido) {
+744:       for (const item of atual.itens) {
+745:         await aplicarMovimento(tx, {
+746:           empresaId: contexto.empresaId, filialId: contexto.filialId,
+747:           produtoId: item.produtoId, usuarioId: contexto.usuarioId, tipo: 'DEVOLUCAO',
+748:           quantidade: item.quantidade, motivo: `Cancelamento Mercado Livre ${contexto.pedidoId}`,
+749:           documento, origem: 'INTEGRACAO',
+750:         });
+751:       }
+752:     }
+753: 
+754:     if (novoStatus === atual.status) return 'semAlteracao';
+755:     const transicaoPermitida = novoStatus === 'CANCELADA' || (atual.status === 'ABERTA' && novoStatus === 'FINALIZADA');
+756:     if (!transicaoPermitida) return 'semAlteracao';
+757:     await tx.venda.update({ where: { id: venda.id }, data: { status: novoStatus } });
+758:     return 'atualizada';
+759:   });
+
+========== .\src\modules\produtos\kits.routes.ts | LINHA 140 ==========
+140:     '/produtos/:id/kit/produzir',
+141:     { preHandler: [app.authenticate, await permissaoMiddleware('estoque', 'criar')] },
+142:     async (req: FastifyRequest, reply) => {
+143:       const { id } = req.params as { id: string };
+144:       const body = z.object({ filialId: z.string().min(1), quantidade: quantidadeSchema, idempotencyKey: z.string().min(8).max(160).optional() }).parse(req.body);
+145:       const headerKey = req.headers['x-idempotency-key'];
+146:       if (Array.isArray(headerKey)) throw new ErroDeNegocio('Use uma Ãºnica chave de idempotÃªncia.', 400);
+147:       if (headerKey && body.idempotencyKey && headerKey !== body.idempotencyKey) throw new ErroDeNegocio('A chave do cabeÃ§alho e do corpo nÃ£o coincide.', 400);
+148:       const idempotencyKey = (headerKey || body.idempotencyKey || '').trim();
+149:       if (idempotencyKey.length < 8) throw new ErroDeNegocio('Informe uma chave de idempotÃªncia com pelo menos 8 caracteres.', 400);
+150:       if (!(await temPermissao(req.user.id, 'custos', 'editar'))) throw new ErroDeNegocio('Produzir kits altera o custo do produto acabado e exige custos.editar.', 403);
+151: 
+152:       const anterior = await prisma.producaoKit.findFirst({ where: { empresaId: req.user.empresaId, idempotencyKey } });
+153:       if (anterior) {
+154:         if (anterior.produtoKitId !== id || anterior.filialId !== body.filialId || anterior.quantidade !== body.quantidade) {
+155:           throw Conflito('Esta chave de idempotÃªncia jÃ¡ foi usada em outra produÃ§Ã£o. Gere uma nova chave.');
+156:         }
+157:         const podeVerCustos = await temPermissao(req.user.id, 'custos', 'visualizar');
+158:         const { custoUnitario, custoTotal, composicaoSnapshot, ...resumo } = anterior;
+159:         return reply.send({ duplicada: true, producao: { ...resumo, ...(podeVerCustos ? { custoUnitario: Number(custoUnitario), custoTotal: Number(custoTotal), composicaoSnapshot } : {}) } });
+160:       }
+161: 
+162:       let producao;
+163:       try {
+164:         producao = await prisma.$transaction(async (tx) => {
+165:           const lockKit = await tx.$queryRaw<Array<{ id: string }>>`
+166:             SELECT "id" FROM "Produto"
+167:             WHERE "id" = ${id} AND "empresaId" = ${req.user.empresaId} AND "status" = 'ATIVO'::"StatusGeral"
+168:             FOR UPDATE
+169:           `;
+170:           if (!lockKit.length) throw NaoEncontrado('Produto acabado nÃ£o encontrado ou inativo nesta empresa.');
+171:           const kit = await tx.produto.findFirst({ where: { id, empresaId: req.user.empresaId, status: 'ATIVO', ehKit: true } });
+172:           if (!kit) throw new ErroDeNegocio('Configure a composiÃ§Ã£o do kit antes de produzir.', 409);
+173:           const filial = await tx.filial.findFirst({ where: { id: body.filialId, empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true } });
+174:           if (!filial) throw NaoEncontrado('Filial invÃ¡lida ou inativa nesta empresa.');
+175:           const receita = await tx.composicaoKit.findMany({
+176:             where: { empresaId: req.user.empresaId, kitProdutoId: id },
+177:             orderBy: { ingredienteProdutoId: 'asc' },
+178:             include: { ingredienteProduto: true },
+179:           });
+180:           if (!receita.length) throw new ErroDeNegocio('O kit precisa ter ao menos um ingrediente configurado.', 409);
+181: 
+182:           const idsIngredientes = receita.map((item) => item.ingredienteProdutoId);
+183:           const locksIngredientes = await tx.$queryRaw<Array<{ id: string }>>`
+184:             SELECT "id" FROM "Produto"
+185:             WHERE "empresaId" = ${req.user.empresaId} AND "id" IN (${Prisma.join(idsIngredientes)})
+186:             ORDER BY "id"
+187:             FOR UPDATE
+188:           `;
+189:           if (locksIngredientes.length !== idsIngredientes.length) throw Conflito('A composiÃ§Ã£o mudou durante a produÃ§Ã£o. Atualize e tente novamente.');
+190: 
+191:           const ingredientesAtualizados = await tx.produto.findMany({ where: { empresaId: req.user.empresaId, id: { in: idsIngredientes } } });
+192:           if (ingredientesAtualizados.length !== idsIngredientes.length) throw Conflito('Um ingrediente foi removido durante a produÃ§Ã£o. Atualize e tente novamente.');
+193:           if (ingredientesAtualizados.some((produto) => produto.status !== 'ATIVO' || produto.ehKit)) throw Conflito('Um ingrediente foi inativado ou passou a ser kit. Atualize a composiÃ§Ã£o e tente novamente.');
+194:           const porId = new Map(ingredientesAtualizados.map((produto) => [produto.id, produto]));
+195:           const receitaAtual = receita.map((item) => ({ ...item, ingredienteProduto: porId.get(item.ingredienteProdutoId)! }));
+196:           const custoUnitario = arredondarMoeda(receitaAtual.reduce((total, item) => total + Number(item.ingredienteProduto.custo) * Number(item.quantidadePorKit), 0));
+197:           const custoTotal = arredondarMoeda(custoUnitario * body.quantidade);
+198:           const snapshot = receitaAtual.map((item) => ({
+199:             produtoId: item.ingredienteProdutoId,
+200:             nome: item.ingredienteProduto.nome,
+201:             sku: item.ingredienteProduto.sku,
+202:             unidade: item.ingredienteProduto.unidade,
+203:             quantidadePorKit: Number(item.quantidadePorKit),
+204:             quantidadeConsumida: Number(item.quantidadePorKit) * body.quantidade,
+205:             custoUnitario: Number(item.ingredienteProduto.custo),
+206:             custoTotal: arredondarMoeda(Number(item.ingredienteProduto.custo) * Number(item.quantidadePorKit) * body.quantidade),
+207:           }));
+208:           if (snapshot.some((componente) => !Number.isFinite(componente.quantidadeConsumida) || Math.abs(componente.quantidadeConsumida * 1000 - Math.round(componente.quantidadeConsumida * 1000)) > 1e-8)) {
+209:             throw new ErroDeNegocio('A quantidade consumida excede a precisÃ£o de 3 casas decimais suportada pelo estoque.', 400);
+210:           }
+211:           const registro = await tx.producaoKit.create({
+212:             data: {
+213:               empresaId: req.user.empresaId,
+214:               filialId: filial.id,
+215:               produtoKitId: id,
+216:               usuarioId: req.user.id,
+217:               quantidade: body.quantidade,
+218:               custoUnitario,
+219:               custoTotal,
+220:               composicaoSnapshot: snapshot,
+221:               idempotencyKey,
+222:             },
+223:           });
+224: 
+225:           for (let index = 0; index < receitaAtual.length; index += 1) {
+226:             const componente = receitaAtual[index];
+227:             await aplicarMovimento(tx, {
+228:               empresaId: req.user.empresaId,
+229:               filialId: filial.id,
+230:               produtoId: componente.ingredienteProdutoId,
+231:               usuarioId: req.user.id,
+232:               tipo: 'SAIDA',
+233:               quantidade: snapshot[index].quantidadeConsumida,
+234:               motivo: `Consumo na produÃ§Ã£o do kit ${kit.nome}`,
+235:               documento: registro.id,
+236:               origem: 'MANUAL',
+237:             });
+238:           }
+239: 
+240:           const margem = Number(kit.precoVenda) > 0 ? ((Number(kit.precoVenda) - custoUnitario) / Number(kit.precoVenda)) * 100 : 0;
+241:           await tx.produto.update({ where: { id: kit.id }, data: { custo: custoUnitario, margem } });
+242:           await aplicarMovimento(tx, {
+243:             empresaId: req.user.empresaId,
+244:             filialId: filial.id,
+245:             produtoId: kit.id,
+246:             usuarioId: req.user.id,
+247:             tipo: 'ENTRADA',
+248:             quantidade: body.quantidade,
+249:             motivo: `ProduÃ§Ã£o do kit ${kit.nome}`,
+250:             documento: registro.id,
+251:             origem: 'MANUAL',
+252:           });
+253:           return { ...registro, custoUnitario, custoTotal, kitNome: kit.nome, componentes: snapshot };
+254:         });
+255:       } catch (error) {
+256:         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+257:           const repetida = await prisma.producaoKit.findFirst({ where: { empresaId: req.user.empresaId, idempotencyKey } });
+258:           if (repetida) {
+259:             if (repetida.produtoKitId !== id || repetida.filialId !== body.filialId || repetida.quantidade !== body.quantidade) {
+260:               throw Conflito('Esta chave de idempotÃªncia jÃ¡ foi usada em outra produÃ§Ã£o. Gere uma nova chave.');
+261:             }
+262:             const podeVerCustos = await temPermissao(req.user.id, 'custos', 'visualizar');
+263:             const { custoUnitario, custoTotal, composicaoSnapshot, ...resumo } = repetida;
+264:             return reply.send({ duplicada: true, producao: { ...resumo, ...(podeVerCustos ? { custoUnitario: Number(custoUnitario), custoTotal: Number(custoTotal), composicaoSnapshot } : {}) } });
+
+========== .\src\modules\rh\inventario.routes.ts | LINHA 290 ==========
+290:    * POST /estoque/inventarios/:id/fechar - encerra a folha.
+291:    *
+292:    * Concluir com item pendente e recusado (409). Fechar com pendencia criaria
+293:    * um registro de inventario que nao cobre o deposito, e e pior que nao
+294:    * fechar: pareceria que a contagem terminou.
+295:    */
+296:   app.post('/estoque/inventarios/:id/fechar', fechar, async (req: any) => {
+297:     const empresaId = empresaDoRequisicao(req);
+298:     const b = fecharSchema.parse(req.body ?? {});
+299:     const s = await prisma.sessaoInventario.findFirst({
+300:       where: { id: req.params.id, empresaId },
+301:       include: { contagens: { select: { quantidadeSistema: true, quantidadeContada: true } } },
+302:     });
+303:     if (!s) throw new ErroDeNegocio('Contagem nao encontrada nesta empresa.', 404);
+304:     if (!podeMudarStatus(s.status, b.status)) {
+305:       throw new ErroDeNegocio(`Esta contagem ja esta ${s.status} e nao muda de estado.`, 409);
+306:     }
+307:     const resumo = resumirSessao(s.contagens);
+308:     if (b.status === 'CONCLUIDA' && !resumo.fechavel) {
+309:       throw new ErroDeNegocio(
+310:         resumo.total === 0
+311:           ? 'Esta folha nao tem itens para concluir.'
+312:           : `Faltam ${resumo.pendentes} item(ns) sem contar. Conclua a contagem ou cancele a folha.`,
+313:         409,
+314:       );
+315:     }
+316:     const salva = await prisma.sessaoInventario.update({
+317:       where: { id: s.id },
+318:       data: {
+319:         status: b.status,
+
+========== .\src\server.ts | LINHA 45 ==========
+45: import { integracoesRoutes } from './modules/integracoes/integracoes.routes.js';
+46: import { shopeeRoutes } from './modules/integracoes/shopee/shopee.routes.js';
+47: import { pixRoutes } from './modules/payments/pix.routes.js';
+48: import { lgpdRoutes } from './modules/lgpd/lgpd.routes.js';
+49: import { apiPublicaRoutes } from './modules/api-publica/api-publica.routes.js';
+50: import { ttsRoutes } from './modules/tts/tts.controller.js';
+51: import { relatoriosRoutes } from './modules/relatorios/relatorios.routes.js';
+52: import { fornecedoresRoutes } from './modules/fornecedores/fornecedores.routes.js';
+53: import { radarRoutes } from './modules/radar/radar.routes.js';
+54: import { enterprisePackRoutes } from './modules/enterprise-pack/routes';
+55: import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
+56: import { registerAuthentication } from './middlewares/auth.js';
+57: import { prisma } from './lib/prisma.js';
+58: import { ErroDeNegocio } from './lib/erros.js';
+59: import { serializerDeRequest } from './lib/log-redacao.js';
+
+========== .\src\server.ts | LINHA 175 ==========
+175: await app.register(integracoesRoutes);
+176: await app.register(shopeeRoutes);
+177: await app.register(pixRoutes);
+178: await app.register(lgpdRoutes);
+179: await app.register(apiPublicaRoutes);
+180: await app.register(ttsRoutes);
+181: await app.register(relatoriosRoutes);
+182: await app.register(fornecedoresRoutes);
+183: await app.register(fiscalRoutes);
+184: // Radar Organizacional: uma Ãºnica chamada (/radar/resumo) alimenta a tela.
+185: await app.register(radarRoutes, { prefix: "/radar" });
+186: 
+187: if (import.meta.main) {
+188:   const port = Number(process.env.PORT || 3333);
+189:   await app.listen({ port, host: '0.0.0.0' });
+190:   iniciarAgendadorDeSnapshot();
+191:   // Agendador persistente de sync ML: provisiona tarefas das contas CONECTADAS
+192:   // e inicia o despertador recursivo (o estado vive no banco â€” sobrevive a
+193:   // restart). DesabilitÃ¡vel com ML_SYNC_AUTO=false.
+194:   void iniciarAgendadorML();
+195:   iniciarAgendadorShopee();
+196: 
+197:   async function encerrarComCuidado(sinal: string) {
+198:     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);
+199:     await pararAgendadorML();
+
+========== MODELOS DO PRISMA ==========
+
+> prisma\schema.prisma:270:model Produto {
+  prisma\schema.prisma:271:  id               String                  @id @default(cuid())
+  prisma\schema.prisma:272:  empresaId        String
+  prisma\schema.prisma:273:  empresa          Empresa                 @relation(fields: [empresaId], references: [id])
+  prisma\schema.prisma:274:  categoriaId      String?
+  prisma\schema.prisma:275:  categoria        Categoria?              @relation(fields: [categoriaId], references: [id])
+  prisma\schema.prisma:276:  fornecedorId     String?
+  prisma\schema.prisma:277:  fornecedor       Fornecedor?             @relation(fields: [fornecedorId], references: 
+[id])
+  prisma\schema.prisma:278:  tipoProdutoId    String?
+  prisma\schema.prisma:279:  tipoProduto      TipoProduto?            @relation(fields: [tipoProdutoId], references: 
+[id])
+  prisma\schema.prisma:280:  unidadeBaseId    String?
+  prisma\schema.prisma:281:  unidadeBase      Unidade?                @relation("ProdutoUnidadeBase", fields: 
+[unidadeBaseId], references: [id])
+  prisma\schema.prisma:282:  politicaCusto    PoliticaCusto           @default(MEDIO_PONDERADO)
+  prisma\schema.prisma:283:  nome             String
+  prisma\schema.prisma:284:  marca            String?
+  prisma\schema.prisma:285:  sku              String?
+  prisma\schema.prisma:286:  codigoBarras     String?
+  prisma\schema.prisma:287:  custo            Decimal                 @db.Decimal(14, 6)
+  prisma\schema.prisma:288:  precoVenda       Decimal                 @db.Decimal(10, 2)
+  prisma\schema.prisma:289:  margem           Decimal?                @db.Decimal(5, 2) // calculada: 
+(preco-custo)/preco*100
+  prisma\schema.prisma:290:  unidade          String                  @default("UN") // unidade legado 
+ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mantida para compatibilidade de leitura antiga
+  prisma\schema.prisma:291:  estoqueMinimo    Decimal                 @default(5) @db.Decimal(14, 3)
+  prisma\schema.prisma:292:  estoqueMaximo    Decimal                 @default(100) @db.Decimal(14, 3)
+  prisma\schema.prisma:293:  pontoPedido      Decimal                 @default(0) @db.Decimal(14, 3)
+  prisma\schema.prisma:294:  peso             String?
+  prisma\schema.prisma:295:  ncm              String?
+  prisma\schema.prisma:296:  precoPromocional Decimal?                @db.Decimal(10, 2)
+  prisma\schema.prisma:297:  promocaoInicio   DateTime?
+  prisma\schema.prisma:298:  promocaoFim      DateTime?
+  prisma\schema.prisma:299:  promocaoLimite   Int?
+  prisma\schema.prisma:300:  validade         DateTime?
+  prisma\schema.prisma:301:  imagem           String?
+  prisma\schema.prisma:302:  descricao        String?
+  prisma\schema.prisma:303:  status           StatusGeral             @default(ATIVO)
+  prisma\schema.prisma:304:  ehKit            Boolean                 @default(false)
+  prisma\schema.prisma:305:  origem           Origem                  @default(MANUAL)
+  prisma\schema.prisma:306:  createdAt        DateTime                @default(now())
+  prisma\schema.prisma:307:  updatedAt        DateTime                @updatedAt
+  prisma\schema.prisma:308:  estoques         Estoque[]
+  prisma\schema.prisma:309:  movimentacoes    EstoqueMovimentacao[]
+  prisma\schema.prisma:310:  snapshotsEstoque EstoqueSnapshotDiario[]
+  prisma\schema.prisma:311:  comprasItens     CompraItem[]
+  prisma\schema.prisma:312:  composicaoComoKit ComposicaoKit[]          @relation("KitProduto")
+  prisma\schema.prisma:313:  composicaoComoIngrediente ComposicaoKit[]  @relation("IngredienteProduto")
+  prisma\schema.prisma:314:  producoesKit      ProducaoKit[]
+  prisma\schema.prisma:315:  consumosInternos  ConsumoInterno[]
+> prisma\schema.prisma:325:model ComposicaoKit {
+  prisma\schema.prisma:326:  id                  String   @id @default(cuid())
+  prisma\schema.prisma:327:  empresaId           String
+  prisma\schema.prisma:328:  kitProdutoId        String
+  prisma\schema.prisma:329:  ingredienteProdutoId String
+  prisma\schema.prisma:330:  quantidadePorKit    Decimal  @db.Decimal(12, 3)
+  prisma\schema.prisma:331:  createdAt           DateTime @default(now())
+  prisma\schema.prisma:332:  updatedAt           DateTime @updatedAt
+  prisma\schema.prisma:333:  kitProduto          Produto  @relation("KitProduto", fields: [kitProdutoId], references: 
+[id], onDelete: Cascade)
+  prisma\schema.prisma:334:  ingredienteProduto  Produto  @relation("IngredienteProduto", fields: 
+[ingredienteProdutoId], references: [id], onDelete: Restrict)
+  prisma\schema.prisma:335:
+  prisma\schema.prisma:336:  @@unique([kitProdutoId, ingredienteProdutoId])
+  prisma\schema.prisma:337:  @@index([empresaId, kitProdutoId])
+  prisma\schema.prisma:338:  @@index([empresaId, ingredienteProdutoId])
+  prisma\schema.prisma:339:}
+  prisma\schema.prisma:340:
+> prisma\schema.prisma:341:model ProducaoKit {
+  prisma\schema.prisma:342:  id                 String   @id @default(cuid())
+  prisma\schema.prisma:343:  empresaId          String
+  prisma\schema.prisma:344:  filialId           String
+  prisma\schema.prisma:345:  produtoKitId       String
+  prisma\schema.prisma:346:  usuarioId          String?
+  prisma\schema.prisma:347:  quantidade         Decimal  @db.Decimal(14, 3) // quantidade produzida (na unidade de 
+produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o)
+  prisma\schema.prisma:348:  unidadeProducao    String?  // sÃƒÆ’Ã‚Â­mbolo da unidade de produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  prisma\schema.prisma:349:  fatorAplicado      Decimal? @db.Decimal(14, 6) // fator para converter para unidade base 
+do produto
+  prisma\schema.prisma:350:  quantidadeProduzida Decimal @db.Decimal(14, 3) // quantidade efetivamente produzida 
+(apÃƒÆ’Ã‚Â³s perdas)
+  prisma\schema.prisma:351:  perda              Decimal  @default(0) @db.Decimal(14, 3) // perda registrada na 
+produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  prisma\schema.prisma:352:  custoUnitario      Decimal  @db.Decimal(14, 6)
+  prisma\schema.prisma:353:  custoTotal         Decimal  @db.Decimal(14, 2)
+  prisma\schema.prisma:354:  composicaoSnapshot Json     // cÃƒÆ’Ã‚Â³pia da ficha tÃƒÆ’Ã‚Â©cnica, fatores e custos da 
+data da produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  prisma\schema.prisma:355:  idempotencyKey     String
+  prisma\schema.prisma:356:  createdAt          DateTime @default(now())
+  prisma\schema.prisma:357:  filial             Filial   @relation(fields: [filialId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:358:  produtoKit         Produto  @relation(fields: [produtoKitId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:359:  empresa            Empresa  @relation(fields: [empresaId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:360:  usuario            Usuario? @relation(fields: [usuarioId], references: [id], onDelete: 
+SetNull)
+  prisma\schema.prisma:361:
+  prisma\schema.prisma:362:  @@unique([empresaId, idempotencyKey])
+  prisma\schema.prisma:363:  @@index([empresaId, produtoKitId, createdAt])
+  prisma\schema.prisma:364:  @@index([filialId, createdAt])
+  prisma\schema.prisma:365:}
+  prisma\schema.prisma:366:
+  prisma\schema.prisma:367:// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 9 Estoque ---
+  prisma\schema.prisma:368:model Estoque {
+  prisma\schema.prisma:369:  id         String   @id @default(cuid())
+  prisma\schema.prisma:370:  empresaId  String
+  prisma\schema.prisma:371:  filialId   String
+  prisma\schema.prisma:372:  produtoId  String
+  prisma\schema.prisma:373:  produto    Produto  @relation(fields: [produtoId], references: [id])
+  prisma\schema.prisma:374:  filial     Filial   @relation(fields: [filialId], references: [id])
+  prisma\schema.prisma:375:  quantidade Decimal  @default(0) @db.Decimal(14, 3)
+  prisma\schema.prisma:376:  valorTotal Decimal  @default(0) @db.Decimal(14, 2)
+  prisma\schema.prisma:377:  lote       String? // nÃƒÆ’Ã‚Âºmero do lote para controle de validade
+  prisma\schema.prisma:378:  local      String? // local de armazenamento (prateleira, estante, etc.)
+  prisma\schema.prisma:379:  updatedAt  DateTime @updatedAt
+  prisma\schema.prisma:380:
+  prisma\schema.prisma:381:  @@unique([filialId, produtoId])
+  prisma\schema.prisma:382:  @@index([empresaId])
+  prisma\schema.prisma:383:  contagens      ContagemInventario[]
+  prisma\schema.prisma:384:}
+  prisma\schema.prisma:385:
+  prisma\schema.prisma:386:// Decis+ÃƒÂ¯Ã‚Â¿Ã‚Â½o arquitetural (Fase 3, d+ÃƒÂ¯Ã‚Â¿Ã‚Â½vida t+ÃƒÂ¯Ã‚Â¿Ã‚Â½cnica 
+registrada em
+> prisma\schema.prisma:872:model Unidade {
+  prisma\schema.prisma:873:  id             String   @id @default(cuid())
+  prisma\schema.prisma:874:  empresaId      String
+  prisma\schema.prisma:875:  empresa        Empresa  @relation(fields: [empresaId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:876:  dimensaoId     String
+  prisma\schema.prisma:877:  dimensao       Dimensao @relation(fields: [dimensaoId], references: [id])
+  prisma\schema.prisma:878:  nome           String   // ex: Kilograma, Grama, Litro, Mililitro, Unidade, Duzia, Caixa
+  prisma\schema.prisma:879:  simbolo        String   // ex: kg, g, L, mL, UN, dz, cx
+  prisma\schema.prisma:880:  fatorCanonico  Decimal  @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade 
+canÃƒÆ’Ã‚Â´nica da dimensÃƒÆ’Ã‚Â£o
+  prisma\schema.prisma:881:  ativo          Boolean  @default(true)
+  prisma\schema.prisma:882:  createdAt      DateTime @default(now())
+  prisma\schema.prisma:883:  updatedAt      DateTime @updatedAt
+  prisma\schema.prisma:884:  produtosBase   Produto[] @relation("ProdutoUnidadeBase")
+  prisma\schema.prisma:885:  fatoresOrigem  FatorConversao[] @relation("FatorConversaoOrigem")
+  prisma\schema.prisma:886:  fatoresDestino FatorConversao[] @relation("FatorConversaoDestino")
+  prisma\schema.prisma:887:  consumosInternos ConsumoInterno[]
+  prisma\schema.prisma:888:
+  prisma\schema.prisma:889:  @@unique([empresaId, simbolo])
+  prisma\schema.prisma:890:  @@index([empresaId, dimensaoId])
+  prisma\schema.prisma:891:}
+  prisma\schema.prisma:892:
+  prisma\schema.prisma:893:model TipoProduto {
+  prisma\schema.prisma:894:  id             String   @id @default(cuid())
+  prisma\schema.prisma:895:  empresaId      String
+  prisma\schema.prisma:896:  empresa        Empresa  @relation(fields: [empresaId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:897:  nome           String   // ex: Mercadoria para Revenda, Insumo, Produto Fabricado, 
+Material de Uso Interno
+  prisma\schema.prisma:898:  codigo         TipoProdutoEnum
+  prisma\schema.prisma:899:  descricao      String?
+  prisma\schema.prisma:900:  ativo          Boolean  @default(true)
+  prisma\schema.prisma:901:  createdAt      DateTime @default(now())
+  prisma\schema.prisma:902:  updatedAt      DateTime @updatedAt
+  prisma\schema.prisma:903:  produtos       Produto[]
+  prisma\schema.prisma:904:
+  prisma\schema.prisma:905:  @@unique([empresaId, codigo])
+  prisma\schema.prisma:906:  @@index([empresaId])
+  prisma\schema.prisma:907:}
+  prisma\schema.prisma:908:
+  prisma\schema.prisma:909:model FatorConversao {
+  prisma\schema.prisma:910:  id               String      @id @default(cuid())
+  prisma\schema.prisma:911:  empresaId        String
+  prisma\schema.prisma:912:  empresa          Empresa     @relation(fields: [empresaId], references: [id], onDelete: 
+Restrict)
+  prisma\schema.prisma:913:  produtoId        String
+  prisma\schema.prisma:914:  produto          Produto     @relation(fields: [produtoId], references: [id], onDelete: 
+Cascade)
+  prisma\schema.prisma:915:  unidadeOrigemId  String
+  prisma\schema.prisma:916:  unidadeOrigem    Unidade     @relation("FatorConversaoOrigem", fields: [unidadeOrigemId], 
+references: [id])
+  prisma\schema.prisma:917:  unidadeDestinoId String
+
+
+

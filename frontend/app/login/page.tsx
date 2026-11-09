@@ -105,7 +105,7 @@ if (form.senha !== form.confirmarSenha) {
 }
 
 if (form.senha.length < 8) {
-  setError('Senha mínimo 8 caracteres');
+  setError('A senha deve ter pelo menos 8 caracteres.');
   return;
 }
 
@@ -200,6 +200,7 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
     <p className="text-[#8B8BA7] text-[13px] font-medium tracking-wide text-center">
       SaaS multi-tenant • Gestão completa da sua empresa
     </p>
+
   </header>
 
   {/* card principal */}
@@ -230,7 +231,7 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
                 : 'text-[#8B8BA7] hover:text-[#A0A0BB]'
             }`}
           >
-            Criar Conta
+            Criar conta
           </button>
         </div>
       </div>
@@ -242,7 +243,7 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
           </h1>
 
           <p className="text-[#8B8BA7] text-[14px] mt-2 mb-7">
-            Entre com suas credenciais para acessar
+            Entre com suas credenciais para acessar sua conta
           </p>
 
           {error && (
@@ -410,7 +411,7 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
 
             <div className="mt-6 text-center space-y-2.5">
               <p className="text-[13px] text-[#8B8BA7]">
-                Não possui uma conta?{' '}
+                Ainda não possui uma conta?{' '}
                 <button
                   type="button"
                   onClick={() => setTab('criar')}
@@ -651,7 +652,7 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
                       senha: e.target.value
                     })
                   }
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo de 8 caracteres"
                   type={showSenha ? 'text' : 'password'}
                   required
                   className="w-full h-[48px] bg-transparent text-white text-[14px] placeholder:text-[#4A4A6A] outline-none"

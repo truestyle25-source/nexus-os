@@ -1,0 +1,551 @@
+'use client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Search, SlidersHorizontal, Upload, Download, Plus, Grid3X3, List as ListIcon, Package, AlertTriangle, TrendingUp, Percent, Layers, CheckSquare, MoreVertical, X, Sparkles, BarChart3, History, Zap, Trash2, Copy, Eye, Tag, Edit3, ShoppingCart } from 'lucide-react';
+import api, { createProduct, fetchAllProducts, fetchProductCategories, getToken } from '@/lib/api';
+// Respeita Moeda / Idioma / Formato de hora da aba Configuracoes.
+import { formatBRL } from '@/lib/format';
+import ModuleHeader from '@/components/ModuleHeader';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+type TabKey = 'Todos'|'Ativos'|'Sem Estoque'|'Inativos'|'Mais Vendidos'|'Promoção'|'Kits';
+type P = { id:string; categoriaId?:string|null; nome:string; variacao:string; categoria:string; marca:string; sku:string; barras:string; unidade:string; PreçoCusto?:number; margem?:number; PreçoVenda:number; PreçoPromoçãonal?:number; PromoçãoInicio?:string|null; PromoçãoFim?:string|null; PromoçãoLimite?:number|null; estoque:number; estoqueMin:number; estoqueMax:number; filialId?:string; estoques?:Array<{filialId:string;filialNome?:string;quantidade:number;local?:string|null}>; local:string; pontoPedido:string; peso:string; ncm:string; descricao:string; status:string; promo: boolean; kit:boolean; vendidos:number; receitaHistorica:number; emoji:string; createdAt:string };
+type Mov = { id:string; data:string; produto:string; tipo:string; qtd:string; resp:string };
+type Toast = { id:number; msg:string; kind:string };
+//__C2__
+const brl = (v:number)=> formatBRL(v);
+function calcMargem(c:number|undefined,v:number){ if(c===undefined||!v) return 'Oculto'; return (((v-c)/v)*100).toFixed(1)+'%'; }
+function mapProduto(a:any,i:number):P{
+ const estoque=Number(a.currentStock??(Array.isArray(a.estoques)?a.estoques.reduce((s:number,e:any)=>s+Number(e.quantidade||0),0):0));
+ const estoqueLocal=Array.isArray(a.estoques)?a.estoques.find((e:any)=>e.local):undefined;
+ const promoPrice=a.PreçoPromoçãonal==null?undefined:Number(a.PreçoPromoçãonal);
+ const now=Date.now();
+ const promoActive=promoPrice!==undefined&&(!a.PromoçãoInicio||new Date(a.PromoçãoInicio).getTime()<=now)&&(!a.PromoçãoFim||new Date(a.PromoçãoFim).getTime()>=now);
+ return {id:String(a.id||i),categoriaId:a.categoriaId||null,nome:a.nome||a.name||'Produto',variacao:a.unidade||a.unit||'UN',categoria:a.categoria?.nome||'Sem categoria',marca:a.marca||'',sku:a.sku||'',barras:a.codigoBarras||'',unidade:a.unidade||a.unit||'UN',PreçoCusto:a.custo==null&&a.cost==null?undefined:Number(a.custo??a.cost),margem:a.margem==null?undefined:Number(a.margem),PreçoVenda:Number(a.PreçoVenda??a.salePrice??0),PreçoPromoçãonal:promoPrice,PromoçãoInicio:a.PromoçãoInicio,PromoçãoFim:a.PromoçãoFim,PromoçãoLimite:a.PromoçãoLimite,estoque,estoqueMin:Number(a.estoqueMinimo??a.minimumStock??0),estoqueMax:Number(a.estoqueMaximo??100),filialId:a.estoques?.[0]?.filialId,estoques:Array.isArray(a.estoques)?a.estoques.map((e:any)=>({filialId:e.filialId,filialNome:e.filial?.nome,quantidade:Number(e.quantidade||0),local:e.local})):undefined,local:estoqueLocal?.local||'',pontoPedido:String(a.pontoPedido??''),peso:a.peso||'',ncm:a.ncm||'',descricao:a.descricao||'',status:String(a.status||'ATIVO').toUpperCase(),promo:promoActive,kit:Boolean(a.ehKit),vendidos:Number(a.vendidos??0),receitaHistorica:Number(a.receitaHistorica??0),emoji:'📦',createdAt:(a.createdAt||'').slice(0,10)};
+}
+function validBarcode(code:string){ const d=(code||'').replace(/\D/g,''); if(![8,12,13].includes(d.length)) return false; const body=d.slice(0,-1); const sum=[...body].reverse().reduce((total,digit,index)=>total+Number(digit)*(index%2===0?3:1),0); return String((10-(sum%10))%10)===d.at(-1); }
+function dataLocalParaIso(data:string,fuso:string,finalDoDia=false){
+ const [ano,mes,dia]=data.split('-').map(Number);
+ const proximoDia=new Date(Date.UTC(ano,mes-1,dia+(finalDoDia?1:0)));
+ const alvo=Date.UTC(proximoDia.getUTCFullYear(),proximoDia.getUTCMonth(),proximoDia.getUTCDate());
+ let instante=alvo;
+ const formato=new Intl.DateTimeFormat('en-CA',{timeZone:fuso,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
+ for(let tentativa=0;tentativa<3;tentativa++){
+  const partes=Object.fromEntries(formato.formatToParts(new Date(instante)).map(parte=>[parte.type,parte.value]));
+  const representado=Date.UTC(Number(partes.year),Number(partes.month)-1,Number(partes.day),Number(partes.hour),Number(partes.minute),Number(partes.second));
+  const ajuste=alvo-representado;
+  instante+=ajuste;
+  if(ajuste===0)break;
+ }
+ return new Date(instante-(finalDoDia?1:0)).toISOString();
+}
+function maskNCM(v:string){ const d=v.replace(/\D/g,'').slice(0,8); if(d.length<=4) return d; if(d.length<=6) return d.slice(0,4)+'.'+d.slice(4); return d.slice(0,4)+'.'+d.slice(4,6)+'.'+d.slice(6); }
+function parseCSV(text:string):Array<Record<string,string>>{
+ const firstLine=text.split(/\r?\n/,1)[0]||'';
+ const delimiter=(firstLine.match(/;/g)||[]).length>(firstLine.match(/,/g)||[]).length?';':',';
+ const records:string[][]=[]; let row:string[]=[]; let value=''; let quoted=false;
+ for(let index=0;index<text.length;index++){
+  const char=text[index];
+  if(char==='"'&&quoted&&text[index+1]==='"'){value+='"';index++;continue;}
+  if(char==='"'){quoted=!quoted;continue;}
+  if(char===delimiter&&!quoted){row.push(value);value='';continue;}
+  if((char==='\n'||char==='\r')&&!quoted){if(char==='\r'&&text[index+1]==='\n')index++;row.push(value);if(row.some(cell=>cell.trim()))records.push(row);row=[];value='';continue;}
+  value+=char;
+ }
+ if(value||row.length){row.push(value);if(row.some(cell=>cell.trim()))records.push(row);}
+ const headers=(records.shift()||[]).map(header=>header.trim());
+ return records.map(cells=>Object.fromEntries(headers.map((header,index)=>[header,cells[index]?.trim()||''])));
+}
+function normalizarCabecalhoCSV(value:string){return value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function numeroCSV(value:string){const clean=value.replace(/R\$|\s/g,'');const normalized=clean.includes(',')&&clean.includes('.')?clean.replace(/\./g,'').replace(',','.'):clean.replace(',','.');return normalized===''?undefined:Number(normalized);}
+function Card(p:{children:any;style?:any}){ return (<div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:20,padding:24,boxShadow:'var(--shadow)',transition:'all .2s',backdropFilter:'blur(4px)',...p.style}}>{p.children}</div>); }
+function Badge(p:{children:any;kind?:string}){ const m:any={success:{background:'var(--successBg)',color:'var(--success)',border:'1px solid var(--successBorder)'},warning:{background:'var(--warningBg)',color:'var(--warning)',border:'1px solid var(--warningBorder)'},danger:{background:'var(--dangerBg)',color:'var(--danger)',border:'1px solid var(--dangerBorder)'},info:{background:'var(--infoBg)',color:'var(--info)',border:'1px solid var(--infoBorder)'},muted:{background: 'var(--nx-surface-2)',color: 'var(--nx-ink-2)',border: '1px solid var(--nx-border)'}}; const s=m[p.kind||'muted']; return (<span style={{display:'inline-flex',alignItems:'center',background:s.background,color:s.color,border:s.border,borderRadius:20,padding:'4px 10px',fontSize:10,fontWeight:700}}>{p.children}</span>); }
+function Field(p:{label:string;children:any}){ return (<label style={{display:'flex',flexDirection:'column',gap:6}}><span style={{fontSize:10,textTransform:'uppercase',fontWeight:700,color:'var(--label2)',letterSpacing:.8}}>{p.label}</span>{p.children}</label>); }
+function Modal(p:{children:any;width?:number}){ return (<div role="dialog" aria-modal="true" style={{position:'fixed',inset:0,zIndex:80,background:'rgba(0,0,0,.6)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{width:'100%',maxWidth:p.width||520,background:'var(--card)',border:'1px solid var(--border)',borderRadius:20,padding:28,boxShadow:'0 24px 64px rgba(0,0,0,.5)',maxHeight:'90vh',overflowY:'auto',animation:'nxSlide .25s ease'}}>{p.children}</div></div>); }
+const inpStyle:any={background:'var(--card3)',border:'1px solid var(--border3)',borderRadius:12,height:44,padding:'0 14px',fontSize:12,color: 'var(--nx-ink)',outline:'none',width:'100%',transition:'all .2s'};
+const btnPri:any={background:'linear-gradient(135deg,var(--primary),var(--primary2))',boxShadow:'var(--shadowPrimary)',border:'none',borderRadius:12,height:44,padding:'0 20px',fontSize:12,fontWeight:800,color:'#fff',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8,transition:'all .2s'};
+const btnGhost:any={background: 'var(--nx-surface-2)',border: '1px solid var(--nx-border)',borderRadius:12,height:44,padding:'0 16px',fontSize:11,color: 'var(--nx-ink-2)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8};
+//__C3__
+export default function ProdutosPage(){
+const router = useRouter();
+const [products,setProducts] = useState<P[]>([]);
+const [movs,setMovs] = useState<Mov[]>([]);
+const [categories,setCategories] = useState<Array<{id:string;nome:string}>>([]);
+const [brandOptions,setBrandOptions] = useState<string[]>([]);
+const [totalProducts,setTotalProducts] = useState(0);
+const [canViewCosts,setCanViewCosts] = useState(false);
+const [canEditCosts,setCanEditCosts] = useState(false);
+const [inventoryValue,setInventoryValue] = useState<number|null>(null);
+const [companyTimezone,setCompanyTimezone] = useState('America/Sao_Paulo');
+const [productCounts,setProductCounts] = useState({total:0,ativos:0,inativos:0,semEstoque:0,estoqueBaixo:0});
+const [query,setQuery] = useState('');
+const [deb,setDeb] = useState('');
+const [tab,setTab] = useState<TabKey>('Todos');
+const [catF,setCatF] = useState('Todas Categorias');
+const [marcaF,setMarcaF] = useState('Todas Marcas');
+const [estoqueF,setEstoqueF] = useState('Todos');
+const [ordem,setOrdem] = useState('Mais Vendidos');
+const [viewMode,setViewMode] = useState<'grid'|'list'>('list');
+const [selected,setSelected] = useState<Set<string>>(new Set());
+const [showNew,setShowNew] = useState(false);
+const [editing,setEditing] = useState<P|null>(null);
+const [detail,setDetail] = useState<P|null>(null);
+const [showAdjust,setShowAdjust] = useState(false);
+const [showPromo,setShowPromo] = useState(false);
+const [showKit,setShowKit] = useState(false);
+const [showProduction,setShowProduction] = useState(false);
+const [kitComponents,setKitComponents] = useState<Array<{produtoId:string;quantidadePorKit:string}>>([]);
+const [production,setProduction] = useState({filialId:'',quantidade:'1',idempotencyKey:''});
+const [showImport,setShowImport] = useState(false);
+const [showAdv,setShowAdv] = useState(false);
+const [advFilters,setAdvFilters] = useState({precoMin:'',precoMax:'',margemMin:'',margemMax:''});
+const [toastList,setToastList] = useState<Toast[]>([]);
+const toastId = useRef(0);
+const searchRef = useRef<HTMLInputElement|null>(null);
+const [form,setForm] = useState({nome:'',categoria:'',marca:'',sku:'',barras:'',unidade:'UN',precoCusto:'',precoVenda:'',estoqueMin:'',estoqueMax:'',local:'',pontoPedido:'',peso:'',ncm:'',descricao:''});
+const [adj,setAdj] = useState({tipo:'Entrada',qtd:'',motivo:'',obs:'',filialId:''});
+const [promoF,setPromoF] = useState({preco:'',ini:'',fim:'',limite:''});
+const [csvPrev,setCsvPrev] = useState<string[][]>([]);
+const [csvRows,setCsvRows] = useState<Array<Record<string,string>>>([]);
+//__C4__
+const addToast = useCallback((msg:string,kind:string='ok')=>{ const id=++toastId.current; setToastList(t=>[...t,{id,msg,kind}]); setTimeout(()=>setToastList(t=>t.filter(x=>x.id!==id)),2800); },[]);
+useEffect(()=>{ document.body.style.background = 'var(--nx-canvas)'; const h=setTimeout(()=>setDeb(query),300); return ()=>clearTimeout(h); },[query]);
+useEffect(()=>{ const anyOpen=showNew||detail||showAdjust||showPromo||showImport||showKit||showProduction; document.body.style.overflow=anyOpen?'hidden':''; const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape'){ setShowNew(false); setDetail(null); setShowAdjust(false); setShowPromo(false); setShowImport(false); setShowKit(false); setShowProduction(false); setShowAdv(false);} if(e.key==='/'&&(document.activeElement?.tagName!=='INPUT')){ e.preventDefault(); searchRef.current?.focus(); } if((e.key==='n'||e.key==='N')&&document.activeElement?.tagName!=='INPUT'&&!showNew){ setShowNew(true);} }; window.addEventListener('keydown',onKey); return ()=>window.removeEventListener('keydown',onKey); },[showNew,detail,showAdjust,showPromo,showImport,showKit,showProduction]);
+async function carregarProdutos(search=deb){
+ const result=await fetchAllProducts({search});
+ setProducts(result.products.map(mapProduto));
+ setTotalProducts(result.total);
+ setCanViewCosts(result.podeVerCusto);
+ setCanEditCosts(result.podeEditarCusto);
+ setInventoryValue(result.valorEstoque);
+ setCompanyTimezone(result.fusoHorario);
+ setProductCounts(result.contagens);
+}
+useEffect(()=>{ if(!getToken()) return; let ativo=true; void (async()=>{try{const result=await fetchAllProducts({search:deb});if(!ativo)return;const mapped=result.products.map(mapProduto);setProducts(mapped);if(!deb.trim())setBrandOptions([...new Set(mapped.map(p=>p.marca).filter(Boolean))]);setTotalProducts(result.total);setCanViewCosts(result.podeVerCusto);setCanEditCosts(result.podeEditarCusto);setInventoryValue(result.valorEstoque);setCompanyTimezone(result.fusoHorario);setProductCounts(result.contagens);}catch(error){if(ativo)addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel carregar produtos','err');}})();return()=>{ativo=false;}; },[deb,addToast]);
+useEffect(()=>{ if(!getToken()) return; void fetchProductCategories().then(setCategories).catch(error=>addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel carregar categorias','err')); },[addToast]);
+useEffect(()=>{ if(!getToken())return; void api.get<any>('/estoque/movimentacoes',{params:{take:5}}).then(({data})=>setMovs((data.movimentacoes||[]).map((mov: any)=>({id:String(mov.id),data:new Date(mov.createdAt).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}),produto:mov.produto?.nome||'Produto',tipo:mov.tipo,qtd:`${mov.quantidade>0?'+':''}${mov.quantidade} ${mov.produto?.unidade||'un'}`,resp:mov.usuario?.nome||mov.filial?.nome||'Sistema'})))).catch(()=>setMovs([])); },[]);
+const kpis = useMemo(()=>({total:totalProducts,valor:canViewCosts?inventoryValue:null,sem:productCounts.semEstoque,baixo:productCounts.estoqueBaixo}),[totalProducts,canViewCosts,inventoryValue,productCounts]);
+const filteredProducts = useMemo(()=>{ let r=[...products]; if(tab==='Kits') r=r.filter(p=>p.kit); if(tab==='Ativos') r=r.filter(p=>p.status==='ATIVO'); if(tab==='Sem Estoque') r=r.filter(p=>p.estoque===0); if(tab==='Inativos') r=r.filter(p=>p.status==='INATIVO'); if(tab==='Mais Vendidos') r=[...r].sort((a,b)=>b.vendidos-a.vendidos); if(tab==='Promocao') r=r.filter(p=>p.promo); if(catF!=='Todas Categorias') r=r.filter(p=>p.categoria===catF); if(marcaF!=='Todas Marcas') r=r.filter(p=>p.marca===marcaF); if(estoqueF==='Baixo') r=r.filter(p=>p.estoque<=p.estoqueMin&&p.estoque>0); if(estoqueF==='Sem Estoque') r=r.filter(p=>p.estoque===0); if(estoqueF==='Excesso') r=r.filter(p=>p.estoque>p.estoqueMax); if(advFilters.precoMin) r=r.filter(p=>p.precoVenda>=Number(advFilters.precoMin.replace(',','.'))); if(advFilters.precoMax) r=r.filter(p=>p.precoVenda<=Number(advFilters.precoMax.replace(',','.'))); if(advFilters.margemMin) r=r.filter(p=>p.margem!==undefined&&p.margem>=Number(advFilters.margemMin.replace(',','.'))); if(advFilters.margemMax) r=r.filter(p=>p.margem!==undefined&&p.margem<=Number(advFilters.margemMax.replace(',','.'))); if(ordem==='Maior Estoque') r.sort((a,b)=>b.estoque-a.estoque); if(ordem==='Menor Preco') r.sort((a,b)=>a.precoVenda-b.precoVenda); if(ordem==='Maior Preco') r.sort((a,b)=>b.precoVenda-a.precoVenda); if(ordem==='A-Z') r.sort((a,b)=>a.nome.localeCompare(b.nome)); if(ordem==='Z-A') r.sort((a,b)=>b.nome.localeCompare(a.nome)); if(ordem==='Recentes') r.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)); if(ordem==='Mais Vendidos') r.sort((a,b)=>b.vendidos-a.vendidos); return r; },[products,tab,catF,marcaF,estoqueF,ordem,advFilters]);
+const stockByCategory = useMemo(()=>{const totals=new Map<string,number>();for(const product of products)totals.set(product.categoria,(totals.get(product.categoria)||0)+1);const entries=[...totals.entries()].map(([nome,total])=>({nome,total})).sort((a,b)=>b.total-a.total);const max=Math.max(1,...entries.map(entry=>entry.total));return entries.map((entry,index)=>({...entry,percentual:entry.total/max*100,cor:['#3b82f6','#22c55e','#f59e0b','#7C3AED','#ef4444','#06b6d4','#a3e635','#f97316'][index%8]}));},[products]);
+const curvaABC = useMemo(()=>{const produtos=[...products].map(product=>({produto:product,receita:product.receitaHistorica})).filter(item=>item.receita>0).sort((a,b)=>b.receita-a.receita);const receitaTotal=produtos.reduce((sum,item)=>sum+item.receita,0);const grupos={A:{produtos:0,receita:0},B:{produtos:0,receita:0},C:{produtos:0,receita:0}};let acumulada=0;for(const item of produtos){const classe=acumulada/Math.max(1,receitaTotal)<.8?'A':acumulada/Math.max(1,receitaTotal)<.95?'B':'C';grupos[classe].produtos++;grupos[classe].receita+=item.receita;acumulada+=item.receita;}return Object.entries(grupos).map(([classe,grupo])=>({classe,...grupo,percentual:receitaTotal?grupo.receita/receitaTotal*100:0}));},[products]);
+const margemPorCategoria = useMemo(()=>{if(!canViewCosts)return [];const grupos=new Map<string,{soma:number;quantidade:number}>();for(const product of products){if(product.margem===undefined)continue;const grupo=grupos.get(product.categoria)||{soma:0,quantidade:0};grupo.soma+=product.margem;grupo.quantidade++;grupos.set(product.categoria,grupo);}return [...grupos.entries()].map(([nome,grupo])=>({nome,margem:grupo.soma/grupo.quantidade})).sort((a,b)=>b.margem-a.margem).slice(0,8);},[products,canViewCosts]);
+//__C5__
+
+function openNew(){ setEditing(null); setForm({nome:'',categoria:'',marca:'',sku:`PROD-${Date.now().toString(36).toUpperCase()}`,barras:'',unidade:'UN',precoCusto:'',precoVenda:'',estoqueMin:'5',estoqueMax:'100',local:'',pontoPedido:'0',peso:'',ncm:'',descricao:''}); setShowNew(true); }
+function openEdit(p:P){ setEditing(p); setForm({nome:p.nome,categoria:p.categoriaId||'',marca:p.marca,sku:p.sku,barras:p.barras,unidade:p.unidade,precoCusto:p.precoCusto===undefined?'':String(p.precoCusto),precoVenda:String(p.precoVenda),estoqueMin:String(p.estoqueMin),estoqueMax:String(p.estoqueMax),local:p.local,pontoPedido:p.pontoPedido,peso:p.peso,ncm:p.ncm,descricao:p.descricao}); setShowNew(true); }
+async function abrirDetalhe(produto:P){
+	try{const {data}=await api.get<any>(`/produtos/${produto.id}`);setDetail(mapProduto(data,0));}
+	catch(error){addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel carregar o produto','err');}
+}
+	async function saveProduct(){
+		if(!form.nome.trim()){ addToast('Informe o nome','warn'); return; }
+		if(form.barras && !validBarcode(form.barras)){addToast('Informe um código GTIN-8, UPC-A ou EAN-13 válido, ou deixe o campo vazio','warn');return;}
+		const pc=Number(String(form.PreçoCusto).replace(',','.'))||0;
+		const pv=Number(String(form.PreçoVenda).replace(',','.'))||0;
+		if(!pv || pc<0){ addToast('Informe Preço de venda e um custo igual ou maior que zero. Custo zero requer a permissão custos.editar.','warn'); return; }
+
+		try {
+			if (editing) {
+				await api.put(`/produtos/${editing.id}`, {
+					nome: form.nome,
+					marca: form.marca || null,
+					sku: form.sku.toUpperCase(),
+					codigoBarras: form.barras.replace(/\D/g,'').slice(0,13) || null,
+					categoriaId: form.categoria || null,
+					...(pc>0?{custo:pc}:{}),
+					PreçoVenda: pv,
+					unidade: form.unidade,
+					estoqueMinimo: Number(form.estoqueMin)||0,
+					estoqueMaximo: Number(form.estoqueMax)||100,
+					pontoPedido: Number(form.pontoPedido)||0,
+					local: form.local || null,
+					peso: form.peso || null,
+					ncm: form.ncm.replace(/\D/g,'') || null,
+					descricao: form.descricao,
+					origem: 'MANUAL',
+				});
+				addToast('Produto atualizado no backend');
+			} else {
+				await createProduct({
+					name: form.nome,
+					sku: form.sku.trim().toUpperCase(),
+					cost: pc,
+					salePrice: pv,
+					minimumStock: Number(form.estoqueMin)||0,
+					maximumStock: Number(form.estoqueMax)||100,
+					barcode: form.barras.replace(/\D/g,'').slice(0,13),
+					categoryId: form.categoria || undefined,
+					unit: form.unidade,
+					description: form.descricao,
+					brand: form.marca,
+					reorderPoint: Number(form.pontoPedido)||0,
+					location: form.local,
+					weight: form.peso,
+					ncm: form.ncm.replace(/\D/g,''),
+				});
+				addToast('Produto criado no backend');
+			}
+
+			await carregarProdutos();
+			setShowNew(false);
+			if(editing)setDetail(null);
+		} catch (error) {
+			addToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel salvar o produto', 'err');
+		}
+	}
+async function dup(p:P){
+	if(p.precoCusto===undefined){addToast('Sem permissÃ£o para cadastrar custo deste produto','err');return;}
+	try{await createProduct({name:`${p.nome} (cÃ³pia)`,sku:`COPIA-${Date.now().toString(36).toUpperCase()}`,cost:p.precoCusto,salePrice:p.precoVenda,minimumStock:p.estoqueMin,maximumStock:p.estoqueMax,barcode:'',categoryId:p.categoriaId||undefined,unit:p.unidade,description:p.descricao,brand:p.marca,reorderPoint:Number(p.pontoPedido)||0,location:p.local,weight:p.peso,ncm:p.ncm});await carregarProdutos();addToast('Produto duplicado no backend');}
+	catch(error){addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel duplicar o produto','err');}
+}
+	async function alterarStatusProduto(produto:P,status:'ATIVO'|'INATIVO'){
+		try{ await api.patch(`/produtos/${produto.id}/status`,{status}); await carregarProdutos(); setDetail(null); addToast(status==='ATIVO'?'Produto ativado no backend':'Produto inativado no backend'); }
+		catch(error){ addToast(error instanceof Error?error.message:'NÃO foi possÃ­vel alterar o status','err'); }
+	}
+	async function excluirProduto(produto:P){
+		try{ await api.delete(`/produtos/${produto.id}`); await carregarProdutos(); setDetail(null); addToast('Produto arquivado no backend'); }
+		catch(error){ addToast(error instanceof Error?error.message:'NÃO foi possÃ­vel excluir o produto','err'); }
+	}
+	async function excluirSelecionados(){
+		const ids=[...selected]; if(!ids.length)return;
+		try{ await api.patch('/produtos/status-lote',{ids,status:'ARQUIVADO'}); await carregarProdutos(); setSelected(new Set()); addToast(`${ids.length} produto(s) arquivado(s) no backend`); }
+		catch(error){ addToast(error instanceof Error?error.message:'NÃO foi possÃ­vel arquivar os produtos selecionados','err'); }
+	}
+	async function abrirConfiguracaoKit(produto:P){
+ try{const {data}=await api.get<any>(`/produtos/${produto.id}/kit`);setKitComponents((data.componentes||[]).map((c:any)=>({produtoId:c.produtoId,quantidadePorKit:String(c.quantidadePorKit)})));setDetail(produto);setShowKit(true);}
+ catch(error){addToast(error instanceof Error?error.message:'Nao foi possivel carregar a composicao','err');}
+ }
+ async function salvarComposicaoKit(){
+ if(!detail)return;const componentes=kitComponents.filter(c=>c.produtoId&&Number(c.quantidadePorKit)>0).map(c=>({produtoId:c.produtoId,quantidadePorKit:Number(c.quantidadePorKit)}));if(!componentes.length){addToast('Adicione ao menos um ingrediente e sua quantidade por unidade.','warn');return;}
+ try{await api.put(`/produtos/${detail.id}/kit`,{componentes});setShowKit(false);await carregarProdutos();await abrirDetalhe({...detail,kit:true});addToast('Composicao do kit salva.');}catch(error){addToast(error instanceof Error?error.message:'Nao foi possivel salvar a composicao','err');}
+ }
+ async function produzirKit(){
+ if(!detail)return;const filialId=production.filialId||(detail.estoques?.length===1?detail.estoques[0].filialId:'');const quantidade=Number(production.quantidade);if(!filialId||!Number.isInteger(quantidade)||quantidade<1){addToast('Selecione a filial e informe uma quantidade inteira positiva.','warn');return;}
+ try{await api.post(`/produtos/${detail.id}/kit/produzir`,{filialId,quantidade,idempotencyKey:production.idempotencyKey});setShowProduction(false);setProduction({filialId:'',quantidade:'1',idempotencyKey:''});await carregarProdutos();await abrirDetalhe({...detail});addToast('Producao registrada; ingredientes consumidos e produto acabado adicionado ao estoque.');}catch(error){addToast(error instanceof Error?error.message:'Nao foi possivel produzir o kit','err');}
+ }
+	async function confirmAdjust(){
+		const q=Number(adj.qtd)||0; if(!detail || (q<=0 && adj.tipo!=='Ajuste' && adj.tipo!=='Inventario')){ addToast('Entrada e saÃ­da exigem quantidade maior que zero; ajuste e inventÃ¡rio aceitam zero','warn'); return; }
+		const filialId=adj.filialId|| (detail.estoques?.length===1?detail.estoques[0].filialId:'');
+		if(!filialId){ addToast('Selecione a filial para movimentar o estoque','err'); return; }
+		try {
+			const mappedType = adj.tipo === 'Entrada' ? 'ENTRADA' : adj.tipo === 'Saida' ? 'SAIDA' : adj.tipo === 'Ajuste' ? 'AJUSTE' : 'INVENTARIO';
+			await api.post('/estoque/movimentar', {
+				produtoId: detail.id,
+				filialId,
+				quantidade: q,
+				tipo: mappedType,
+				motivo: [adj.motivo || 'Ajuste de estoque via produto', adj.obs.trim() ? `Observação: ${adj.obs.trim()}` : ''].filter(Boolean).join(' | '),
+				origem: 'MANUAL',
+			});
+			setShowAdjust(false); setAdj({tipo:'Entrada',qtd:'',motivo:'',obs:'',filialId:''});
+			addToast('Estoque atualizado no backend');
+			await carregarProdutos();
+			const {data}=await api.get<any>(`/produtos/${detail.id}`);setDetail(mapProduto(data,0));
+		} catch (error) {
+			addToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel ajustar estoque', 'err');
+		}
+	}
+	async function confirmPromo(){
+		if(!detail)return;
+		const pv=Number(promoF.preco.replace(',','.'));
+		if(!pv||pv>=detail.precoVenda){addToast('PreÃ§o promocional deve ser menor que o preÃ§o normal','warn');return;}
+		const inicio=promoF.ini?dataLocalParaIso(promoF.ini,companyTimezone):null;
+		const fim=promoF.fim?dataLocalParaIso(promoF.fim,companyTimezone,true):null;
+		if(inicio&&fim&&inicio>fim){addToast('Início da promoção não pode ser posterior ao fim','warn');return;}
+		try{
+			await api.put(`/produtos/${detail.id}`,{precoPromocional:pv,promocaoInicio:inicio,promocaoFim:fim,promocaoLimite:promoF.limite?Number(promoF.limite):null,origem:'MANUAL'});
+			await carregarProdutos();const {data}=await api.get<any>(`/produtos/${detail.id}`);setDetail(mapProduto(data,0));setShowPromo(false);addToast('Promoção persistida no backend');
+		}catch(error){addToast(error instanceof Error?error.message:'Não foi possível atualizar promoção','err');}
+	}
+function exportCSV(){
+ const h='Nome,SKU,Categoria,Marca,PrecoCusto,PrecoVenda,Estoque,CodigoBarras';
+ // Aspas em toda cÃ©lula + escape das aspas internas. Sem isso, um produto
+ // chamado "CafÃ©, Torrado e MoÃ­do" (ou com aspas) desalinha a linha inteira: o
+ // nome viraria trÃªs colunas e o preÃ§o de venda cairia na coluna de estoque.
+ const celula=(v:string|number|undefined)=>`"${String(v??'').replace(/"/g,'""')}"`;
+ const rows=filteredProducts.map(p=>[p.nome,p.sku,p.categoria,p.marca,p.precoCusto??'Oculto',p.precoVenda,p.estoque,p.barras].map(celula).join(','));
+ const blob=new Blob([[h,...rows].join('\n')],{type:'text/csv'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');
+ a.href=url;a.download='produtos.csv';
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ // A URL do objeto precisa ser revogada em algum momento: sem isto, cada
+ // exportaÃ§Ã£o mantinha o CSV inteiro na memÃ³ria da aba atÃ© recarregar.
+ // Revogada DEPOIS do clique, senÃ£o o navegador cancela o download.
+ window.setTimeout(()=>URL.revokeObjectURL(url),4000);
+ addToast(filteredProducts.length+' exportados');
+}
+function onFile(f:File|undefined){
+ if(!f)return;
+ const reader=new FileReader();
+ reader.onload=()=>{try{const rows=parseCSV(String(reader.result||''));if(!rows.length)throw new Error('O arquivo CSV nÃ£o contÃ©m linhas de produtos.');const headers=Object.keys(rows[0]);setCsvRows(rows);setCsvPrev([headers,...rows.slice(0,5).map(row=>headers.map(header=>row[header]||''))]);addToast(`${rows.length} linha(s) carregada(s) para prÃ©via`);}catch(error){setCsvRows([]);setCsvPrev([]);addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel ler o CSV','err');}};
+ reader.onerror=()=>addToast('NÃ£o foi possÃ­vel ler o arquivo CSV','err');
+ reader.readAsText(f);
+}
+async function importarCSV(){
+ if(!csvRows.length){addToast('Selecione um CSV vÃ¡lido antes de importar','warn');return;}
+ try{
+  const normalizados=csvRows.map((row,index)=>Object.fromEntries(Object.entries(row).map(([key,value])=>[normalizarCabecalhoCSV(key),value])));
+  const read=(row:Record<string,string>,...keys:string[])=>keys.map(key=>row[key]).find(value=>value!==undefined&&value!=='')||'';
+  const produtos=normalizados.map((row,index)=>{
+   const nome=read(row,'nome','name');
+   const categoria=read(row,'categoria','category');
+   const categoriaId=read(row,'categoriaid')||categories.find(item=>normalizarCabecalhoCSV(item.nome)===normalizarCabecalhoCSV(categoria))?.id;
+   if(categoria&&!categoriaId)throw new Error(`Categoria nÃ£o cadastrada na linha ${index+2}: ${categoria}.`);
+   const custo=numeroCSV(read(row,'precocusto','custo'));
+   const precoVenda=numeroCSV(read(row,'precovenda','precovendaunitario','preco'));
+   if(!nome||custo===undefined||!Number.isFinite(custo)||precoVenda===undefined||!Number.isFinite(precoVenda))throw new Error(`Nome, custo e preÃ§o de venda precisam ser vÃ¡lidos na linha ${index+2}.`);
+   const quantidadeInicial=numeroCSV(read(row,'estoque','quantidade','quantidadeinicial'))??0;
+   if(!Number.isInteger(quantidadeInicial)||quantidadeInicial<0)throw new Error(`Estoque inicial invÃ¡lido na linha ${index+2}.`);
+   return {nome,sku:read(row,'sku')||undefined,codigoBarras:read(row,'codigobarras','ean').replace(/\D/g,'')||undefined,categoriaId,marca:read(row,'marca')||undefined,custo,precoVenda,unidade:read(row,'unidade','unit')||'UN',estoqueMinimo:numeroCSV(read(row,'estoqueminimo','estoquemin'))??5,estoqueMaximo:numeroCSV(read(row,'estoquemaximo','estoquemax'))??100,pontoPedido:numeroCSV(read(row,'pontopedido'))??0,peso:read(row,'peso')||undefined,ncm:read(row,'ncm').replace(/\D/g,'')||undefined,descricao:read(row,'descricao','description')||undefined,quantidadeInicial,filialId:read(row,'filialid')||undefined,local:read(row,'local')||undefined};
+  });
+  const {data}=await api.post<{qtdImportada:number}>('/produtos/importar',{produtos});
+  await carregarProdutos();setCsvRows([]);setCsvPrev([]);setShowImport(false);addToast(`${data.qtdImportada} produto(s) importado(s) e persistido(s)`);
+ }catch(error){addToast(error instanceof Error?error.message:'NÃ£o foi possÃ­vel importar os produtos','err');}
+}
+function toggleSel(id:string){ setSelected(s=>{ const n=new Set(s); if(n.has(id)) n.delete(id); else n.add(id); return n; }); }
+function handleSelectAll(){ setSelected(selected.size===filteredProducts.length ? new Set() : new Set([...filteredProducts.map(p=>p.id)])); }
+//__C6__
+const tabs:TabKey[]=['Todos','Ativos','Sem Estoque','Inativos','Mais Vendidos','Promocao','Kits'];
+const tabCount=(t:TabKey)=>{ if(t==='Todos') return productCounts.total; if(t==='Ativos') return productCounts.ativos; if(t==='Sem Estoque') return productCounts.semEstoque; if(t==='Inativos') return productCounts.inativos; if(t==='Mais Vendidos') return products.length; if(t==='Promocao') return products.filter(p=>p.promo).length; if(t==='Kits') return products.filter(p=>p.kit).length; return 0; };
+const categorias=categories.map(c=>c.nome);
+const marcas=brandOptions;
+const kpiData=[{l:'Total SKUs',v:String(kpis.total),d:'produtos',i:Package},{l:'Valor Estoque',v:kpis.valor===null?'Oculto':brl(kpis.valor),d:'custo',i:Layers},{l:'Sem Estoque',v:String(kpis.sem),d:'ruptura',i:AlertTriangle},{l:'Estoque Baixo',v:String(kpis.baixo),d:'atÃ© mÃ­nimo cadastrado',i:TrendingUp},{l:'Promocoes',v:String(products.filter(p=>p.promo).length),d:'ativas',i:Percent},{l:'Kits / Combos',v:'â€”',d:'ainda nÃ£o implementado',i:CheckSquare}];
+return (<div style={{padding:24,maxWidth:1400,margin:'0 auto',fontFamily:'Inter,system-ui',color: 'var(--nx-ink)'}}>
+<style>{':root{--nx-surface-2: var(--nx-surface-2);--nx-surface: var(--nx-surface);--nx-surface-3: var(--nx-surface-3);--nx-border: var(--nx-border);--nx-accent: var(--nx-accent);--nx-accent-2: var(--nx-accent-2);--nx-ink: var(--nx-ink);--nx-ink-3: var(--nx-ink-3);--label2: var(--nx-ink-3);--nx-green: var(--nx-green);--successBg: var(--successBg);--successBorder: var(--successBorder);--nx-amber: var(--nx-amber);--warningBg: var(--warningBg);--warningBorder: var(--warningBorder);--danger: var(--danger);--dangerBg: var(--dangerBg);--dangerBorder: var(--dangerBorder);--info: var(--info);--infoBg: var(--infoBg);--infoBorder: var(--infoBorder);--shadow:0 8px 32px rgba(0,0,0,0.28);--shadowPrimary:0 4px 16px rgba(124,92,255,0.3)} @keyframes nxSlide{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}} @keyframes nxShrink{from{width:100%}to{width:0%}} @keyframes nxPulse{0%,100%{opacity:1}50%{opacity:.55}} input:focus,select:focus,textarea:focus{border-color:var(--primary)!important;box-shadow:0 0 0 2px rgba(124,92,255,.2)} ::placeholder{color: var(--nx-ink-3)}'}</style>
+<div style={{display:'flex',gap:24,alignItems:'flex-start'}}>
+<div style={{flex:1,minWidth:0}}>
+<ModuleHeader kicker="Cadastro â€¢ Produtos" title={traduzir('produtos', "Produtos")} subtitle={`${totalProducts.toLocaleString('pt-BR')} produtos`} />
+<div className="kpi-row">
+        <div className="kpi-card">
+          {kpis.total}
+          <div style={{fontSize:10,color:'var(--nx-ink-3)'}}>Total SKUs</div>
+        </div>
+        <div className="kpi-card">
+          {kpis.valor===null?'Oculto':brl(kpis.valor)}
+          <div style={{fontSize:10,color:'var(--nx-ink-3)'}}>Valor Estoque</div>
+        </div>
+        <div className="kpi-card">
+          {kpis.sem}
+          <div style={{fontSize:10,color:'var(--nx-ink-3)'}}>Sem Estoque</div>
+        </div>
+        <div className="kpi-card">
+          {kpis.baixo}
+          <div style={{fontSize:10,color:'var(--nx-ink-3)'}}>Estoque Baixo</div>
+        </div>
+      </div>
+
+
+
+
+<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
+<div style={{position:'relative'}}><Search size={15} style={{position:'absolute',left:12,top:14,color:'var(--nx-ink-3)'}} /><input ref={searchRef} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar ( / )" aria-label="Buscar produtos" style={{width:340,height:44,background:'var(--card)',border:'1px solid var(--border)',borderRadius:12,padding:'0 14px 0 34px',fontSize:12,color:'#fff',outline:'none'}} /></div>
+<button onClick={()=>setShowImport(true)} style={btnGhost}><Upload size={14}/> Importar / Exportar</button>
+<button onClick={exportCSV} style={btnGhost}><Download size={14}/> CSV</button>
+<button onClick={openNew} style={btnPri}><Plus size={14}/> Novo Produto (N)</button>
+</div>
+//__C7__
+<div className="rh3-tabs" role="tablist" aria-label="Filtros">
+  {tabs.map((t,i)=>(<button key={t} type="button" role="tab" aria-selected={tab===t} className={`rh-tab ${tab===t ? 'on' : ''}`} onClick={()=>setTab(t)}>{traduzir(`aba_${t}`, t)}</button>))}
+</div>
+<div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
+{[['catF',catF,setCatF,['Todas Categorias',...categorias]],['marcaF',marcaF,setMarcaF,['Todas Marcas',...marcas]],['estoqueF',estoqueF,setEstoqueF,['Todos','Baixo','Sem Estoque','Excesso']],['ordem',ordem,setOrdem,['Mais Vendidos','Maior Estoque','Menor Preco','Maior Preco','A-Z','Z-A','Recentes']]].map((f:any)=>(<select key={f[0]} value={f[1]} onChange={e=>f[2](e.target.value)} aria-label={f[0]} style={{background:'var(--nx-surface)',border:'1px solid var(--nx-border)',borderRadius:10,height:40,padding:'0 12px',fontSize:12,color:'var(--nx-ink)',minWidth:160}}>{f[3].map((o:string)=>(<option key={o}>{o}</option>))}</select>))}
+<button onClick={()=>setShowAdv(v=>!v)} style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:10,height:40,padding:'0 14px',fontSize:11,color:'var(--nx-ink-2)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:8}}><SlidersHorizontal size={14}/> Filtros AvanÃ§ados</button>
+</div>
+{showAdv&&(<div style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:14,padding:16,marginBottom:20,display:'flex',gap:12,flexWrap:'wrap'}}>
+<Field label="PreÃ§o mÃ­n"><input value={advFilters.precoMin} onChange={e=>setAdvFilters({...advFilters,precoMin:e.target.value})} style={{...inpStyle,maxWidth:140}} placeholder="0,00" /></Field>
+<Field label="PreÃ§o mÃ¡x"><input value={advFilters.precoMax} onChange={e=>setAdvFilters({...advFilters,precoMax:e.target.value})} style={{...inpStyle,maxWidth:140}} placeholder="999,00" /></Field>
+<Field label="Margem mÃ­n %"><input value={advFilters.margemMin} onChange={e=>setAdvFilters({...advFilters,margemMin:e.target.value})} style={{...inpStyle,maxWidth:140}} placeholder={canViewCosts?'10':'Sem permissÃ£o'} disabled={!canViewCosts} /></Field>
+<Field label="Margem mÃ¡x %"><input value={advFilters.margemMax} onChange={e=>setAdvFilters({...advFilters,margemMax:e.target.value})} style={{...inpStyle,maxWidth:140}} placeholder={canViewCosts?'80':'Sem permissÃ£o'} disabled={!canViewCosts} /></Field>
+</div>)}
+//__C8__
+<div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:12,marginBottom:20}}>
+{kpiData.map(k=>(<div key={k.l} style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:14,padding:14,transition:'all .2s'}}><div style={{display:'flex',alignItems:'center',gap:8}}><span style={{width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',background:'var(--successBg)',borderRadius:8}}><k.i size={16} color="var(--nx-green)"/></span><span style={{fontSize:10,color: 'var(--nx-ink-3)',textTransform:'uppercase',letterSpacing:.8}}>{k.l}</span></div><div style={{fontSize:22,fontWeight:800,letterSpacing:-.44,marginTop:6}}>{k.v}</div><span style={{fontSize:11,background:'var(--successBg)',color:'var(--nx-green)',borderRadius:6,padding:'2px 6px'}}>{k.d}</span></div>))}
+</div>
+<Card>
+<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:10}}>
+<div style={{display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:11,color:'#5a5a70',textTransform:'uppercase',letterSpacing:.8}}>Lista de Produtos</span><Badge>{totalProducts}</Badge></div>
+<div style={{display:'flex',gap:8,alignItems:'center'}}>
+<button onClick={()=>setViewMode('grid')} aria-label="Grid" style={{background:viewMode==='grid'?'var(--primary)':'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:8,height:32,padding:'0 12px',color:viewMode==='grid'?'var(--nx-ink)':'var(--nx-ink-2)',cursor:'pointer'}}><Grid3X3 size={14}/></button>
+<button onClick={()=>setViewMode('list')} aria-label="Lista" style={{background:viewMode==='list'?'var(--primary)':'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:8,height:32,padding:'0 12px',color:viewMode==='list'?'var(--nx-ink)':'var(--nx-ink-2)',cursor:'pointer'}}><ListIcon size={14}/></button>
+<button onClick={handleSelectAll} style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:8,padding:'0 12px',height:32,fontSize:11,color:'var(--nx-ink-2)',cursor:'pointer'}}>Selecionar Todos</button>
+{selected.size>0 && (<button onClick={excluirSelecionados} style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:8,padding:'0 12px',height:32,fontSize:11,color:'var(--nx-ink-2)',cursor:'pointer'}}>Arquivar selecionados {selected.size}</button>)}
+</div>
+</div>
+//__C9__
+{viewMode==='grid' ? (
+
+
+
+
+<div style={{overflowX:'auto'}}><table role="table" aria-label={traduzir('produtos', "Produtos")} style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+<thead style={{position:'sticky',top:0,background:'var(--card)',zIndex:10}}><tr style={{borderBottom:'1px solid var(--nx-border)'}}>{['','Produto','SKU','Categoria','Estoque','PreÃ§o','Status',''].map(h=>(<th key={h} style={{fontSize:10,color:'#5a5a70',textTransform:'uppercase',letterSpacing:.8,padding:'12px 8px',textAlign:'left'}}>{h}</th>))}</tr></thead>
+<tbody>
+{filteredProducts.map(p=>{ const pct=Math.min(100,Math.round((p.estoque/Math.max(1,p.estoqueMax))*100)); return (
+<tr key={p.id} onClick={()=>void abrirDetalhe(p)} style={{borderBottom:'1px solid var(--nx-border)',cursor:'pointer',transition:'all .2s'}} onMouseEnter={e=>{(e.currentTarget as any).style.background = 'var(--nx-surface-2)'}} onMouseLeave={e=>{(e.currentTarget as any).style.background='transparent'}}>
+<td style={{padding:'12px 8px'}}><input type="checkbox" checked={selected.has(p.id)} onClick={e=>e.stopPropagation()} onChange={()=>toggleSel(p.id)} aria-label={'Selecionar '+p.nome} /></td>
+<td style={{padding:'12px 8px'}}><div style={{display:'flex',gap:10,alignItems:'center'}}><span style={{width:44,height:44,borderRadius:10,background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{p.emoji}</span><span><div style={{fontSize:12,fontWeight:800}}>{p.nome}</div><div style={{fontSize:10,color:'var(--nx-ink-2)'}}>{p.variacao}</div></span></div></td>
+<td style={{padding:'12px 8px'}}><div style={{fontSize:11,color:'var(--nx-ink-2)',fontFamily:'monospace'}}>{p.sku}</div><div style={{fontSize:10,color:'var(--nx-ink-3)',fontFamily:'monospace'}}>{p.barras}</div></td>
+<td style={{padding:'12px 8px'}}><Badge kind="info">{p.categoria}</Badge><div style={{fontSize:11,color:'#8a8ab0',marginTop:4}}>{p.marca}</div></td>
+<td style={{padding:'12px 8px'}}><div style={{fontSize:11,color:'var(--nx-ink-2)'}}>{p.estoque} un</div><div style={{fontSize:11,color:'var(--nx-ink-3)'}}>{p.local}</div><div style={{height:4,background:'var(--nx-surface-3)',borderRadius:4,marginTop:4,width:80}}><div style={{height:4,borderRadius:4,background:'var(--nx-green)',width:pct+'%'}} /></div></td>
+<td style={{padding:'12px 8px'}}><div style={{fontSize:12,fontWeight:800}}>{brl(p.promo?p.precoPromocional??p.precoVenda:p.precoVenda)}</div><div style={{fontSize:10,color:'var(--nx-ink-3)'}}>custo {p.precoCusto===undefined?'Oculto':brl(p.precoCusto)}</div><span style={{fontSize:10,fontWeight:800,background:'var(--nx-amber)',color:'var(--nx-ink)',borderRadius:6,padding:'2px 6px'}}>{calcMargem(p.precoCusto,p.precoVenda)}</span></td>
+<td style={{padding:'12px 8px'}}>{p.status==='ATIVO'?<Badge kind="success">{traduzir('ativo', "Ativo")}</Badge>:p.status==='INATIVO'?<Badge>{traduzir('inativo', "Inativo")}</Badge>:<Badge kind="muted">{p.status}</Badge>}{p.promo&&(<span style={{marginLeft:6}}><Badge kind="warning">Promoção</Badge></span>)}</td>
+<td style={{padding:'12px 8px'}}><div style={{display:'flex',gap:6}}><button onClick={e=>{e.stopPropagation();openEdit(p);}} aria-label={traduzir('editar', "Editar")} style={{background:'none',border:'none',color:'#8888aa',cursor:'pointer'}}><Edit3 size={14}/></button><button onClick={e=>{e.stopPropagation();void dup(p);}} aria-label={traduzir('duplicar', "Duplicar")} style={{background:'none',border:'none',color:'#8888aa',cursor:'pointer'}}><Copy size={14}/></button><button onClick={e=>{e.stopPropagation();void abrirDetalhe(p);}} aria-label="Mais" style={{background:'none',border:'none',color:'#8888aa',cursor:'pointer'}}><MoreVertical size={14}/></button></div></td>
+</tr>);})}
+</tbody></table></div>
+):(
+<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
+{filteredProducts.map(p=>(<div key={p.id} onClick={()=>void abrirDetalhe(p)} style={{background: 'var(--nx-surface-2)',border: '1px solid var(--nx-border)',borderRadius:12,padding:12,cursor:'pointer'}}>
+<div style={{width:'100%',height:160,borderRadius:12,background:'var(--nx-surface-2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:48}}>{p.emoji}</div>
+<div style={{fontSize:12,fontWeight:800,marginTop:8,color: 'var(--nx-ink-2)'}}>{p.nome}</div><div style={{fontSize:10,color:'#6a6a8a'}}>{p.sku}</div>
+<div style={{fontSize:14,fontWeight:800,marginTop:4}}>{brl(p.promo?p.precoPromocional??p.precoVenda:p.precoVenda)}</div>
+<div style={{height:4,background: 'var(--nx-surface-2)',borderRadius:4,marginTop:6}}><div style={{height:4,borderRadius:4,background: 'var(--nx-green)',width:Math.min(100,Math.round(p.estoque/Math.max(1,p.estoqueMax)*100))+'%'}} /></div>
+<div style={{marginTop:8}}>{p.status==='ATIVO'?<Badge kind="success">{traduzir('ativo', "Ativo")}</Badge>:p.status==='INATIVO'?<Badge>{traduzir('inativo', "Inativo")}</Badge>:<Badge kind="muted">{p.status}</Badge>}</div>
+</div>))}
+</div>
+)}
+</Card>
+//__C10__
+</div>
+<div style={{width:320,display:'flex',flexDirection:'column',gap:16}}>
+<div style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:16,padding:18}}>
+<div style={{display:'flex',gap:10,alignItems:'center'}}><span style={{width:42,height:42,borderRadius:12,background:'linear-gradient(135deg,#7C3AED,#4F46E5)',display:'flex',alignItems:'center',justifyContent:'center',animation:'nxPulse 2s infinite'}}><Sparkles size={18} color="#fff"/></span><span><div style={{fontSize:12,fontWeight:800}}>IA NEXUS</div><div style={{fontSize:11,color:'#8a8ab0'}}>Insights de estoque</div></span></div>
+<div style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:10,padding:12,margin:'10px 0',display:'flex',gap:10,fontSize:11,color:'var(--nx-ink-2)'}}><Zap size={14} color="#7C3AED"/> {kpis.sem} produto(s) sem estoque no catÃ¡logo atual.</div>
+<div style={{background:'#121224',border:'1px solid var(--nx-border)',borderRadius:10,padding:12,marginBottom:10,display:'flex',gap:10,fontSize:11,color:'var(--nx-ink-2)'}}><BarChart3 size={14} color="#7C3AED"/> {canViewCosts&&margemPorCategoria.length?`Margem média ${ (margemPorCategoria.reduce((s,item)=>s+item.margem,0)/margemPorCategoria.length).toFixed(1)}%.`:'Dados de margem indisponÃ­veis.'}</div>
+<button onClick={()=>router.push('/ia')} style={{background:'#7C3AED',height:36,borderRadius:8,padding:'0 14px',color:'#fff',fontSize:11,fontWeight:800,width:'100%',border:'none',cursor:'pointer'}}>Abrir IA</button>
+</div>
+<Card style={{padding:20}}>
+<div style={{fontSize:14,fontWeight:800,marginBottom:10}}>Produtos por Categoria</div>
+{stockByCategory.length?stockByCategory.map(c=>(<div key={c.nome} style={{marginBottom:8}}><div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#8a8ab0'}}><span>{c.nome}</span><span>{c.total} SKUs</span></div><div style={{height:6,background:'#121224',borderRadius:6,marginTop:4}}><div style={{height:6,borderRadius:6,background:c.cor,width:`${c.percentual}%`}} /></div></div>)):<div style={{fontSize:11,color:'#8a8ab0'}}>Sem dados de produtos para exibir.</div>}
+</Card>
+<Card style={{padding:20}}>
+<div style={{fontSize:14,fontWeight:800}}>Curva ABC</div>
+<div style={{height:160,display:'flex',alignItems:'flex-end',gap:10,marginTop:10}}>
+{curvaABC.map((g,i)=><div key={g.classe} style={{flex:1,background:['var(--nx-green)','var(--nx-amber)','var(--nx-red)'][i],height:`${Math.max(2,g.percentual)}%`,borderRadius:6}} title={`${g.classe}: ${g.produtos} produto(s), ${g.percentual.toFixed(1)}% da receita registrada`} />)}
+</div>
+<div style={{fontSize:10,color:'var(--nx-ink-3)',marginTop:6}}>{curvaABC.map(g=>`${g.classe} ${g.produtos} produtos / ${g.percentual.toFixed(1)}%`).join(' â€¢ ')||'Sem vendas registradas para calcular a curva.'}</div>
+<div style={{fontSize:14,fontWeight:800,marginTop:14}}>Margem por categoria</div>
+<div style={{height:120,display:'flex',alignItems:'flex-end',gap:6,marginTop:10}}>
+{canViewCosts?margemPorCategoria.map(item=><div key={item.nome} style={{flex:1,background:'linear-gradient(180deg,#7C3AED,#4F46E5)',height:`${Math.max(2,Math.min(100,item.margem))}%`,borderRadius:4}} title={`${item.nome}: ${item.margem.toFixed(1)}%`} />):<div style={{fontSize:11,color:'#8a8ab0'}}>Margens ocultas pela permissÃ£o de custos.</div>}
+</div>
+</Card>
+<Card style={{padding:20}}>
+<div style={{fontSize:14,fontWeight:800,display:'flex',alignItems:'center',gap:8}}><History size={15}/> Ãšltimas MovimentaÃ§Ãµes</div>
+<table style={{width:'100%',marginTop:10}}><tbody>
+{movs.map(m=>(<tr key={m.id} style={{borderBottom:'1px solid #23233f'}}><td style={{fontSize:11,color:'#9a9ab0',padding:'8px 4px'}}>{m.data}<br/>{m.produto}<br/>{m.tipo}</td><td style={{fontSize:11,color:'#9a9ab0',textAlign:'right'}}>{m.qtd}<br/>{m.resp}</td></tr>))}
+</tbody></table>
+</Card>
+</div>
+</div>
+//__C11__
+{(showNew)&&(<Modal width={640}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><h2 style={{fontSize:18,fontWeight:800}}>{editing?'Editar Produto':'Novo Produto'}</h2><button onClick={()=>setShowNew(false)} aria-label={traduzir('fechar', "Fechar")} style={{width:32,height:32,background:'var(--card2)',border:'1px solid #23233f',borderRadius:'50%',color:'#fff',cursor:'pointer'}}>âœ•</button></div>
+<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+<Field label={traduzir('nome', "Nome")}><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} style={inpStyle} placeholder="Ex: Coca-Cola 350ml" /></Field>
+<Field label={traduzir('categoria', "Categoria")}><select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} style={inpStyle}><option value="">Sem categoria</option>{categories.map(c=>(<option key={c.id} value={c.id}>{c.nome}</option>))}</select></Field>
+<Field label="Marca"><input value={form.marca} onChange={e=>setForm({...form,marca:e.target.value})} style={inpStyle} /></Field>
+<Field label="SKU (auto)"><input value={form.sku} onChange={e=>setForm({...form,sku:e.target.value.toUpperCase()})} style={{...inpStyle,fontFamily:'monospace'}} /></Field>
+<Field label="Barras EAN-13"><input value={form.barras} onChange={e=>setForm({...form,barras:e.target.value.replace(/\D/g,'').slice(0,13)})} style={{...inpStyle,fontFamily:'monospace'}} placeholder="789..." /></Field>
+<Field label="Unidade"><select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value})} style={inpStyle}>{['UN','PC','CX','KG'].map(u=>(<option key={u}>{u}</option>))}</select></Field>
+<Field label="PreÃ§o custo R$"><input value={form.precoCusto} onChange={e=>setForm({...form,precoCusto:e.target.value.replace(/[^0-9,.]/g,'')})} style={inpStyle} placeholder={canEditCosts?'0,00':'Sem permissÃ£o'} readOnly={!canEditCosts} /></Field>
+<Field label="PreÃ§o venda R$"><input value={form.precoVenda} onChange={e=>setForm({...form,precoVenda:e.target.value.replace(/[^0-9,.]/g,'')})} style={inpStyle} placeholder="0,00" /></Field>
+<Field label="Estoque mÃ­n"><input value={form.estoqueMin} onChange={e=>setForm({...form,estoqueMin:e.target.value.replace(/\D/g,'')})} style={inpStyle} /></Field>
+<Field label="Estoque mÃ¡x"><input value={form.estoqueMax} onChange={e=>setForm({...form,estoqueMax:e.target.value.replace(/\D/g,'')})} style={inpStyle} /></Field>
+<Field label="Local"><input value={form.local} onChange={e=>setForm({...form,local:e.target.value})} style={inpStyle} placeholder="A-01-12" /></Field>
+<Field label="Ponto pedido"><input value={form.pontoPedido} onChange={e=>setForm({...form,pontoPedido:e.target.value.replace(/\D/g,'')})} style={inpStyle} /></Field>
+<Field label="Peso"><input value={form.peso} onChange={e=>setForm({...form,peso:e.target.value})} style={inpStyle} /></Field>
+<Field label="NCM"><input value={form.ncm} onChange={e=>setForm({...form,ncm:maskNCM(e.target.value)})} style={{...inpStyle,fontFamily:'monospace'}} placeholder="0000.00.00" /></Field>
+</div>
+<div style={{marginTop:14}}><Field label={traduzir('descricao', "DescriÃ§Ã£o")}><textarea value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} style={{...inpStyle,height:80,padding:12}} /></Field></div>
+{form.barras.length>0&&(<div style={{fontSize:11,marginTop:8,color:validBarcode(form.barras)?'#22c55e':'#f59e0b'}}>{validBarcode(form.barras)?'CÃ³digo de barras vÃ¡lido âœ“':'GTIN invÃ¡lido â€” confira o tamanho e o dÃ­gito verificador'}</div>)}
+<div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}>
+<button onClick={()=>setShowNew(false)} style={{...btnGhost,height:44,borderRadius:12,padding:'0 20px',fontSize:12}}>{traduzir('cancelar', "Cancelar")}</button>
+<button onClick={saveProduct} style={{...btnPri}}>{editing?'Salvar':'Salvar Produto'}</button>
+</div>
+</Modal>)}
+//__C12__
+{detail&&(<Modal width={760}>
+<div style={{display:'flex',gap:14,alignItems:'center'}}><span style={{width:80,height:80,borderRadius:16,background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:40}}>{detail.emoji}</span><span style={{flex:1}}><div style={{fontSize:20,fontWeight:800}}>{detail.nome}</div><div style={{fontSize:11,color:'#6a6a8a',fontFamily:'monospace'}}>{detail.sku} â€¢ {detail.barras}</div><div style={{fontSize:28,fontWeight:800}}>{brl(detail.promo?detail.precoPromocional??detail.precoVenda:detail.precoVenda)}</div></span><button onClick={()=>setDetail(null)} aria-label={traduzir('fechar', "Fechar")} style={{width:32,height:32,background:'var(--card2)',border:'1px solid #23233f',borderRadius:'50%',color:'#fff',cursor:'pointer'}}>âœ•</button></div>
+<div style={{height:8,background:'var(--nx-surface-2)',borderRadius:8,marginTop:14}}><div style={{height:8,borderRadius:8,background:'var(--nx-green)',width:Math.min(100,Math.round(detail.estoque/Math.max(1,detail.estoqueMax)*100))+'%'}} /></div>
+<div style={{fontSize:11,color:'#8a8ab0',marginTop:6}}>{detail.estoque} un â€¢ {detail.local} â€¢ margem {calcMargem(detail.precoCusto,detail.precoVenda)}</div>
+<div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:14}}>
+<button onClick={()=>{openEdit(detail);}} style={btnGhost}><Edit3 size={13}/>{traduzir('editar', "Editar")}</button>
+<button onClick={()=>void dup(detail)} style={btnGhost}><Copy size={13}/>{traduzir('duplicar', "Duplicar")}</button>
+<button onClick={()=>void alterarStatusProduto(detail,detail.status==='ATIVO'?'INATIVO':'ATIVO')} style={btnGhost}><Eye size={13}/>{detail.status==='INATIVO'?'Ativar':'Inativar'}</button>
+<button onClick={()=>void excluirProduto(detail)} style={btnGhost}><Trash2 size={13}/>{traduzir('excluir', "Excluir")}</button>
+<button onClick={()=>void abrirConfiguracaoKit(detail)} style={btnGhost}><Layers size={13}/>{detail.kit?'Editar composicao':'Configurar kit'}</button>
+{detail.kit&&<button onClick={()=>{setProduction({filialId:detail.estoques?.length===1?detail.estoques[0].filialId:'',quantidade:'1',idempotencyKey:crypto.randomUUID()});setShowProduction(true);}} style={btnPri}><Package size={13}/> Produzir</button>}
+<button onClick={()=>{setAdj({...adj,filialId:detail.estoques?.length===1?detail.estoques[0].filialId:''});setShowAdjust(true);}} style={btnGhost}><Package size={13}/> Ajustar Estoque</button>
+<button onClick={()=>{setPromoF({preco:detail.precoPromocional===undefined?'':String(detail.precoPromocional),ini:detail.promocaoInicio?.slice(0,10)||'',fim:detail.promocaoFim?.slice(0,10)||'',limite:detail.promocaoLimite?String(detail.promocaoLimite):''});setShowPromo(true);}} style={btnGhost}><Tag size={13}/> Criar Promoção</button>
+<button onClick={()=>router.push('/pdv')} style={btnGhost}><ShoppingCart size={13}/> Abrir PDV</button>
+</div>
+</Modal>)}
+//__C13__
+{showKit&&detail&&(<Modal width={680}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><h2 style={{fontSize:18,fontWeight:800}}>Composi??o ? {detail.nome}</h2><button onClick={()=>setShowKit(false)} style={btnGhost}>Fechar</button></div>
+<p style={{fontSize:12,color:'#8a8ab0'}}>Informe a quantidade de cada ingrediente usada para produzir uma unidade acabada. O custo e calculado pelos custos atuais dos ingredientes. Estoques usam unidades inteiras; cada lote precisa consumir quantidades inteiras.</p>
+{kitComponents.map((component,index)=>(<div key={index} style={{display:'grid',gridTemplateColumns:'1fr 130px 38px',gap:8,marginTop:10,alignItems:'end'}}><Field label={index===0?'Ingrediente':''}><select value={component.produtoId} onChange={e=>setKitComponents(rows=>rows.map((row,i)=>i===index?{...row,produtoId:e.target.value}:row))} style={inpStyle}><option value="">Selecione produto</option>{products.filter(p=>p.id!==detail.id&&!p.kit&&p.status==='ATIVO').map(p=><option key={p.id} value={p.id}>{p.nome} - {p.sku}</option>)}</select></Field><Field label={index===0?'Quantidade por unidade':''}><input type="number" min="0.001" step="0.001" value={component.quantidadePorKit} onChange={e=>setKitComponents(rows=>rows.map((row,i)=>i===index?{...row,quantidadePorKit:e.target.value}:row))} style={inpStyle}/></Field><button onClick={()=>setKitComponents(rows=>rows.filter((_,i)=>i!==index))} style={{...btnGhost,padding:0,justifyContent:'center'}}>Remover</button></div>))}
+<button onClick={()=>setKitComponents(rows=>[...rows,{produtoId:'',quantidadePorKit:'1'}])} style={{...btnGhost,marginTop:12}}><Plus size={13}/> Adicionar ingrediente</button>
+<div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:18}}><button onClick={()=>setShowKit(false)} style={btnGhost}>Cancelar</button><button onClick={()=>void salvarComposicaoKit()} style={btnPri}>Salvar composicao</button></div>
+</Modal>)}
+{showProduction&&detail&&(<Modal width={480}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><h2 style={{fontSize:18,fontWeight:800}}>Produzir ? {detail.nome}</h2><button onClick={()=>setShowProduction(false)} style={btnGhost}>Fechar</button></div>
+<p style={{fontSize:12,color:'#8a8ab0'}}>A producao baixa ingredientes e adiciona o produto acabado ao estoque. A venda posterior desconta apenas o produto acabado. O estoque aceita quantidades inteiras; um lote deve consumir um numero inteiro de cada ingrediente.</p>
+<div style={{display:'flex',flexDirection:'column',gap:12,marginTop:14}}><Field label="Filial"><select value={production.filialId} onChange={e=>setProduction({...production,filialId:e.target.value})} style={inpStyle}><option value="">Selecione filial</option>{detail.estoques?.map(estoque=><option key={estoque.filialId} value={estoque.filialId}>{estoque.filialNome||estoque.filialId}</option>)}</select></Field><Field label="Quantidade a produzir"><input type="number" min="1" step="1" value={production.quantidade} onChange={e=>setProduction({...production,quantidade:e.target.value})} style={inpStyle}/></Field></div>
+<div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:18}}><button onClick={()=>setShowProduction(false)} style={btnGhost}>Cancelar</button><button onClick={()=>void produzirKit()} style={btnPri}>Confirmar producao</button></div>
+</Modal>)}
+{showAdjust&&detail&&(<Modal width={480}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><h2 style={{fontSize:18,fontWeight:800}}>Ajustar Estoque</h2><button onClick={()=>setShowAdjust(false)} aria-label={traduzir('fechar', "Fechar")} style={{width:32,height:32,background:'var(--card2)',border:'1px solid #23233f',borderRadius:'50%',color:'#fff',cursor:'pointer'}}>âœ•</button></div>
+<div style={{display:'flex',flexDirection:'column',gap:12}}>
+{(detail.estoques?.length||0)>1&&<Field label="Filial"><select value={adj.filialId} onChange={e=>setAdj({...adj,filialId:e.target.value})} style={inpStyle}><option value="">Selecione uma filial</option>{detail.estoques?.map(estoque=><option key={estoque.filialId} value={estoque.filialId}>{estoque.filialNome||estoque.filialId} Â· {estoque.quantidade} {detail.unidade}</option>)}</select></Field>}
+<Field label={traduzir('tipo', "Tipo")}><select value={adj.tipo} onChange={e=>setAdj({...adj,tipo:e.target.value})} style={inpStyle}>{['Entrada','Saida','Ajuste','Inventario'].map(t=>(<option key={t}>{t}</option>))}</select></Field>
+<Field label={traduzir('quantidade', "Quantidade")}><input value={adj.qtd} onChange={e=>setAdj({...adj,qtd:e.target.value.replace(/\D/g,'')})} style={inpStyle} placeholder="0" /></Field>
+<Field label={traduzir('motivo', "Motivo")}><input value={adj.motivo} onChange={e=>setAdj({...adj,motivo:e.target.value})} style={inpStyle} placeholder="Ex: Inventario" /></Field>
+<Field label="ObservaÃ§Ã£o"><textarea value={adj.obs} onChange={e=>setAdj({...adj,obs:e.target.value})} style={{...inpStyle,height:70,padding:12}} /></Field>
+<button onClick={confirmAdjust} style={{...btnPri,justifyContent:'center'}}>Confirmar</button>
+</div>
+</Modal>)}
+{showPromo&&detail&&(<Modal width={520}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><h2 style={{fontSize:18,fontWeight:800}}>Criar Promoção</h2><button onClick={()=>setShowPromo(false)} aria-label={traduzir('fechar', "Fechar")} style={{width:32,height:32,background:'var(--card2)',border:'1px solid #23233f',borderRadius:'50%',color:'#fff',cursor:'pointer'}}>âœ•</button></div>
+<div style={{fontSize:12,color:'#8a8ab0'}}>PreÃ§o normal: <s>{brl(detail.precoVenda)}</s></div>
+<div style={{display:'flex',flexDirection:'column',gap:12,marginTop:10}}>
+<Field label="PreÃ§o promo R$"><input value={promoF.preco} onChange={e=>setPromoF({...promoF,preco:e.target.value.replace(/[^0-9,.]/g,'')})} style={inpStyle} /></Field>
+<div style={{fontSize:11,color:'#22c55e'}}>Desconto {detail.precoVenda?Math.max(0,Math.round((1-(Number(promoF.preco.replace(',','.') )||detail.precoVenda)/detail.precoVenda)*100)):0}% auto</div>
+<Field label="InÃ­cio"><input type="date" value={promoF.ini} onChange={e=>setPromoF({...promoF,ini:e.target.value})} style={inpStyle} /></Field>
+<Field label="Fim"><input type="date" value={promoF.fim} onChange={e=>setPromoF({...promoF,fim:e.target.value})} style={inpStyle} /></Field>
+<Field label="Limite (informativo)"><input value={promoF.limite} onChange={e=>setPromoF({...promoF,limite:e.target.value.replace(/\D/g,'')})} style={inpStyle} /><div style={{fontSize:10,color:'#f59e0b',marginTop:4}}>Esse limite ainda nÃ£o bloqueia vendas.</div></Field>
+<button onClick={confirmPromo} style={{...btnPri,justifyContent:'center'}}>Criar Promoção</button>
+</div>
+</Modal>)}
+//__C14__
+{showImport&&(<Modal width={500}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}><h2 style={{fontSize:18,fontWeight:800}}>Importar CSV</h2><button onClick={()=>setShowImport(false)} aria-label={traduzir('fechar', "Fechar")} style={{width:32,height:32,background:'var(--card2)',border:'1px solid #23233f',borderRadius:'50%',color:'#fff',cursor:'pointer'}}>âœ•</button></div>
+<label style={{border:'2px dashed var(--nx-border)',borderRadius:12,padding:24,display:'block',textAlign:'center',fontSize:12,color:'var(--nx-ink-2)',cursor:'pointer'}}>Arraste o CSV ou clique<input type="file" accept=".csv" hidden onChange={e=>onFile(e.target.files?.[0])} /></label>
+<div style={{fontSize:11,color:'var(--nx-ink-3)',marginTop:8}}>Colunas: Nome,SKU,Categoria,Marca,PrecoCusto,PrecoVenda,Estoque,CodigoBarras,Unidade,EstoqueMinimo,EstoqueMaximo,PontoPedido,Peso,NCM,Descricao,FilialId,Local. FilialId Ã© obrigatÃ³rio para estoque inicial quando houver mais de uma filial.</div>
+{csvPrev.length>0&&(<table style={{width:'100%',marginTop:10,fontSize:10,color:'var(--nx-ink-2)'}}><tbody>{csvPrev.map((r,i)=>(<tr key={i}>{r.map((c,j)=>(<td key={j} style={{borderBottom:'1px solid #23233f',padding:4}}>{c}</td>))}</tr>))}</tbody></table>)}
+<button onClick={importarCSV} disabled={!csvRows.length} style={{...btnPri,marginTop:12,justifyContent:'center',width:'100%',opacity:csvRows.length?1:.5}}>{csvRows.length?`Importar ${csvRows.length} produto(s)`:'Selecione um CSV'}</button>
+</Modal>)}
+<div style={{position:'fixed',bottom:20,right:20,display:'flex',flexDirection:'column',gap:10,zIndex:99}}>
+{toastList.map(t=>(<div key={t.id} style={{background:'var(--nx-surface-2)',border:'1px solid var(--nx-border)',borderRadius:14,padding:'12px 16px',fontSize:12,boxShadow:'0 12px 32px rgba(0,0,0,.5)',display:'flex',gap:12,alignItems:'center',minWidth:280,maxWidth:360,animation:'nxSlide .3s',position:'relative',overflow:'hidden'}}>
+<span style={{width:24,height:24,borderRadius:'50%',background:t.kind==='ok'?'var(--successBg)':'var(--warningBg)',color:t.kind==='ok'?'var(--success)':'var(--warning)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13}}>{t.kind==='ok'?'âœ“':'!'}</span>{t.msg}
+<span style={{position:'absolute',bottom:0,left:0,height:2,background:'var(--primary)',animation:'nxShrink 2.8s linear'}} />
+</div>))}
+</div>
+</div>);}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

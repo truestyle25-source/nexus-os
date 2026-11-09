@@ -1,0 +1,80 @@
+warning: in the working copy of '.\frontend\app\(dashboard)\configuracoes\page.tsx.backup-visual-20261029-191746', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.\frontend\app\(dashboard)\configuracoes\page.tsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git "a/.\\frontend\\app\\(dashboard)\\configuracoes\\page.tsx.backup-visual-20261029-191746" "b/.\\frontend\\app\\(dashboard)\\configuracoes\\page.tsx"[m
+[1mindex 1daf2bc..04abc91 100644[m
+[1m--- "a/.\\frontend\\app\\(dashboard)\\configuracoes\\page.tsx.backup-visual-20261029-191746"[m
+[1m+++ "b/.\\frontend\\app\\(dashboard)\\configuracoes\\page.tsx"[m
+[36m@@ -418,7 +418,7 @@[m [mconst Row = React.memo(function Row({[m
+   onClick?: () => void;[m
+ }) {[m
+   const base =[m
+[31m-    'nx-row group w-full bg-[var(--card2)] border border-[var(--border)] rounded-xl px-4 py-[14px] flex justify-between items-center gap-3 hover:bg-[#1a1a36] hover:border-l-2 hover:border-l-[var(--primary)] transition-all duration-150';[m
+[32m+[m[32m    'nx-row group w-full bg-[var(--card2)] border border-[var(--border)] rounded-xl px-4 py-[14px] flex justify-between items-center gap-3 hover:bg-[var(--card)] hover:border-l-2 hover:border-l-[var(--primary)] transition-all duration-150';[m
+   const conteudo = ([m
+     <>[m
+       <span className="min-w-0">[m
+[36m@@ -455,7 +455,7 @@[m [mconst Row = React.memo(function Row({[m
+ /** Selo "em preparação" — estrutura pronta, sem backend ainda. */[m
+ const BadgePrep = React.memo(function BadgePrep() {[m
+   return ([m
+[31m-    <span className="bg-[#1e1e32] border border-dashed border-[#3a3a5a] text-[var(--muted)] rounded-lg px-2.5 py-1 text-[10px] uppercase tracking-[0.6px] font-semibold inline-flex items-center gap-1">[m
+[32m+[m[32m    <span className="bg-[var(--card2)] border border-dashed border-[var(--border2)] text-[var(--muted)] rounded-lg px-2.5 py-1 text-[10px] uppercase tracking-[0.6px] font-semibold inline-flex items-center gap-1">[m
+       <span aria-hidden="true">⏳</span> em preparação[m
+     </span>[m
+   );[m
+[36m@@ -479,7 +479,7 @@[m [mconst Toggle = React.memo(function Toggle({[m
+       aria-label={label}[m
+       onClick={() => onChange(!ativo)}[m
+       className={`relative w-[42px] h-[22px] rounded-full border transition-colors duration-200 shrink-0 ${[m
+[31m-        ativo ? 'bg-[var(--primary)]/70 border-[var(--primary)]' : 'bg-[#1b1b30] border-[var(--border)]'[m
+[32m+[m[32m        ativo ? 'bg-[var(--primary)]/70 border-[var(--primary)]' : 'bg-[var(--card2)] border-[var(--border)]'[m
+       }`}[m
+     >[m
+       <span[m
+[36m@@ -573,7 +573,7 @@[m [mfunction Modal({[m
+         role="dialog"[m
+         aria-modal="true"[m
+         aria-label={title}[m
+[31m-        className={`animate-modal-in relative w-full ${width} bg-[#15152b] border border-[#2a2a55] rounded-[20px] p-6 md:p-7 shadow-[0_24px_70px_rgba(0,0,0,0.6)] max-h-[88vh] overflow-y-auto nx-scroll`}[m
+[32m+[m[32m        className={`animate-modal-in relative w-full ${width} bg-[var(--card)] border border-[var(--border)] rounded-[20px] p-6 md:p-7 shadow-[0_24px_70px_rgba(0,0,0,0.6)] max-h-[88vh] overflow-y-auto nx-scroll`}[m
+       >[m
+         <div className="flex items-start justify-between gap-4">[m
+           <div className="min-w-0">[m
+[36m@@ -628,7 +628,7 @@[m [mconst Toasts = React.memo(function Toasts({[m
+             key={toast.id}[m
+             type="button"[m
+             onClick={() => onRemove(toast.id)}[m
+[31m-            className={`animate-toast-slide relative overflow-hidden text-left rounded-[14px] border ${estilo.border} bg-[#171730] shadow-[0_16px_40px_rgba(0,0,0,0.55)] px-4 py-3`}[m
+[32m+[m[32m            className={`animate-toast-slide relative overflow-hidden text-left rounded-[14px] border ${estilo.border} bg-[var(--card)] shadow-[0_16px_40px_rgba(0,0,0,0.55)] px-4 py-3`}[m
+           >[m
+             <span className="flex items-start gap-2.5">[m
+               <span className="text-[12px] font-bold text-white/70 mt-[1px]" aria-hidden="true">[m
+[36m@@ -1421,7 +1421,7 @@[m [mexport default function ConfiguracoesPage() {[m
+ [m
+   return ([m
+     <div[m
+[31m-      className="min-h-screen bg-[var(--bg)] text-white font-['Inter',sans-serif]"[m
+[32m+[m[32m      className="configuracoes-root min-h-screen bg-[var(--bg)] text-white font-['Inter',sans-serif]"[m
+       data-densidade={aparencia.densidade}[m
+       style={{[m
+           '--primary': aparencia.corPrincipal,[m
+[36m@@ -1457,8 +1457,8 @@[m [mexport default function ConfiguracoesPage() {[m
+ [m
+         .nx-scroll::-webkit-scrollbar { height: 8px; width: 8px; }[m
+         .nx-scroll::-webkit-scrollbar-track { background: transparent; }[m
+[31m-        .nx-scroll::-webkit-scrollbar-thumb { background: #2f2f55; border-radius: 999px; }[m
+[31m-        .nx-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f6e; }[m
+[32m+[m[32m        .configuracoes-root .nx-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }[m
+[32m+[m[32m        .configuracoes-root .nx-scroll::-webkit-scrollbar-thumb:hover { background: var(--primary); }[m
+ [m
+         .input-nexus {[m
+           height: 40px;[m
+[36m@@ -1482,7 +1482,7 @@[m [mexport default function ConfiguracoesPage() {[m
+           background: linear-gradient([m
+             135deg,[m
+             var(--primary) 0%,[m
+[31m-            color-mix(in srgb, var(--primary) 55%, #14142c) 100%[m
+[32m+[m[32m            color-mix(in srgb, var(--primary) 55%, var(--nx-surface)) 100%[m
+           );[m
+           box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 30%, transparent);[m
+           transition: filter 0.2s ease, transform 0.15s ease;[m

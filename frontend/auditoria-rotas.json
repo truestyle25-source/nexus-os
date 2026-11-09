@@ -1,0 +1,138 @@
+[
+    {
+        "path":  "/",
+        "source":  "frontend\\app\\(dashboard)\\page.tsx"
+    },
+    {
+        "path":  "/admin",
+        "source":  "frontend\\app\\(dashboard)\\admin\\page.tsx"
+    },
+    {
+        "path":  "/alertas",
+        "source":  "frontend\\app\\(dashboard)\\alertas\\page.tsx"
+    },
+    {
+        "path":  "/assinatura",
+        "source":  "frontend\\app\\(dashboard)\\assinatura\\page.tsx"
+    },
+    {
+        "path":  "/auditoria",
+        "source":  "frontend\\app\\(dashboard)\\auditoria\\page.tsx"
+    },
+    {
+        "path":  "/central-integracoes",
+        "source":  "frontend\\app\\(dashboard)\\central-integracoes\\page.tsx"
+    },
+    {
+        "path":  "/clientes",
+        "source":  "frontend\\app\\(dashboard)\\clientes\\page.tsx"
+    },
+    {
+        "path":  "/compras",
+        "source":  "frontend\\app\\(dashboard)\\compras\\page.tsx"
+    },
+    {
+        "path":  "/configuracoes",
+        "source":  "frontend\\app\\(dashboard)\\configuracoes\\page.tsx"
+    },
+    {
+        "path":  "/dre",
+        "source":  "frontend\\app\\(dashboard)\\dre\\page.tsx"
+    },
+    {
+        "path":  "/esqueci-senha",
+        "source":  "frontend\\app\\esqueci-senha\\page.tsx"
+    },
+    {
+        "path":  "/estoque",
+        "source":  "frontend\\app\\(dashboard)\\estoque\\page.tsx"
+    },
+    {
+        "path":  "/financeiro",
+        "source":  "frontend\\app\\(dashboard)\\financeiro\\page.tsx"
+    },
+    {
+        "path":  "/fiscal",
+        "source":  "frontend\\app\\(dashboard)\\fiscal\\page.tsx"
+    },
+    {
+        "path":  "/fluxo",
+        "source":  "frontend\\app\\(dashboard)\\fluxo\\page.tsx"
+    },
+    {
+        "path":  "/fornecedores",
+        "source":  "frontend\\app\\(dashboard)\\fornecedores\\page.tsx"
+    },
+    {
+        "path":  "/ia",
+        "source":  "frontend\\app\\(dashboard)\\ia\\page.tsx"
+    },
+    {
+        "path":  "/importacao",
+        "source":  "frontend\\app\\(dashboard)\\importacao\\page.tsx"
+    },
+    {
+        "path":  "/indicadores",
+        "source":  "frontend\\app\\(dashboard)\\indicadores\\page.tsx"
+    },
+    {
+        "path":  "/intelligence",
+        "source":  "frontend\\app\\(dashboard)\\intelligence\\page.tsx"
+    },
+    {
+        "path":  "/login",
+        "source":  "frontend\\app\\login\\page.tsx"
+    },
+    {
+        "path":  "/metas",
+        "source":  "frontend\\app\\(dashboard)\\metas\\page.tsx"
+    },
+    {
+        "path":  "/pdv",
+        "source":  "frontend\\app\\(dashboard)\\pdv\\page.tsx"
+    },
+    {
+        "path":  "/pesquisa",
+        "source":  "frontend\\app\\(dashboard)\\pesquisa\\page.tsx"
+    },
+    {
+        "path":  "/plataforma",
+        "source":  "frontend\\app\\(dashboard)\\plataforma\\page.tsx"
+    },
+    {
+        "path":  "/ponto",
+        "source":  "frontend\\app\\(dashboard)\\ponto\\page.tsx"
+    },
+    {
+        "path":  "/products",
+        "source":  "frontend\\app\\(dashboard)\\products\\page.tsx"
+    },
+    {
+        "path":  "/produtos",
+        "source":  "frontend\\app\\(dashboard)\\produtos\\page.tsx"
+    },
+    {
+        "path":  "/radar-organizacional",
+        "source":  "frontend\\app\\(dashboard)\\radar-organizacional\\page.tsx"
+    },
+    {
+        "path":  "/redefinir-senha",
+        "source":  "frontend\\app\\redefinir-senha\\page.tsx"
+    },
+    {
+        "path":  "/relatorios",
+        "source":  "frontend\\app\\(dashboard)\\relatorios\\page.tsx"
+    },
+    {
+        "path":  "/rh",
+        "source":  "frontend\\app\\(dashboard)\\rh\\page.tsx"
+    },
+    {
+        "path":  "/usuarios",
+        "source":  "frontend\\app\\(dashboard)\\usuarios\\page.tsx"
+    },
+    {
+        "path":  "/vendas",
+        "source":  "frontend\\app\\(dashboard)\\vendas\\page.tsx"
+    }
+]

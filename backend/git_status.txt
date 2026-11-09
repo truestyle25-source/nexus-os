@@ -1,0 +1,272 @@
+ M ../.gitignore
+ M ../BUILD-VALIDATION.md
+ M ../DEBITO-TECNICO.md
+ M ../README-PRODUCAO.md
+ M ../README.md
+ M .env.example
+ M package-lock.json
+ M package.json
+ M prisma/migrations/202609111200_fundacao_auth_empresa/migration.sql
+ M prisma/migrations/202609121000_estoque_filial_produtos/migration.sql
+ M prisma/migrations/202609121600_compra_filial_e_snapshot_estoque/migration.sql
+ M prisma/schema.prisma
+ D src/app.ts
+ M src/config/env.ts
+ D src/domain/permissions.ts
+ D src/domain/types.ts
+ M src/lib/permissoes.ts
+ D src/middleware/auth.ts
+ D src/middleware/permissions.ts
+ D src/middleware/rateLimiter.ts
+ M src/middlewares/auth.ts
+ M src/modules/auth/auth.routes.ts
+ M src/modules/compras/compras.routes.ts
+ M src/modules/empresa/empresa.routes.ts
+ M src/modules/estoque/estoque-indicadores.service.ts
+ M src/modules/estoque/estoque.routes.ts
+ M src/modules/estoque/estoque.service.ts
+ M src/modules/gestao/gestao.routes.ts
+ M src/modules/ia/ia.routes.ts
+ M src/modules/importacao/importacao.routes.ts
+ M src/modules/pdv/pdv.routes.ts
+ M src/modules/produtos/produtos.routes.ts
+ M src/modules/rh/rh.routes.ts
+ M src/modules/vendas/vendas.routes.ts
+ D src/repositories/interfaces.ts
+ D src/repositories/memory/index.ts
+ D src/repositories/postgres/index.ts
+ D src/routes/admin.ts
+ D src/routes/auth.ts
+ D src/routes/me.ts
+ D src/routes/products.ts
+ M src/server.ts
+ D src/services/authService.ts
+ D tests/authService.test.ts
+ D tests/permissions.test.ts
+ M tsconfig.json
+ M ../docs/README-PARTE-3-VENDAS-PDV.md
+ M ../docs/README-PARTE-6-IA.md
+ M ../docs/README-PARTE-7-PRODUCAO.md
+ D ../frontend/app/admin/page.tsx
+ D ../frontend/app/alertas/page.tsx
+ D ../frontend/app/auditoria/page.tsx
+ D ../frontend/app/dashboard/page.tsx
+ D ../frontend/app/dre/page.tsx
+ D ../frontend/app/estoque/page.tsx
+ D ../frontend/app/financeiro/page.tsx
+ M ../frontend/app/globals.css
+ D ../frontend/app/ia/page.tsx
+ D ../frontend/app/importacao/page.tsx
+ D ../frontend/app/intelligence/page.tsx
+ M ../frontend/app/layout.tsx
+ D ../frontend/app/page.tsx
+ D ../frontend/app/pdv/page.tsx
+ D ../frontend/app/pesquisa/page.tsx
+ D ../frontend/app/ponto/page.tsx
+ D ../frontend/app/products/page.tsx
+ D ../frontend/app/produtos/page.tsx
+ D ../frontend/app/rh/page.tsx
+ D ../frontend/app/usuarios/page.tsx
+ D ../frontend/app/vendas/page.tsx
+ D ../frontend/components/AuthForm.tsx
+ M ../frontend/lib/api.ts
+ M ../frontend/next-env.d.ts
+ M ../frontend/package-lock.json
+ M ../frontend/package.json
+ D ../frontend/src/vite-env.d.ts
+ M ../frontend/tailwind.config.js
+ M ../frontend/tsconfig.json
+?? ../.db_check.sql
+?? ../.vscode/settings.json
+?? ../Microsoft/
+?? "../RH BASE.html"
+?? git_status.txt
+?? limpar-residuos-pdv.ts
+?? prisma/migrations/202609110000_baseline_schema_base/
+?? prisma/migrations/202609130001_importacao/
+?? prisma/migrations/202609130002_fix_empresa_status_type/
+?? prisma/migrations/202609131200_alerta_compra_pendente/
+?? prisma/migrations/202609131300_api_publica_chaves/
+?? prisma/migrations/202609201000_pdv_caixa/
+?? prisma/migrations/202609240001_pix_universal/
+?? prisma/migrations/202609240002_relatorio_gerado/
+?? prisma/migrations/202609240003_fornecedores_v2/
+?? prisma/migrations/202609261000_rh_desligamento/
+?? prisma/migrations/202609261100_sync_schema_banco/
+?? prisma/migrations/202609261200_sync_schema_banco_2/
+?? prisma/migrations/202609261300_corrige_sync_schema/
+?? prisma/migrations/202609261400_rh_verbas_arquivamento/
+?? prisma/migrations/202609261500_documentos_bucket/
+?? prisma/migrations/202609261600_rh_folha_pagamento/
+?? prisma/migrations/202609270900_funcionario_beneficios/
+?? prisma/migrations/202609271200_ponto_fuso_empresa/
+?? prisma/migrations/202609271400_funcionario_horarios_previstos/
+?? prisma/migrations/202609280900_radar_inteligencia/
+?? prisma/migrations/202609281200_plano_desenvolvimento_disc/
+?? prisma/migrations/202609290900_treinamentos_participantes/
+?? prisma/migrations/202609291200_feedback_lideranca/
+?? prisma/migrations/202609300900_loja_recompensas/
+?? prisma/migrations/202609301000_pontuacao_configuravel/
+?? prisma/migrations/202609301100_pontuacao_presente/
+?? prisma/migrations/202609301200_sessao_inventario/
+?? prisma/migrations/202609301300_venda_parcelas/
+?? prisma/migrations/202610021000_produtos_metadata_promocao/
+?? prisma/migrations/202610070900_pdv_pro_fase1_nucleo/
+?? prisma/migrations/202610081000_backfill_venda_data_operacional/
+?? prisma/migrations/202610081100_parity_fks_indexes/
+?? prisma/migrations/202610090900_parity_indice_importacao/
+?? prisma/migrations/202610100900_integracao_externo_mercadolivre/
+?? prisma/migrations/202610130900_criar_sincronizacao_tarefa/
+?? prisma/migrations/202610181000_fila_webhook_mercadolivre/
+?? prisma/migrations/202610181100_status_fila_notificacao_ml/
+?? prisma/migrations/202610181200_shopee_connections/
+?? prisma/migrations/202610241000_produto_codigo_barras_unico/
+?? prisma/migrations/202610241100_produto_kits_producao/
+?? prisma/migrations/202610251000_estoque_quantidades_fracionarias/
+?? prisma/migrations/202610260000_unidades_tipos_produtos/
+?? prisma/migrations/migration_lock.toml
+?? scripts/fixtures-pdv-test.sql
+?? src/lib/email.ts
+?? src/lib/folha.ts
+?? src/lib/fuso.ts
+?? src/lib/idempotencia.ts
+?? src/lib/log-redacao.ts
+?? src/lib/pdf.ts
+?? src/lib/permissoes-catalogo.ts
+?? src/lib/storage.ts
+?? src/middlewares/apiKeyAuth.ts
+?? src/middlewares/rateLimiter.ts
+?? src/modules/api-publica/
+?? src/modules/chat/
+?? src/modules/dashboard/
+?? src/modules/estoque/conversao.service.ts
+?? src/modules/fiscal/
+?? src/modules/fornecedores/
+?? src/modules/ia/ia.service.ts
+?? src/modules/integracoes/
+?? src/modules/lgpd/
+?? src/modules/payments/
+?? src/modules/produtos/kits.routes.ts
+?? src/modules/radar/
+?? src/modules/relatorios/
+?? src/modules/rh/folha.routes.ts
+?? src/modules/rh/gestao-tempo.routes.ts
+?? src/modules/rh/inventario.routes.ts
+?? src/modules/rh/inventario.ts
+?? src/modules/rh/lideranca.routes.ts
+?? src/modules/rh/lideranca.ts
+?? src/modules/rh/loja.routes.ts
+?? src/modules/rh/loja.ts
+?? src/modules/rh/plano-desenvolvimento.routes.ts
+?? src/modules/rh/plano-desenvolvimento.ts
+?? src/modules/rh/ponto-fechamento.service.ts
+?? src/modules/rh/pontuacao.routes.ts
+?? src/modules/rh/pontuacao.ts
+?? src/modules/rh/rh.utils.ts
+?? src/modules/rh/treinamentos.routes.ts
+?? src/modules/rh/treinamentos.ts
+?? src/modules/rh/verbas.ts
+?? src/modules/tts/
+?? src/modules/vendas/vendas.filtros.ts
+?? src/scripts/backup.ts
+?? src/scripts/restaurar-backup.ts
+?? src/scripts/scheduler.ts
+?? tests/_fluxo-indicadores.smoke.ts
+?? tests/assinatura.test.ts
+?? tests/ciclo3-lideranca.test.ts
+?? tests/clientes-aba.test.ts
+?? tests/competencia-folha.test.ts
+?? tests/compras-aba.test.ts
+?? tests/configuracoes.test.ts
+?? tests/cross-tenant-isolamento.test.ts
+?? tests/dashboard.test.ts
+?? tests/dre.test.ts
+?? tests/estoque-aba.test.ts
+?? tests/financeiro.test.ts
+?? tests/fiscal-status-db-error.integration.test.ts
+?? tests/fiscal-status.integration.test.ts
+?? tests/fiscal-status.test.ts
+?? tests/fluxo-caixa.test.ts
+?? tests/folha.test.ts
+?? tests/fornecedores-aba.test.ts
+?? tests/fuso-pdv.test.ts
+?? tests/fuso-ponto.test.ts
+?? tests/ia-nexus.test.ts
+?? tests/importacao-aba.test.ts
+?? tests/integracoes.test.ts
+?? tests/integration-core.test.ts
+?? tests/inventario.test.ts
+?? tests/loja.test.ts
+?? tests/mercadolivre-agendador.test.ts
+?? tests/mercadolivre-consulta.test.ts
+?? tests/mercadolivre-sync.test.ts
+?? tests/metas-aba.test.ts
+?? tests/mod07-mutacao.test.ts
+?? tests/mod07-seguranca.test.ts
+?? tests/pdv-concorrencia.test.ts
+?? tests/pdv-fase2-venda.test.ts
+?? tests/pdv-fase3-catalogo.test.ts
+?? tests/pdv-fase3-concorrencia.test.ts
+?? tests/pdv-fase4-reconciliacao.test.ts
+?? tests/pdv-fluxo-caixa.test.ts
+?? tests/pdv-idempotencia-movimentacao.test.ts
+?? tests/permissao-middleware.test.ts
+?? tests/permissoes.test.ts
+?? tests/pix.test.ts
+?? tests/plano-desenvolvimento.test.ts
+?? tests/plataforma.test.ts
+?? tests/ponto-aba.test.ts
+?? tests/ponto-fechamento.test.ts
+?? tests/pontuacao.test.ts
+?? tests/produtos-aba.test.ts
+?? tests/produtos-postgres.integration.test.ts
+?? tests/radar-disc.test.ts
+?? tests/radar.test.ts
+?? tests/relatorios-aba.test.ts
+?? tests/rh.test.ts
+?? tests/storage.test.ts
+?? tests/treinamentos.test.ts
+?? tests/vendas-filtros.test.ts
+?? tests/verbas-rescisao.test.ts
+?? tmp/
+?? ../diff.txt
+?? ../docs/DECISOES_ETAPA_0.md
+?? ../docs/FISCAL-BRASIL.md
+?? ../docs/INTEGRATION-CORE-SHOPEE.md
+?? ../docs/MERCADO-LIVRE.md
+?? ../docs/PDV-PRO-PROGRESSO.md
+?? ../docs/PLANO_MIGRACOES_ESTOQUE.md
+?? ../estrutura-nexus.txt
+?? ../fix-tsconfig.ps1
+?? ../frontend/TODO_SNIFFER_ENTIDADES.cjs
+?? ../frontend/app/(dashboard)/
+?? ../frontend/app/auth/
+?? ../frontend/app/esqueci-senha/
+?? ../frontend/app/login/
+?? ../frontend/app/redefinir-senha/
+?? ../frontend/components/MercadoLivreDadosModal.tsx
+?? ../frontend/components/ModuleHeader.tsx
+?? ../frontend/components/PixQrCodeModal.tsx
+?? ../frontend/components/PixSettingsTab.tsx
+?? ../frontend/components/ThemeScript.tsx
+?? ../frontend/components/ThemeSync.tsx
+?? ../frontend/components/relatorios/
+?? ../frontend/components/rh/
+?? ../frontend/components/ui/
+?? ../frontend/lib/dashboard.ts
+?? ../frontend/lib/erros-api.ts
+?? ../frontend/lib/format.ts
+?? ../frontend/lib/i18n.ts
+?? ../frontend/lib/mercadolivre-dados.ts
+?? ../frontend/lib/pdv/
+?? ../frontend/lib/prefs.ts
+?? ../frontend/lib/radar.tsx
+?? ../frontend/lib/theme.ts
+?? ../frontend/lib/uploadDocumento.ts
+?? ../frontend/middleware.ts
+?? ../frontend/src/App.tsx
+?? ../frontend/tests/
+?? ../frontend/tsconfig.tsbuildinfo
+?? ../package-lock.json
+?? ../package.json
+?? ../tmp/

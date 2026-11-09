@@ -1,0 +1,104 @@
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/prisma/migrations/202609111200_fundacao_auth_empresa/migration.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/prisma/migrations/202609121000_estoque_filial_produtos/migration.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/prisma/migrations/202609121600_compra_filial_e_snapshot_estoque/migration.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/lib/permissoes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/auth/auth.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/compras/compras.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/empresa/empresa.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/estoque/estoque-indicadores.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/estoque/estoque.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/estoque/estoque.service.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/gestao/gestao.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/ia/ia.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/importacao/importacao.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/pdv/pdv.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/modules/produtos/produtos.routes.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/src/server.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/README-PARTE-3-VENDAS-PDV.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/README-PARTE-6-IA.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/README-PARTE-7-PRODUCAO.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/app/globals.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/lib/api.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/tailwind.config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/tsconfig.json', LF will be replaced by CRLF the next time Git touches it
+ .gitignore                                         |    1 [32m+[m
+ BUILD-VALIDATION.md                                |   63 [32m+[m
+ DEBITO-TECNICO.md                                  |  316 [32m+[m[31m-[m
+ README-PRODUCAO.md                                 |   32 [32m+[m[31m-[m
+ README.md                                          |  520 [32m+[m[31m-[m
+ backend/.env.example                               |  122 [32m+[m[31m-[m
+ backend/package-lock.json                          | 3890 [32m+++++++[m[31m---[m
+ backend/package.json                               |   39 [32m+[m[31m-[m
+ backend/prisma/schema.prisma                       | 2865 [32m++++++[m[31m--[m
+ backend/src/app.ts                                 |   46 [31m-[m
+ backend/src/config/env.ts                          |   22 [32m+[m[31m-[m
+ backend/src/domain/permissions.ts                  |   81 [31m-[m
+ backend/src/domain/types.ts                        |   93 [31m-[m
+ backend/src/lib/permissoes.ts                      |   60 [32m+[m[31m-[m
+ backend/src/middleware/auth.ts                     |   33 [31m-[m
+ backend/src/middleware/permissions.ts              |   24 [31m-[m
+ backend/src/middleware/rateLimiter.ts              |   48 [31m-[m
+ backend/src/middlewares/auth.ts                    |  166 [32m+[m[31m-[m
+ backend/src/modules/auth/auth.routes.ts            |  200 [32m+[m[31m-[m
+ backend/src/modules/compras/compras.routes.ts      |  260 [32m+[m[31m-[m
+ backend/src/modules/empresa/empresa.routes.ts      |  231 [32m+[m[31m-[m
+ .../modules/estoque/estoque-indicadores.service.ts |    4 [32m+[m[31m-[m
+ backend/src/modules/estoque/estoque.routes.ts      |  100 [32m+[m[31m-[m
+ backend/src/modules/estoque/estoque.service.ts     |    6 [32m+[m[31m-[m
+ backend/src/modules/gestao/gestao.routes.ts        |  559 [32m+[m[31m-[m
+ backend/src/modules/ia/ia.routes.ts                | 1053 [32m++[m[31m-[m
+ .../src/modules/importacao/importacao.routes.ts    |   84 [32m+[m[31m-[m
+ backend/src/modules/pdv/pdv.routes.ts              |  337 [32m+[m[31m-[m
+ backend/src/modules/produtos/produtos.routes.ts    |  409 [32m+[m[31m-[m
+ backend/src/modules/rh/rh.routes.ts                | 1929 [32m++++[m[31m-[m
+ backend/src/modules/vendas/vendas.routes.ts        |  831 [32m++[m[31m-[m
+ backend/src/repositories/interfaces.ts             |   44 [31m-[m
+ backend/src/repositories/memory/index.ts           |  176 [31m-[m
+ backend/src/repositories/postgres/index.ts         |  349 [31m-[m
+ backend/src/routes/admin.ts                        |   51 [31m-[m
+ backend/src/routes/auth.ts                         |   87 [31m-[m
+ backend/src/routes/me.ts                           |   40 [31m-[m
+ backend/src/routes/products.ts                     |   51 [31m-[m
+ backend/src/server.ts                              |  190 [32m+[m[31m-[m
+ backend/src/services/authService.ts                |  303 [31m-[m
+ backend/tests/authService.test.ts                  |  177 [31m-[m
+ backend/tests/permissions.test.ts                  |   71 [31m-[m
+ backend/tsconfig.json                              |   33 [32m+[m[31m-[m
+ database/schema.sql                                |  152 [31m-[m
+ docs/README-PARTE-3-VENDAS-PDV.md                  |   50 [32m+[m
+ docs/README-PARTE-6-IA.md                          |    7 [32m+[m[31m-[m
+ docs/README-PARTE-7-PRODUCAO.md                    |    2 [32m+[m[31m-[m
+ frontend/app/admin/page.tsx                        |   63 [31m-[m
+ frontend/app/alertas/page.tsx                      |   18 [31m-[m
+ frontend/app/auditoria/page.tsx                    |   11 [31m-[m
+ frontend/app/dashboard/page.tsx                    |  193 [31m-[m
+ frontend/app/dre/page.tsx                          |   24 [31m-[m
+ frontend/app/estoque/page.tsx                      |   32 [31m-[m
+ frontend/app/financeiro/page.tsx                   |   27 [31m-[m
+ frontend/app/globals.css                           | 1260 [32m+++[m[31m-[m
+ frontend/app/ia/page.tsx                           |   30 [31m-[m
+ frontend/app/importacao/page.tsx                   |   21 [31m-[m
+ frontend/app/intelligence/page.tsx                 |   17 [31m-[m
+ frontend/app/layout.tsx                            |   55 [32m+[m[31m-[m
+ frontend/app/page.tsx                              |   33 [31m-[m
+ frontend/app/pdv/page.tsx                          |   17 [31m-[m
+ frontend/app/pesquisa/page.tsx                     |   18 [31m-[m
+ frontend/app/ponto/page.tsx                        |   35 [31m-[m
+ frontend/app/products/page.tsx                     |   37 [31m-[m
+ frontend/app/rh/page.tsx                           |   28 [31m-[m
+ frontend/app/usuarios/page.tsx                     |    4 [31m-[m
+ frontend/app/vendas/page.tsx                       |   34 [31m-[m
+ frontend/components/AuthForm.tsx                   |  251 [31m-[m
+ frontend/lib/api.ts                                |  821 [32m++[m[31m-[m
+ frontend/next-env.d.ts                             |    4 [31m-[m
+ frontend/package-lock.json                         | 7531 [32m+++++++++++++++++[m[31m---[m
+ frontend/package.json                              |   28 [32m+[m[31m-[m
+ frontend/src/vite-env.d.ts                         |    1 [31m-[m
+ frontend/tailwind.config.js                        |   14 [32m+[m[31m-[m
+ frontend/tsconfig.json                             |   20 [32m+[m[31m-[m
+ 75 files changed, 20397 insertions(+), 6437 deletions(-)

@@ -1,0 +1,1235 @@
+'use client';
+
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  Boxes,
+  ChevronDown,
+  Clock3,
+  Filter,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Printer,
+  TrendingDown,
+  X,
+} from 'lucide-react';
+import api from '@/lib/api';
+import { formatBRL, formatDate } from '@/lib/format';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+
+
+type EstoqueItem = {
+  id: string;
+  filialId: string;
+  produtoId: string;
+  quantidade: number;
+  valorTotal: number | string;
+  lote?: string | null;
+  local?: string | null;
+  updatedAt?: string;
+  filial?: { id: string; nome: string };
+  produto?: {
+    id: string;
+    nome: string;
+    sku?: string | null;
+    codigoBarras?: string | null;
+    unidade?: string;
+    custo?: number | string;
+    estoqueMinimo?: number;
+    validade?: string | null;
+    categoria?: { id: string; nome: string } | null;
+    fornecedor?: { id: string; nome: string } | null;
+  };
+};
+
+type Movimento = {
+  id: string;
+  quantidade: number;
+  tipo: string;
+  motivo?: string | null;
+  documento?: string | null;
+  origem?: string;
+  createdAt: string;
+  produto?: { nome: string; sku?: string | null };
+  usuario?: { nome: string } | null;
+  filial?: { nome: string };
+};
+
+/** Linha da folha de inventario, como o servidor a devolve. */
+type ContagemSessao = {
+  id: string; estoqueId: string | null; produtoId: string; produtoNome: string;
+  unidade: string | null; local: string | null;
+  quantidadeSistema: number; quantidadeContada: number | null;
+  contadoPor: string | null; contadoEm: string | null;
+  observacoes: string | null;
+  divergencia: 'BATEU' | 'SOBROU' | 'FALTOU' | null;
+};
+type SessaoInventario = {
+  id: string; nome: string; status: 'ABERTA' | 'CONCLUIDA' | 'CANCELADA';
+  cegas: boolean; filial: { id: string; nome: string } | null;
+  criadoPor: string | null; criadoEm: string;
+  concluidoPor: string | null; concluidoEm: string | null;
+  observacoes: string | null;
+  contagens: ContagemSessao[];
+  resumo: { total: number; contados: number; pendentes: number; bateram: number; sobraram: number; faltaram: number; fechavel: boolean };
+};
+type ResumoSessao = {
+  id: string; nome: string; status: string; cegas: boolean;
+  filial: { id: string; nome: string } | null;
+  criadoPor: string | null; criadoEm: string; concluidoPor: string | null; concluidoEm: string | null;
+  resumo: SessaoInventario['resumo'];
+};
+type EstoqueResponse = {
+  estoques: EstoqueItem[];
+  // Filiais do cadastro da empresa, NAO derivadas das linhas de estoque:
+  // uma filial sem lancamento sumiria do filtro e do destino da transferencia.
+  filiais?: Array<{ id: string; nome: string }>;
+  indicadores?: {
+    // Vem do servidor porque o gate e' de permissao: sem `custos:visualizar`
+    // os campos de dinheiro NEM chegam no payload (custo/precoVenda/valorTotal
+    // saem zerados pelo select). O front nao pode recalcular nada a partir
+    // das linhas — era exatamente assim que o gate era contornado.
+    podeVerCusto?: boolean;
+    valorTotal?: number;
+    qtdBaixo: number;
+    qtdSemEstoque: number;
+    produtosParados?: Array<any>;
+    giro?: { porProduto?: Array<any> };
+  };
+};
+
+// Moeda e data seguem a preferência "Moeda" / "Formato data" da aba
+// Configurações. Antes fixavam pt-BR/BRL aqui, então escolher USD/EUR na
+// Configurações não mudava nada no Estoque.
+// Janela usada no KPI "Parados". Antes o titulo dizia "+90 dias", o chip ao lado
+// dizia "30 dias" e a requisicao mandava 90: tres numeros para a mesma medida.
+const DIAS_PARADO = 90;
+
+const money = (value: number | string | undefined) => formatBRL(value ?? 0);
+
+// IMPRESSÃO DA FOLHA DE INVENTÁRIO
+// ----------------------------------
+// POR QUE ISTO É DIFERENTE DO PADRÃO DE /vendas
+//
+// A regra antiga escondia a tela com `display: none` em `.estoque-noprint`.
+// Só que `.estoque-noprint` era a classe do INVOLUCRO DA PÁGINA e do <main> —
+// e a folha de inventário é renderizada DENTRO dos dois (via <FolhaInventario>).
+//
+// Isso não tem como funcionar: `display: none` num ancestral remove a
+// subárvore INTEIRA da árvore de renderização, e nenhum descendente consegue
+// trazê-la de volta. Nem `visibility: visible` — que é justamente o truque
+// usado nas linhas seguintes. A folha morria ali dentro e a impressão saía
+// em branco. Foi por isso que o `visibility` já estava no CSS e nunca fez
+// diferença: ele nunca chegou a ser avaliado.
+//
+// A ordem correta (a mesma de /vendas) é esconder a folha com `display: none`
+// e mantê-la FORA de qualquer ancestral escondido. Como aqui a folha é um
+// bloco normal da página, a solução é inverter a estratégia:
+//
+//   1. Só o "chrome" de tela — topo, KPIs e barra de abas — recebe
+//      `.estoque-print-hide` e some de verdade. Nenhum deles é ancestral da
+//      folha, então nada de ancestral morre.
+//   2. O invólucro e o <main> ficam no fluxo e apenas são invisíveis pelo
+//      `visibility: hidden` do `body *`, que os descendentes CONSEGUEM
+//      reverter. É essa a diferença que importa: `visibility` é herdável e
+//      sobrescrevível; `display` não é.
+//   3. Como o chrome do item 1 sai do fluxo, a folha já começa no topo do
+//      papel, sem `position: absolute` (que deslocaria a folha e quebraria a
+//      quebra de página).
+const ESTOQUE_PRINT = `
+@media print {
+  aside, header, .estoque-print-hide { display: none !important; }
+
+  /* A tela inteira some MAS CONTINUA OCUPANDO ESPAÇO. */
+  body * { visibility: hidden !important; }
+
+  /* A folha e tudo dentro dela volta a existir. */
+  .estoque-print-area, .estoque-print-area * { visibility: visible !important; }
+
+  .estoque-print-area {
+    position: static !important;
+    width: 100% !important; max-width: none !important;
+    height: auto !important; overflow: visible !important;
+    padding: 0 !important; margin: 0 !important;
+    border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+    background: #fff !important; color: #000 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* Fundo escuro e texto claro em qualquer elemento interno deixariam a
+     folha ilegível no papel: o "color: #000" do container não vence uma
+     classe utilitária do Tailwind no filho. Aqui a regra ganha. */
+  .estoque-print-area *, .estoque-print-area *::before, .estoque-print-area *::after {
+    background: transparent !important;
+    color: #000 !important;
+    border-color: #999 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* A coluna da contagem física é o que a pessoa preenche no depósito:
+     no papel precisa ser um campo em branco, com linha para escrever. */
+  .estoque-print-area input {
+    border: 0 !important;
+    border-bottom: 1px solid #666 !important;
+    background: transparent !important;
+    color: #000 !important;
+    -webkit-appearance: none; appearance: none;
+  }
+
+  /* Tabela: sem barra de rolagem horizontal e sem largura mínima, senão a
+     coluna de contagem cai fora da folha. E o cabeçalho se repete em cada
+     página — a folha de um depósito grande passa de uma página só. */
+  .estoque-print-area .overflow-x-auto { overflow: visible !important; }
+  .estoque-print-area table { min-width: 0 !important; width: 100% !important; font-size: 10pt; border-collapse: collapse; }
+  .estoque-print-area thead { display: table-header-group !important; }
+  .estoque-print-area tr { page-break-inside: avoid; break-inside: avoid; }
+  .estoque-print-area th, .estoque-print-area td { padding: 4pt 6pt !important; }
+
+  @page { margin: 12mm; }
+}
+`;
+
+const date = (value?: string | null) => formatDate(value);
+
+const relativeTime = (value: string) => {
+  const diff = Date.now() - new Date(value).getTime();
+  const mins = Math.max(1, Math.floor(diff / 60000));
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  return `há ${Math.floor(hours / 24)}d`;
+};
+
+function statusOf(item: EstoqueItem) {
+  const qtd = Number(item.quantidade || 0);
+  const min = Number(item.produto?.estoqueMinimo || 0);
+  if (qtd <= 0) return { label: 'RUPTURA', cls: 'red' };
+  if (qtd <= min) return { label: 'BAIXO', cls: 'amber' };
+  return { label: 'OK', cls: 'green' };
+}
+
+
+// O dropdown oferece sete tipos, e eles NAO querem a mesma coisa no campo
+// quantidade: AJUSTE e INVENTARIO gravam o SALDO FINAL (o numero digitado
+// substitui o atual), enquanto os outros somam ou subtraem.
+//
+// Antes o campo se chamava so "Quantidade" nos sete casos. Quem selecionasse
+// PERDA e digitasse 50 - querendo "deixar 50 no estoque" - gravaria uma
+// subtracao de 50 do saldo que ja existisse, e a perda real seria outra. O
+// backend esta certo (estoque.service.ts separa entradas de saidas); o que
+// faltava era a tela dizer qual numero ela quer.
+const TIPOS_ABSOLUTOS = new Set(['AJUSTE', 'INVENTARIO']);
+const tipoEhAbsoluto = (t: string) => TIPOS_ABSOLUTOS.has(t);
+
+/** Quanto o saldo ficaria depois do movimento - usado no antes/depois. */
+function saldoApos(tipo: string, atual: number, quantidade: number): number {
+  if (tipoEhAbsoluto(tipo)) return quantidade;
+  if (tipo === 'ENTRADA' || tipo === 'DEVOLUCAO') return atual + quantidade;
+  if (tipo === 'SAIDA' || tipo === 'PERDA' || tipo === 'AVARIA') return atual - quantidade;
+  return atual;
+}
+/**
+ * Prévia do saldo antes de gravar: mostra onde o número vai parar.
+ *
+ * Existe porque "Quantidade" e "Saldo final" produzem resultados bem diferentes
+ * a partir do mesmo campo. Sem a prévia, um PERDA de 50 sobre um saldo de 120
+ * parece correto na tela e só é percebido depois, quando o estoque caiu duas
+ * vezes. O saldo negativo é destacado em vermelho pelo mesmo motivo.
+ */
+function PreviaSaldo({ tipo, atual, quantidade, unidade }: { tipo: string; atual: number; quantidade: string; unidade: string }) {
+  const q = Number(quantidade);
+  if (quantidade === '' || !Number.isFinite(q)) return null;
+  const depois = saldoApos(tipo, atual, q);
+  const negativo = depois < 0;
+  return (
+    <div className={'rounded-[12px] border px-3 py-2 text-[11px] ' + (negativo ? 'bg-red-500/10 border-red-500/20 text-red-200' : 'bg-white/[0.03] border-white/[0.07] text-white/55')}>
+      Saldo: {atual} {unidade} <span className="text-white/30">→</span>{' '}
+      <strong className={negativo ? 'text-red-200' : 'text-white'}>{depois}</strong>
+      {negativo && ' — o saldo ficaria negativo. Confira a quantidade.'}
+    </div>
+  );
+}
+
+/**
+ * Folha de inventário — contagem com ou sem ver o saldo do sistema.
+ *
+ * PARA QUE SERVE A VISÃO CEGA
+ * ---------------------------
+ * Quem conta precisa dizer a verdade. Se a pessoa vê "120" no papel antes de
+ * abrir a caixa, ela conta o que o sistema espera e o inventário não descobre
+ * desvio nenhum — vira conferência, não contagem. Esconder o saldo obriga a
+ * contagem física a vir primeiro, e só depois a comparação aparece.
+ *
+ * A folha é por PRODUTO E FILIAL, que é a unidade que se caminha no depósito:
+ * o mesmo SKU em duas filiais são dois lugares físicos distintos.
+ */
+/**
+ * Folha de inventário — a contagem de uma sessão salva.
+ *
+ * A folha NÃO guarda a contagem no navegador: quem conta fecha a loja às 18h
+ * com metade do depósito contado e volta no dia seguinte. O que aparece aqui
+ * veio do servidor, e o saldo do sistema é o que estava gravado quando a
+ * sessão foi aberta — não o de agora.
+ *
+ * A VISÃO CEGA
+ * -------------
+ * Com a sessao em modo cego, a coluna de saldo e a de divergência saem. Quem
+ * conta precisa escrever a contagem antes de saber o número esperado, senão
+ * conta o que o sistema quer e o inventário não descobre desvio nenhum.
+ */
+function FolhaInventario({
+  sessao, filiais, nova, setNova, abrir, setAbrir, salvando, erro, aviso,
+  onAbrir, onContar, onFechar,
+}: {
+  sessao: SessaoInventario | null;
+  filiais: Array<[string, string]>;
+  nova: { nome: string; filialId: string; cegas: boolean };
+  setNova: (v: { nome: string; filialId: string; cegas: boolean }) => void;
+  abrir: boolean;
+  setAbrir: (v: boolean) => void;
+  salvando: boolean;
+  erro: string | null;
+  aviso: string | null;
+  onAbrir: () => void;
+  onContar: (alterados: Array<{ estoqueId: string; quantidade: number | null }>) => void;
+  onFechar: (status: 'CONCLUIDA' | 'CANCELADA') => void;
+}) {
+  const cegas = sessao?.cegas ?? true;
+  const r = sessao?.resumo;
+
+  // ── Sem sessão: a porta de entrada ───────────────────────────────────────
+  if (!sessao) {
+    return (
+      <div className="estoque-print-area rounded-[18px] border border-white/[0.06] bg-[#111113] p-5">
+        <h2 className="text-[15px] font-medium">Inventário</h2>
+        <p className="text-[11px] text-white/35 mt-1 mb-4">
+          Abra uma contagem para começar. O saldo do sistema é congelado no instante da abertura,
+          então a divergência compara o que estava lá com o que realmente existe.
+        </p>
+        {erro && <p className="mb-3 rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{erro}</p>}
+      {aviso && <p className="mb-3 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-200">{aviso}</p>}
+        {!abrir ? (
+          <button type="button" onClick={() => setAbrir(true)}
+            className="h-11 px-5 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white">
+            Abrir contagem
+          </button>
+        ) : (
+          <div className="space-y-3 max-w-xl">
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.12em] text-white/35 mb-1">Nome da contagem</label>
+              <input value={nova.nome} onChange={(e) => setNova({ ...nova, nome: e.target.value })}
+                placeholder="Inventário 3T — Centro" className="w-full h-11 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px] outline-none focus:border-violet-500/40" />
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-[0.12em] text-white/35 mb-1">Filial</label>
+              <select value={nova.filialId} onChange={(e) => setNova({ ...nova, filialId: e.target.value })}
+                className="w-full h-11 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px] outline-none focus:border-violet-500/40">
+                <option value="">Escolha a filial…</option>
+                {filiais.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-[12px] text-white/70">
+              <input type="checkbox" checked={nova.cegas} onChange={(e) => setNova({ ...nova, cegas: e.target.checked })}
+                className="w-4 h-4 accent-amber-400" />
+              Contagem às cegas (esconder o saldo do sistema)
+            </label>
+            <div className="flex gap-2">
+              <button type="button" onClick={onAbrir} disabled={salvando || !nova.nome.trim() || !nova.filialId}
+                className="h-11 px-5 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white disabled:opacity-40">
+                {salvando ? 'Abrindo…' : 'Abrir contagem'}
+              </button>
+              <button type="button" onClick={() => setAbrir(false)}
+                className="h-11 px-5 rounded-full border border-white/10 text-[13px] text-white/70">Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // REVELAÇÃO DA CONTAGEM ÀS CEGAS
+  // --------------------------------
+  // REVELAÇÃO DO SALDO DO SISTEMA
+  // ------------------------------
+  // A folha às cegas esconde o saldo do sistema ENQUANTO se conta: ver "120"
+  // antes de abrir a caixa faz a pessoa contar o que o sistema espera, e o
+  // inventário não descobre desvio nenhum.
+  //
+  // Mas a folha cega nunca revelava a divergência, NEM depois de concluída.
+  // O gestor fechava a contagem e ficava com um histórico que só guardava
+  // "12 de 40 contados": impossível saber o que sobrou ou faltou. O backend
+  // calcula `classificarDivergencia` corretamente nos dois casos — o dado
+  // chegava ao cliente e a tela é que não mostrava.
+  //
+  // Três caminhos, em ordem de precedência:
+  //
+  //   1. folha COM saldo  → sempre mostra;
+  //   2. folha CONCLUÍDA  → mostra (o contador já saiu do depósito);
+  //   3. folha ABERTA às cegas → esconde, SALVO se o gestor marcar o
+  //      checkbox "mostrar saldo".
+  //
+  // O item 3 é o que resolve "na impressão não aparece o que consta no
+  // estoque real". Quem imprime uma folha já terminou a contagem — o papel é
+  // o registro da conciliação, e uma folha sem o saldo do sistema não serve
+  // para conferir nada. Mas o padrão continua cego: a folha que vai PARA O
+  // DEPÓSITO não pode mostrar o número esperado. Quem imprime a folha cega
+  // para conciliação marca o checkbox — e a decisão fica explícita.
+  const [verSaldo, setVerSaldo] = useState(false);
+  const concluida = sessao?.status === 'CONCLUIDA';
+  const cegaAberta = cegas && !concluida;
+  const revelarSaldo = !cegas || concluida || verSaldo;
+  const mostrarDivergencia = !!r && r.contados > 0 && revelarSaldo;
+  return (
+    <div className="estoque-print-area rounded-[18px] border border-white/[0.06] bg-[#111113] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-[15px] font-medium flex items-center gap-2">
+            {sessao.nome}
+            {sessao.status === 'CONCLUIDA' && <span className="text-[10px] font-bold text-emerald-300">CONCLUÍDA</span>}
+            {sessao.status === 'CANCELADA' && <span className="text-[10px] font-bold text-white/40">CANCELADA</span>}
+          </h2>
+          <p className="text-[11px] text-white/35 mt-1">
+            {sessao.filial?.nome} • aberta por {sessao.criadoPor ?? '—'} em {new Date(sessao.criadoEm).toLocaleString('pt-BR')}
+            {sessao.concluidoEm ? <> • fechada por {sessao.concluidoPor ?? '—'} em {new Date(sessao.concluidoEm).toLocaleString('pt-BR')}</> : null}
+          </p>
+          <p className="text-[11.5px] text-white/55 mt-1">
+            {r?.contados} de {r?.total} contados
+            {r && r.pendentes > 0 && <span className="text-amber-300"> • {r.pendentes} pendente(s)</span>}
+            {mostrarDivergencia && r ? <> • <span className="text-emerald-300">{r.bateram} bateram</span>, <span className="text-amber-300">{r.sobraram} sobraram</span>, <span className="text-red-300">{r.faltaram} faltaram</span></> : null}
+          </p>
+        </div>
+        {/* Imprimir/Cancelar/Concluir e o checkbox são controles de tela: no
+            papel viram um campo com linha embaixo e botões inúteis. */}
+        <div className="estoque-print-hide flex flex-wrap items-center gap-2">
+          {cegaAberta && (
+            <label className="flex items-center gap-2 text-[11.5px] text-amber-200/90 cursor-pointer select-none">
+              <input type="checkbox" checked={verSaldo} onChange={(e) => setVerSaldo(e.target.checked)}
+                className="w-4 h-4 accent-amber-400" />
+              Mostrar o saldo do sistema na folha
+            </label>
+          )}
+          <button type="button" onClick={() => typeof window !== 'undefined' && window.print()}
+            className="h-11 px-4 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] text-[13px] font-medium text-white inline-flex items-center gap-2">
+            <Printer className="w-4 h-4" />Imprimir
+          </button>
+          {sessao.status === 'ABERTA' && (
+            <>
+              <button type="button" disabled={salvando} onClick={() => onFechar('CANCELADA')}
+                className="h-11 px-4 rounded-full border border-white/10 text-[13px] text-white/70 disabled:opacity-40">Cancelar contagem</button>
+              <button type="button" disabled={salvando || !r?.fechavel} onClick={() => onFechar('CONCLUIDA')}
+                title={r?.fechavel ? '' : 'Faltam itens sem contar'}
+                className="h-11 px-4 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[13px] text-emerald-200 disabled:opacity-40 disabled:border-white/10 disabled:bg-white/[0.03] disabled:text-white/30">
+                Concluir contagem
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {cegas && (
+        <p className="mb-4 rounded-[12px] border border-amber-500/20 bg-amber-500/10 p-3 text-[11px] text-amber-200">
+          {concluida
+            ? 'Contagem às cegas concluída: o saldo do sistema foi revelado para conferência. Ninguém pode mais lançar itens nesta folha.'
+            : revelarSaldo
+              ? 'O saldo do sistema está sendo exibido nesta folha. A contagem às cegas serve para o papel que vai ao depósito — imprima sem o saldo para manter a contagem independente.'
+              : 'Contagem às cegas: o saldo do sistema está escondido. Conte o que está no depósito — a comparação aparece quando a folha for concluída, ou antes disso marcando "Mostrar o saldo do sistema na folha".'}
+        </p>
+      )}
+      {erro && <p className="mb-3 rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{erro}</p>}
+      {aviso && <p className="mb-3 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 p-3 text-[11px] text-emerald-200">{aviso}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-left">
+          <thead>
+            <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-white/35">
+              <th className="px-4 py-3 w-10 font-medium">#</th>
+              <th className="px-4 py-3 font-medium">Produto</th>
+              <th className="px-4 py-3 font-medium">Local</th>
+              {revelarSaldo && <th className="px-4 py-3 font-medium">Saldo na abertura</th>}
+              <th className="px-4 py-3 font-medium">Contagem física</th>
+              {mostrarDivergencia && <th className="px-4 py-3 font-medium">Divergência</th>}
+              {mostrarDivergencia && <th className="px-4 py-3 font-medium">Contado por</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {sessao.contagens.map((c, idx) => {
+              const editavel = sessao.status === 'ABERTA' && !salvando;
+              return (
+                <tr key={c.id} className="border-b border-white/[0.05]">
+                  <td className="px-4 py-2.5 text-[11px] text-white/30 font-mono">{idx + 1}</td>
+                  <td className="px-4 py-2.5 text-[12px] font-medium">{c.produtoNome}</td>
+                  <td className="px-4 py-2.5 text-[11px] text-white/60">{c.local || '—'}</td>
+                  {revelarSaldo && <td className="px-4 py-2.5 font-mono text-[12px]">{c.quantidadeSistema}</td>}
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number" min="0" step="0.001"
+                      defaultValue={c.quantidadeContada === null ? '' : String(c.quantidadeContada)}
+                      disabled={!editavel}
+                      onBlur={(e) => {
+                        const bruto = e.target.value;
+                        const n = bruto === '' ? null : Number(bruto);
+                        if (n === c.quantidadeContada) return;
+                        if (c.estoqueId) onContar([{ estoqueId: c.estoqueId, quantidade: n }]);
+                      }}
+                      className="w-24 h-9 rounded-[8px] bg-[#08080a] border border-white/[0.07] px-2 text-[12px] font-mono outline-none focus:border-violet-500/40 disabled:opacity-50"
+                      aria-label={'Contagem física de ' + c.produtoNome}
+                    />
+                    <span className="ml-2 text-[10px] text-white/30">{c.unidade || 'UN'}</span>
+                  </td>
+                  {mostrarDivergencia && (
+                    <td className="px-4 py-2.5 font-mono text-[12px]">
+                      {c.divergencia === null ? <span className="text-white/25">—</span>
+                        : c.divergencia === 'BATEU' ? <span className="text-emerald-300">0</span>
+                        : c.divergencia === 'SOBROU' ? <span className="text-amber-300">+{c.quantidadeContada! - c.quantidadeSistema}</span>
+                        : <span className="text-red-300">{c.quantidadeContada! - c.quantidadeSistema}</span>}
+                    </td>
+                  )}
+                  {mostrarDivergencia && (
+                    <td className="px-4 py-2.5 text-[10.5px] text-white/45">
+                      {c.contadoPor ?? '—'}{c.contadoEm ? ' • ' + new Date(c.contadoEm).toLocaleString('pt-BR') : ''}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!sessao.contagens.length && (
+        <div className="p-10 text-center text-[13px] text-white/35">Esta filial não tinha item em estoque na hora em que a contagem foi aberta.</div>
+      )}
+      <p className="mt-4 text-[10.5px] text-white/30">
+        A contagem é salva: pode fechar o navegador e voltar. O saldo exibido é o que estava
+        gravado quando a folha abriu. Concluir NÃO ajusta o estoque — registrar a diferença é um
+        movimento de inventário, feito pelo botão de ações da aba Visão Geral.
+      </p>
+    </div>
+  );
+}
+
+export default function EstoquePage() {
+
+  const [tab, setTab] = useState<'overview' | 'mov' | 'inventory' | 'transfer' | 'abc'>('overview');
+  const [data, setData] = useState<EstoqueResponse | null>(null);
+  const [movs, setMovs] = useState<Movimento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filial, setFilial] = useState('ALL');
+  const [categoria, setCategoria] = useState('ALL');
+  const [status, setStatus] = useState('ALL');
+  const [selected, setSelected] = useState<EstoqueItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  // Erro separado por formulário. Com um estado único, uma falha do ajuste
+  // continuaria aparecendo embaixo do formulário de transferência — o usuário
+  // leria "estoque insuficiente" no lugar errado, achando que a transferência
+  // tinha sido recusada quando na verdade nem foi tentada.
+  const [ajusteError, setAjusteError] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [adjust, setAdjust] = useState({ tipo: 'ENTRADA', quantidade: '1', motivo: 'Correção de estoque', documento: '' });
+  const [transfer, setTransfer] = useState({ destino: '', quantidade: '1', motivo: '' });
+
+  // FILTROS DA ABA TRANSFERÊNCIAS
+  // ------------------------------
+  // Estado próprio, separado do filtro `filial` da Visão Geral. Não é
+  // descuido: os dois filtros significam coisas diferentes. Na Visão Geral,
+  // `filial` é "mostrar os itens desta filial". Aqui a transferência é um
+  // movimento entre DOIS lugares, então a tela precisa de origem E destino —
+  // um select só não dá conta do caso.
+  //
+  // Além disso, os filtros da Visão Geral vivem dentro de `tab === 'overview'`
+  // (o <select> de filial é renderizado ali e só ali), então antes não havia
+  // como restringir a transferência a uma filial de origem: a aba mostrava
+  // as linhas de todas as filiais misturadas, sem nenhuma forma de separar.
+  const [tOrigem, setTOigem] = useState('ALL');
+  const [tDestino, setTDestino] = useState('ALL');
+  const [tBusca, setTBusca] = useState('');
+
+  /**
+   * Trocar a origem invalida um destino que acabou de virar a própria origem.
+   *
+   * Sem isso o usuário escolhe "Matriz" como destino, depois troca a origem
+   * para "Matriz" — e a tela fica mostrando "Matriz → Matriz", que o backend
+   * recusa. Pior: o select do drawer esconde a filial de origem das opções,
+   * então um destino já selecionado sumiria da lista e o `<select>` cairia
+   * de volta no placeholder sem explicação.
+   */
+  function trocarOrigem(nova: string): void {
+    setTOigem(nova);
+    if (nova !== 'ALL' && tDestino === nova) setTDestino('ALL');
+  }
+
+  /**
+   * Abre a transferência já com o destino escolhido na aba.
+   *
+   * O destino escolhido aqui é pré-preenchido no drawer — mas nunca quando
+   * ele coincide com a origem do item que está sendo aberto, pelo mesmo
+   * motivo do comentário acima: o `<select>` do drawer não lista a filial de
+   * origem, então receber um valor que não está entre as opções deixaria o
+   * campo exibindo o placeholder com `transfer.destino` ainda preenchido, e o
+   * botão "Transferir estoque" apareceria habilitado sem destino real.
+   */
+  const abrirTransferencia = useCallback((item: EstoqueItem) => {
+    setSelected(item);
+    setAjusteError(null);
+    setTransferError(null);
+    setTransfer((v) => ({
+      ...v,
+      destino: tDestino !== 'ALL' && tDestino !== item.filialId ? tDestino : '',
+      quantidade: '1',
+      motivo: '',
+    }));
+  }, [tDestino]);
+
+  // `nomeFilial` é declarado logo abaixo de `filiais` (que vem do useMemo),
+  // porque depende dele.
+  // Sessao de inventario. A folha nao vive mais no estado da tela: quem conta
+  // fecha o navegador no meio do deposito e volta amanha, e a contagem tem de
+  // estar la. O saldo do sistema vem CONGELADO do servidor, no instante em que
+  // a sessao foi aberta.
+  const [sessao, setSessao] = useState<SessaoInventario | null>(null);
+  const [historico, setHistorico] = useState<ResumoSessao[]>([]);
+  const [nova, setNova] = useState({ nome: '', filialId: '', cegas: true });
+  const [abrir, setAbrir] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erroInv, setErroInv] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  // Carrega a folha aberta (se houver) e o historico.
+  const carregarInventario = useCallback(async () => {
+    try {
+      const r = await api.get<any>("/estoque/inventarios");
+      const d = (r as any).data ?? r;
+      const lista: ResumoSessao[] = d.sessoes ?? [];
+      setHistorico(lista);
+      // Retoma a primeira folha ABERTA: e ela que o gestor deve continuar.
+      const aberta = lista.find((s) => s.status === "ABERTA");
+      if (aberta) {
+        const detalhe = await api.get<any>("/estoque/inventarios/" + aberta.id);
+        setSessao(((detalhe as any).data ?? detalhe)?.sessao ?? null);
+        setNova((n) => ({ ...n, cegas: aberta.cegas }));
+      } else {
+        setSessao(null);
+      }
+    } catch (e: any) {
+      setErroInv(e?.message ?? "Não foi possível ler as contagens.");
+    }
+  }, []);
+
+  useEffect(() => { void carregarInventario(); }, [carregarInventario]);
+
+  const abrirSessao = useCallback(async () => {
+    if (!nova.nome.trim() || !nova.filialId) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.post<any>("/estoque/inventarios", {
+        nome: nova.nome.trim(), filialId: nova.filialId, cegas: nova.cegas,
+      });
+      const s = ((r as any).data ?? r)?.sessao;
+      setSessao(s);
+      setAbrir(false);
+      setNova({ nome: "", filialId: "", cegas: true });
+      await carregarInventario();
+    } catch (e: any) {
+      setErroInv(e?.message ?? "Não foi possível abrir a contagem.");
+    } finally { setSalvando(false); }
+  }, [nova, carregarInventario]);
+
+  /** Grava as contagens alteradas e recarrega a folha. */
+  const gravarContagem = useCallback(async (contagensAlteradas: Array<{ estoqueId: string; quantidade: number | null }>) => {
+    if (!sessao) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.put<any>("/estoque/inventarios/" + sessao.id + "/contagens", { contagens: contagensAlteradas });
+      setSessao(((r as any).data ?? r)?.sessao ?? null);
+    } catch (e: any) {
+      setErroInv(e?.message ?? "Não foi possível salvar a contagem.");
+    } finally { setSalvando(false); }
+  }, [sessao]);
+
+  const fecharSessao = useCallback(async (status: "CONCLUIDA" | "CANCELADA") => {
+    if (!sessao) return;
+    if (status === "CANCELADA" && typeof window !== "undefined" && !window.confirm(
+      "Cancelar a contagem?\n\nA folha continua no histórico, mas não aceita mais lançamentos.",
+    )) return;
+    setSalvando(true); setErroInv(null);
+    try {
+      const r = await api.post<any>("/estoque/inventarios/" + sessao.id + "/fechar", { status });
+      setSessao(((r as any).data ?? r)?.sessao ?? null);
+      setAviso(status === "CONCLUIDA" ? "Contagem concluída. O resultado fica no histórico — corrigir o saldo é um movimento de inventário." : "Contagem cancelada.");
+      await carregarInventario();
+    } catch (e: any) {
+      setErroInv(e?.message ?? "Não foi possível fechar a contagem.");
+    } finally { setSalvando(false); }
+  }, [sessao, carregarInventario]);
+
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get<EstoqueResponse>('/estoque', { params: { diasParado: DIAS_PARADO, diasGiro: 30 } });
+      setData(response.data);
+      const mov = await api.get<{ movimentacoes: Movimento[] }>('/estoque/movimentacoes', { params: { take: 100 } });
+      setMovs(mov.data.movimentacoes || []);
+    } catch (e: any) {
+      setError(e?.message || 'Não foi possível carregar o estoque.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const items = data?.estoques || [];
+  // Filiais do cadastro, com as do estoque como reserva: uma filial recem-criada
+  // precisa aparecer antes do primeiro lancamento, senao nao ha como transferir
+  // estoque para ela.
+  const filiais = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const f of data?.filiais ?? []) mapa.set(f.id, f.nome);
+    for (const i of items) if (!mapa.has(i.filialId)) mapa.set(i.filialId, i.filial?.nome || i.filialId);
+    return Array.from(mapa.entries());
+  }, [data?.filiais, items]);
+
+  /** Nome legível de uma filial, com queda para o id quando ela não está no cadastro. */
+  const nomeFilial = useCallback((id: string): string => filiais.find(([fid]) => fid === id)?.[1] ?? id, [filiais]);
+
+  const categorias = useMemo(() => Array.from(new Set(items.map(i => i.produto?.categoria?.nome).filter(Boolean) as string[])).sort(), [items]);
+
+  const filtered = useMemo(() => items.filter(item => {
+    const text = query.trim().toLowerCase();
+    const matchesText = !text || [item.produto?.nome, item.produto?.sku, item.produto?.codigoBarras, item.lote, item.local].some(v => String(v || '').toLowerCase().includes(text));
+    const matchesFilial = filial === 'ALL' || item.filialId === filial;
+    const matchesCategoria = categoria === 'ALL' || item.produto?.categoria?.nome === categoria;
+    const matchesStatus = status === 'ALL' || statusOf(item).label === status;
+    return matchesText && matchesFilial && matchesCategoria && matchesStatus;
+  }), [items, query, filial, categoria, status]);
+
+  // O gate de custos é do servidor. O total NÃO pode ser recalculado aqui a
+  // partir das linhas: antes essa era a linha `?? items.reduce(...)`, que
+  // refazia a mesma conta do backend e exibia o valor para quem não tem
+  // `custos:visualizar`. Sem permissão, o KPI mostra "—" em vez de R$ 0,00,
+  // porque zero aqui significaria "vale zero", não "não pode ver".
+  const podeVerCusto = data?.indicadores?.podeVerCusto ?? false;
+  const totalValue = data?.indicadores?.valorTotal ?? 0;
+  // Ruptura e "abaixo do mínimo" saem do SERVIDOR, nao de um segundo calculo
+  // no cliente. A tela recalculava os dois com `items.filter(...)` enquanto o
+  // backend já mandava `qtdBaixo`/`qtdSemEstoque`: duas fontes de verdade
+  // para o mesmo numero. Se a regra mudar no servidor (ex.: tratar
+  // estoqueMinimo = 0 como "sem minimo"), a tela continuaria mentindo.
+  const ruptures = data?.indicadores?.qtdSemEstoque ?? 0;
+  const low = data?.indicadores?.qtdBaixo ?? 0;
+  const stopped = data?.indicadores?.produtosParados?.length ?? 0;
+  // Giro médio: só entra no cálculo quem tem giro REALMENTE calculado.
+  //
+  // O `filter(Boolean)` antigo também removia os `giro: 0` (produto que não
+  // vendeu no período é o de maior valor parado), então a média era enviesada
+  // para baixo — e o flag `aproximado` do backend, que existe justamente para
+  // separar giro real de aproximação, era ignorado aqui.
+  const giro = (() => {
+    const itens = data?.indicadores?.giro?.porProduto || [];
+    const reais = itens.filter((g: any) => !g.aproximado && g.giro != null && Number(g.giro) > 0).map((g: any) => Number(g.giro));
+    if (!reais.length) return '—';
+    return `${(reais.reduce((a: number, b: number) => a + b, 0) / reais.length).toFixed(1)}x`;
+  })();
+
+  /**
+   * Curva ABC por PRODUTO, nao por linha de estoque.
+   *
+   * items sao linhas de estoque (produto x filial). Um produto com saldo em
+   * tres filiais aparecia tres vezes, era contado tres vezes e o valor total
+   * da curva somava o mesmo dinheiro tres vezes - enquanto o cartao dizia
+   * "N SKUs". Aqui as linhas sao agrupadas por produto antes de qualquer conta.
+   */
+  const abc = useMemo(() => {
+    const porProduto = new Map<string, { produto: EstoqueItem['produto']; valor: number }>();
+    for (const i of items) {
+      const valor = Number(i.valorTotal || 0);
+      const anterior = porProduto.get(i.produtoId);
+      if (anterior) anterior.valor += valor;
+      else porProduto.set(i.produtoId, { produto: i.produto, valor });
+    }
+    const groups = Array.from(porProduto.entries()).map(([id, g]) => ({ id, produto: g.produto, valor: g.valor }));
+    groups.sort((a, b) => b.valor - a.valor);
+    const total = groups.reduce((s, g) => s + g.valor, 0) || 1;
+    let accumulated = 0;
+    return groups.map(g => {
+      accumulated += g.valor;
+      return { ...g, classe: accumulated / total <= 0.8 ? 'A' : accumulated / total <= 0.95 ? 'B' : 'C' };
+    });
+  }, [items]);
+
+  async function submitAdjustment() {
+    if (!selected) return;
+    // Quantidade tem de ser um inteiro de verdade. Antes o código fazia
+    // `Math.max(1, Number(...))`, e digitar 0 ou -5 registrava 1 sem aviso: o
+    // gestor acreditava ter lançado a quantidade que digitou.
+    const qtd = Number(adjust.quantidade);
+    if (!Number.isInteger(qtd) || qtd < 0) {
+      setAjusteError('Informe um número inteiro maior ou igual a zero.');
+      return;
+    }
+    setSaving(true); setAjusteError(null);
+    try {
+      await api.post('/estoque/movimentar', {
+        produtoId: selected.produtoId,
+        filialId: selected.filialId,
+        quantidade: qtd,
+        tipo: adjust.tipo,
+        motivo: adjust.motivo || undefined,
+        documento: adjust.documento || undefined,
+        origem: 'MANUAL',
+      });
+      setSelected(null);
+      await load();
+    } catch (e: any) {
+      setAjusteError(e?.message || 'Não foi possível registrar o movimento.');
+    } finally { setSaving(false); }
+  }
+
+  async function submitTransfer() {
+    if (!selected || !transfer.destino) return;
+    const qtd = Number(transfer.quantidade);
+    if (!Number.isInteger(qtd) || qtd < 1) {
+      setTransferError('Informe um número inteiro maior que zero.');
+      return;
+    }
+    if (qtd > Number(selected.quantidade || 0)) {
+      setTransferError(`A filial de origem tem ${selected.quantidade} ${selected.produto?.unidade || 'UN'}. Não dá para transferir ${qtd}.`);
+      return;
+    }
+    setSaving(true); setTransferError(null);
+    try {
+      await api.post('/estoque/transferir', {
+        produtoId: selected.produtoId,
+        filialOrigemId: selected.filialId,
+        filialDestinoId: transfer.destino,
+        quantidade: qtd,
+        motivo: transfer.motivo || undefined,
+        origem: 'MANUAL',
+      });
+      setSelected(null);
+      await load();
+    } catch (e: any) {
+      setTransferError(e?.message || 'Não foi possível transferir o estoque.');
+    } finally { setSaving(false); }
+  }
+
+  const tabs = [
+    ['overview', 'Visão Geral'], ['mov', 'Movimentações'], ['inventory', 'Inventário'], ['transfer', 'Transferências'], ['abc', 'Curva ABC'],
+  ] as const;
+
+  return (
+    <>
+      <style>{ESTOQUE_PRINT}</style>
+      {/* Sem `display: none` na impressão: este invólucro é ANCESTRAL da folha
+          de inventário, e esconder um ancestral apaga a folha junto. */}
+      <div className="min-h-full bg-[#08080a] text-white -m-6 lg:-m-6">
+      <div className="estoque-print-hide border-b border-white/[0.06] px-5 sm:px-8 py-4 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3 mr-auto">
+          <div className="w-10 h-10 rounded-[12px] bg-[#8b5cf6] grid place-items-center font-bold">N</div>
+          <div><div className="text-[18px] font-bold">NEXUS OS <span className="text-white/25 font-normal">/ Estoque</span></div><div className="text-[10px] text-white/30 uppercase tracking-[0.16em]">Controle de estoque</div></div>
+        </div>
+        {/* O selo dizia "PDV baixa automatica", mas pdv.routes.ts nao importa
+          estoque nem chama aplicarMovimento em lugar nenhum: quem baixa e o
+          modulo de Vendas. O rotulo apontava para o sistema errado. */}
+        <span className="hidden xl:inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Venda baixa o estoque</span>
+        <span className="hidden xl:inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-[11px] text-violet-300"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />NF-e entrada automática</span>
+        <Link href="/compras" className="h-10 px-4 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] grid place-items-center text-[13px]">Ir para Compras →</Link>
+        <Link href="/pdv" className="h-10 px-4 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] grid place-items-center text-[13px] font-medium">Ir para PDV</Link>
+      </div>
+
+      <main className="px-5 sm:px-8 py-6 max-w-[1700px] mx-auto">
+        <div className="estoque-print-hide grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+          {/* Sem chip de variacao: o endpoint nao devolve historico de valor,
+          entao "+2,4%" seria um numero inventado que nao se move com os dados. */}
+          <Kpi title="Valor Total em Estoque" value={podeVerCusto ? money(totalValue) : '—'} icon={<Boxes />} trend={podeVerCusto ? String(items.length) + ' SKUs' : 'sem permissão de custos'} />
+          <Kpi title="Produtos em Ruptura" value={String(ruptures)} icon={<AlertTriangle />} trend={`${ruptures ? ruptures : 0} agora`} tone="red" />
+          <Kpi title="Abaixo do Mínimo" value={String(low)} icon={<TrendingDown />} trend="repor" tone="amber" />
+          <Kpi title={"Parados +" + DIAS_PARADO + " dias"} value={String(stopped)} icon={<Clock3 />} trend={DIAS_PARADO + " dias"} tone="amber" />
+          <Kpi title="Giro Médio" value={giro} icon={<RefreshCw />} trend="30 dias" />
+        </div>
+
+        <div className="estoque-print-hide flex items-center gap-1 p-1.5 rounded-[18px] bg-[#111113] border border-white/[0.06] w-fit max-w-full overflow-x-auto mb-6">
+          {tabs.map(([key, label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`h-9 px-5 rounded-full text-[13px] whitespace-nowrap transition ${tab === key ? 'bg-white text-black font-medium' : 'text-white/55 hover:text-white hover:bg-white/[0.05]'}`}>{label}</button>)}
+        </div>
+
+        {error && <div className="estoque-print-hide mb-4 rounded-[14px] border border-red-500/20 bg-red-500/10 p-4 text-[12px] text-red-200">{error}</div>}
+        {loading ? <div className="estoque-print-hide rounded-[18px] border border-white/[0.06] bg-[#111113] p-10 text-center text-[13px] text-white/40">Carregando estoque real…</div> : (
+          <>
+            {tab === 'overview' && <>
+              <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-4 mb-5">
+                <div className="flex flex-col xl:flex-row gap-3">
+                  <div className="relative flex-1"><Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por nome, SKU ou EAN…" className="w-full h-11 rounded-full bg-[#08080a] border border-white/[0.06] pl-11 pr-4 text-[13px] outline-none focus:border-violet-500/40" /></div>
+                  <Select value={filial} onChange={setFilial} options={[["ALL", "Todas filiais"], ...filiais.map(([id, name]) => [id, name] as [string, string])]} />
+                  <Select value={categoria} onChange={setCategoria} options={[["ALL", "Categoria"], ...categorias.map(c => [c, c] as [string, string])]} />
+                  <Select value={status} onChange={setStatus} options={[["ALL", "Todos"], ["OK", "OK"], ["BAIXO", "Baixo"], ["RUPTURA", "Ruptura"]]} />
+                  <div className="hidden 2xl:flex items-center gap-2 px-3 text-[11px] text-white/35"><Filter className="w-3.5 h-3.5" />{filtered.length} SKUs{podeVerCusto ? ' • Valorizado a custo atual' : ''}</div>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1120px] text-left">
+                    <thead><tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-white/35"><Th>{traduzir('produto', "Produto")}</Th><Th>SKU / EAN</Th><Th>Filial / Local</Th><Th>Saldo Atual</Th><Th>Mín{podeVerCusto ? ' • Custo' : ''}</Th>{podeVerCusto && <Th>Valor Total</Th>}<Th>{traduzir('status', "Status")}</Th><Th>Validade / Lote</Th><Th>{traduzir('acoes', "Ações")}</Th></tr></thead>
+                    <tbody>{filtered.map(item => {
+                      const s = statusOf(item); const qty = Number(item.quantidade); const min = Number(item.produto?.estoqueMinimo || 0); const max = Math.max(min, qty, 1); const pct = Math.min(100, Math.max(3, qty / max * 100));
+                      return <tr key={item.id} className="border-b border-white/[0.05] hover:bg-white/[0.025] transition-colors">
+                        <td className="px-5 py-4"><div className="text-[14px] font-semibold">{item.produto?.nome || 'Produto'}</div><div className="text-[11px] text-white/35 mt-1">{item.produto?.categoria?.nome || 'Sem categoria'} • {item.produto?.fornecedor?.nome || 'Sem fornecedor'}</div></td>
+                        <td className="px-5 py-4"><div className="font-mono text-[12px] text-white/70">{item.produto?.sku || '—'}</div><div className="font-mono text-[11px] text-white/35 mt-1">{item.produto?.codigoBarras || '—'}</div></td>
+                        <td className="px-5 py-4"><div className="text-[12px] font-medium">{item.filial?.nome || '—'}</div><div className="font-mono text-[11px] text-white/35 mt-1">{item.local || 'Sem local'}</div></td>
+                        <td className="px-5 py-4 min-w-[150px]"><div className="font-mono text-[15px] font-bold">{qty} <span className="text-[11px] font-normal text-white/35">{item.produto?.unidade || 'UN'} /{min}</span></div><div className="h-2 bg-white/[0.06] rounded-full overflow-hidden mt-2"><div className={`h-full rounded-full ${s.cls === 'red' ? 'bg-red-500' : s.cls === 'amber' ? 'bg-amber-400' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} /></div></td>
+                        <td className="px-5 py-4"><div className="text-[12px]">Mín {min}</div>{podeVerCusto && <div className="font-mono text-[11px] text-white/35 mt-1">{money(Number(item.produto?.custo || 0))}</div>}</td>
+                        {podeVerCusto && <td className="px-5 py-4 font-mono text-[13px] font-semibold">{money(Number(item.valorTotal || 0))}</td>}
+                        <td className="px-5 py-4"><span className={`inline-flex px-2.5 py-1 rounded-full border text-[10px] font-bold ${s.cls === 'red' ? 'bg-red-500/10 text-red-300 border-red-500/20' : s.cls === 'amber' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'}`}>{s.label}</span></td>
+                        <td className="px-5 py-4"><div className={`text-[11px] font-medium ${item.produto?.validade && new Date(item.produto.validade) < new Date() ? 'text-red-300' : 'text-white/70'}`}>{item.produto?.validade ? (new Date(item.produto.validade) < new Date() ? 'VENCIDO' : date(item.produto.validade)) : 'Sem validade'}</div><div className="font-mono text-[11px] text-white/35 mt-1">{item.lote || 'Sem lote'}</div></td>
+                        <td className="px-5 py-4"><button type="button" onClick={() => { setSelected(item); setAjusteError(null); setTransferError(null); }} className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/[0.12] grid place-items-center" aria-label={`Ações para ${item.produto?.nome}`}><MoreHorizontal className="w-4 h-4" /></button></td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+                {!filtered.length && <div className="p-10 text-center text-[13px] text-white/35">Nenhum produto encontrado com os filtros atuais.</div>}
+              </div>
+            </>}
+
+            {tab === 'mov' && <MovementTable movs={movs} />}
+
+                        {tab === 'inventory' && (
+              <FolhaInventario
+                sessao={sessao}
+                filiais={filiais}
+                nova={nova}
+                setNova={setNova}
+                abrir={abrir}
+                setAbrir={setAbrir}
+                salvando={salvando}
+                erro={erroInv}
+                aviso={aviso}
+                onAbrir={abrirSessao}
+                onContar={gravarContagem}
+                onFechar={fecharSessao}
+              />            )}
+
+            {/* Histórico: quem contou, quando, e se a folha foi cega. A aba
+                vira o registro do que a empresa já inventariou — sem ele,
+                "inventário" é só um número que ninguém consegue reconstituir. */}
+            {historico.length > 0 && !sessao && (
+              <div className="mt-4 rounded-[18px] border border-white/[0.06] bg-[#111113] p-5">
+                <h3 className="text-[14px] font-medium mb-3">Histórico de inventários</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-[11.5px]">
+                    <thead className="text-[10px] uppercase tracking-wide text-[#6a6a8a]">
+                      <tr>
+                        <th className="py-2 pr-3 font-bold">Contagem</th>
+                        <th className="py-2 pr-3 font-bold">Filial</th>
+                        <th className="py-2 pr-3 font-bold">Tipo</th>
+                        <th className="py-2 pr-3 font-bold">Aberta por</th>
+                        <th className="py-2 pr-3 font-bold">Fechada por</th>
+                        <th className="py-2 pr-3 font-bold">Resultado</th>
+                        <th className="py-2 font-bold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-white/80">
+                      {historico.map((h) => (
+                        <tr key={h.id} className="border-t border-[#23233f]">
+                          <td className="py-2 pr-3">{h.nome}</td>
+                          <td className="py-2 pr-3">{h.filial?.nome ?? "—"}</td>
+                          <td className="py-2 pr-3">
+                            <span className={h.cegas ? "text-amber-300" : "text-white/45"}>{h.cegas ? "Às cegas" : "Com saldo"}</span>
+                          </td>
+                          <td className="py-2 pr-3 text-white/60">
+                            {h.criadoPor ?? "—"}{h.criadoEm ? " • " + new Date(h.criadoEm).toLocaleString("pt-BR") : ""}
+                          </td>
+                          <td className="py-2 pr-3 text-white/60">
+                            {h.concluidoPor ?? "—"}{h.concluidoEm ? " • " + new Date(h.concluidoEm).toLocaleString("pt-BR") : ""}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-[11px]">
+                            {h.resumo.contados}/{h.resumo.total}
+                            {h.resumo.faltaram > 0 && <span className="text-red-300"> • {h.resumo.faltaram} faltando</span>}
+                          </td>
+                          <td className="py-2">
+                            <span className={h.status === "CONCLUIDA" ? "text-emerald-300" : h.status === "CANCELADA" ? "text-white/40" : "text-amber-300"}>
+                              {h.status === "CONCLUIDA" ? "Concluída" : h.status === "CANCELADA" ? "Cancelada" : "Aberta"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {tab === 'transfer' && (
+              <TransferView
+                items={items}
+                filiais={filiais}
+                origem={tOrigem}
+                destino={tDestino}
+                busca={tBusca}
+                nomeFilial={nomeFilial}
+                onOrigem={trocarOrigem}
+                onDestino={setTDestino}
+                onBusca={setTBusca}
+                onSelect={abrirTransferencia}
+              />
+            )}
+
+            {tab === 'abc' && (!podeVerCusto ? (
+              // A curva ABC é CLASSIFICAÇÃO POR VALOR: sem `custos:visualizar`
+              // ela não tem o que classificar. Mostrar as classes com valor
+              // zerado seria pior que esconder — pareceria que a empresa não
+              // tem nenhum valor em estoque.
+              <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-10 text-center text-[13px] text-white/35">
+                A curva ABC é calculada sobre o valor em estoque. Requer a permissão de custos para ser exibida.
+              </div>
+            ) : <div className="grid lg:grid-cols-[0.9fr_1.1fr] gap-4"><div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-5"><h3 className="font-medium">Curva ABC • Valor em estoque</h3><p className="text-[11px] text-white/35 mt-1 mb-5">Classificação calculada sobre o valor atual de cada SKU. Não é faturamento de vendas.</p><div className="space-y-2">{abc.slice(0, 12).map(i => <div key={i.id} className="flex items-center gap-3"><span className={`w-7 h-7 rounded-full grid place-items-center text-[11px] font-bold ${i.classe === 'A' ? 'bg-violet-500/15 text-violet-300' : i.classe === 'B' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/10 text-white/60'}`}>{i.classe}</span><div className="min-w-0 flex-1"><div className="text-[12px] truncate">{i.produto?.nome}</div><div className="h-1.5 bg-white/[0.06] rounded-full mt-1 overflow-hidden"><div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, Number(i.valor) / Math.max(...abc.map(x => Number(x.valor)), 1) * 100)}%` }} /></div></div><span className="font-mono text-[11px] text-white/55">{money(i.valor)}</span></div>)}</div></div><div className="space-y-3">{(['A','B','C'] as const).map(cls => { const count = abc.filter(i => i.classe === cls).length; const value = abc.filter(i => i.classe === cls).reduce((s,i) => s + Number(i.valor), 0); return <div key={cls} className="rounded-[16px] border border-white/[0.06] bg-[#111113] p-4 flex items-center justify-between"><div><div className="text-[13px] font-medium">Classe {cls}</div><div className="text-[11px] text-white/35 mt-1">{count} SKUs classificados</div></div><div className="font-mono text-[13px]">{money(value)}</div></div>; })}</div></div>)}
+          </>
+        )}
+      </main>
+
+      {selected && <div className="fixed inset-0 z-[80] flex justify-end"><button className="absolute inset-0 bg-black/65 backdrop-blur-sm cursor-default" aria-label={traduzir('fechar', "Fechar")} onClick={() => setSelected(null)} /><aside className="relative w-full max-w-[430px] h-full bg-[#111113] border-l border-white/[0.08] p-6 overflow-auto shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-[16px] font-semibold">Ações do estoque</h2><p className="text-[12px] text-white/35 mt-1">{selected.produto?.nome} • {selected.filial?.nome}</p></div><button onClick={() => setSelected(null)} className="w-9 h-9 rounded-full bg-white/[0.06] grid place-items-center"><X className="w-4 h-4" /></button></div>
+        <div className="mt-6 rounded-[16px] bg-[#08080a] border border-white/[0.06] p-4"><div className="text-[11px] uppercase tracking-[0.12em] text-white/30">Saldo atual</div><div className="text-3xl font-bold mt-1">{selected.quantidade} <span className="text-sm text-white/30 font-normal">{selected.produto?.unidade || 'UN'}</span></div><div className="text-[11px] text-white/35 mt-1">Mínimo: {selected.produto?.estoqueMinimo ?? 0}{podeVerCusto ? ' • Custo: ' + money(Number(selected.produto?.custo || 0)) : ''}</div></div>
+        <div className="mt-6 space-y-4"><div><label className="text-[10px] uppercase tracking-[0.12em] text-white/35">Tipo do movimento</label><select value={adjust.tipo} onChange={e => setAdjust(v => ({...v, tipo: e.target.value}))} className="mt-1.5 w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px]"><option value="ENTRADA">{traduzir('entrada', "Entrada")}</option><option value="SAIDA">{traduzir('saida', "Saída")}</option><option value="AJUSTE">Ajuste (saldo final)</option><option value="INVENTARIO">Inventário (saldo final)</option><option value="PERDA">Perda</option><option value="AVARIA">Avaria</option><option value="DEVOLUCAO">Devolução</option></select></div><div className="grid grid-cols-2 gap-3"><div><label className="text-[10px] uppercase tracking-[0.12em] text-white/35">{tipoEhAbsoluto(adjust.tipo) ? 'Saldo final' : 'Quantidade a movimentar'}</label><input type="number" min="0" step="0.001" value={adjust.quantidade} onChange={e => setAdjust(v => ({...v, quantidade: e.target.value}))} className="mt-1.5 w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px] font-mono" /></div><div><label className="text-[10px] uppercase tracking-[0.12em] text-white/35">Documento</label><input value={adjust.documento} onChange={e => setAdjust(v => ({...v, documento: e.target.value}))} placeholder="NF / pedido" className="mt-1.5 w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px]" /></div></div>{<PreviaSaldo tipo={adjust.tipo} atual={Number(selected.quantidade || 0)} quantidade={adjust.quantidade} unidade={selected.produto?.unidade || 'UN'} />}<div><label className="text-[10px] uppercase tracking-[0.12em] text-white/35">{traduzir('motivo', "Motivo")}</label><textarea value={adjust.motivo} onChange={e => setAdjust(v => ({...v, motivo: e.target.value}))} className="mt-1.5 w-full min-h-20 rounded-[14px] bg-[#08080a] border border-white/[0.07] p-3 text-[13px] resize-none" /></div>\{ajusteError && <div className="rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{ajusteError}</div>}<button disabled={saving} onClick={submitAdjustment} className="w-full h-11 rounded-full bg-[#8b5cf6] hover:bg-[#7c4ff0] disabled:opacity-50 font-medium text-[13px]">{saving ? 'Salvando…' : 'Confirmar movimento'}</button></div>
+        <div className="mt-8 pt-5 border-t border-white/[0.06]"><h3 className="text-[12px] font-medium mb-1">Transferir para outra filial</h3>
+        {/* A origem é o próprio item aberto — uma transferência sai de uma
+            posição de estoque específica (produto x filial). Dizer isso
+            evita que o gestor procure um seletor de origem que não existe. */}
+        <p className="text-[11px] text-white/35 mb-3">Origem: <strong className="text-white/55">{selected.filial?.nome ?? '—'}</strong></p>
+        <div className="space-y-3">
+        {filiais.filter(([id]) => id !== selected.filialId).length === 0 ? (
+          /* Empresa com uma filial só: sem destino, o <select> ficava vazio e
+             o botão cinza e morto. A mensagem diz o motivo e onde resolver. */
+          <div className="rounded-[12px] bg-amber-500/10 border border-amber-500/20 p-3 text-[11px] text-amber-200">
+            Não há outra filial para receber. Transferência exige pelo menos duas filiais —
+            cadastre a segunda em <strong>Empresa → Filiais</strong>.
+          </div>
+        ) : (
+          <select value={transfer.destino} onChange={e => setTransfer(v => ({...v, destino: e.target.value}))} className="w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px]"><option value="">Selecione a filial destino</option>{filiais.filter(([id]) => id !== selected.filialId).map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select>
+        )}
+        <input type="number" min="1" value={transfer.quantidade} onChange={e => setTransfer(v => ({...v, quantidade: e.target.value}))} className="w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px] font-mono" placeholder={'Máx. ' + selected.quantidade} /><input value={transfer.motivo} onChange={e => setTransfer(v => ({...v, motivo: e.target.value}))} className="w-full h-10 rounded-full bg-[#08080a] border border-white/[0.07] px-4 text-[13px]" placeholder="Motivo opcional" />
+        {/* Erro da transferência aparece AQUI, dentro do bloco de transferência.
+            Antes ele era mostrado só no formulário de ajuste, lá no topo: uma
+            transferência recusada pelo servidor (estoque insuficiente, filiais
+            iguais) deixava o botão voltando ao normal sem nenhuma mensagem, e o
+            usuário não sabia se tinha dado certo. */}
+        {transferError && <div className="rounded-[12px] bg-red-500/10 border border-red-500/20 p-3 text-[11px] text-red-200">{transferError}</div>}
+        <button disabled={saving || !transfer.destino} onClick={submitTransfer} className="w-full h-10 rounded-full bg-white/[0.06] hover:bg-white/[0.1] disabled:opacity-40 text-[13px]">{saving ? 'Transferindo…' : 'Transferir estoque'}</button></div></div>
+      </aside></div>}
+    </div>
+    </>
+  );
+}
+
+function Kpi({ title, value, trend, icon, tone = 'neutral' }: { title: string; value: string; trend: string; icon: React.ReactNode; tone?: 'neutral' | 'red' | 'amber' }) {
+  return <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-5"><div className="flex items-start justify-between"><div className="w-9 h-9 rounded-[11px] bg-white/[0.04] border border-white/[0.06] grid place-items-center text-white/55">{icon}</div><span className={`rounded-full px-3 py-1.5 text-[11px] font-mono border ${tone === 'red' ? 'text-red-300 bg-red-500/10 border-red-500/20' : tone === 'amber' ? 'text-amber-300 bg-amber-500/10 border-amber-500/20' : 'text-white/50 bg-white/[0.03] border-white/[0.06]'}`}>{trend}</span></div><div className="text-[12px] text-white/40 mt-5">{title}</div><div className="text-[23px] font-bold mt-1">{value}</div></div>;
+}
+
+function Th({ children }: { children: React.ReactNode }) { return <th className="px-5 py-4 font-medium">{children}</th>; }
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string,string][] }) { return <div className="relative"><select value={value} onChange={e => onChange(e.target.value)} className="h-11 min-w-[145px] appearance-none rounded-full bg-[#08080a] border border-white/[0.06] px-4 pr-9 text-[13px] outline-none focus:border-violet-500/40">{options.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" /></div>; }
+
+function MovementTable({ movs }: { movs: Movimento[] }) { return <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] overflow-hidden"><div className="p-5 border-b border-white/[0.06]"><h2 className="text-[15px] font-medium">Movimentações recentes</h2><p className="text-[11px] text-white/35 mt-1">Registros reais do histórico de estoque.</p></div><div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left"><thead><tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-white/35"><Th>{traduzir('tipo', "Tipo")}</Th><Th>{traduzir('produto', "Produto")}</Th><Th>Filial</Th><Th>{traduzir('quantidade', "Quantidade")}</Th><Th>Documento</Th><Th>{traduzir('usuario', "Usuário")}</Th><Th>{traduzir('data', "Data")}</Th></tr></thead><tbody>{movs.map(m => <tr key={m.id} className="border-b border-white/[0.05]"><td className="px-5 py-4"><span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] border ${m.quantidade >= 0 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20' : 'text-red-300 bg-red-500/10 border-red-500/20'}`}>{m.tipo}</span></td><td className="px-5 py-4"><div className="text-[12px] font-medium">{m.produto?.nome}</div><div className="text-[10px] text-white/30 font-mono">{m.produto?.sku || '—'}</div></td><td className="px-5 py-4 text-[12px] text-white/65">{m.filial?.nome || '—'}</td><td className="px-5 py-4 font-mono text-[12px]">{m.quantidade > 0 ? '+' : ''}{m.quantidade}</td><td className="px-5 py-4 font-mono text-[11px] text-white/45">{m.documento || '—'}</td><td className="px-5 py-4 text-[11px] text-white/45">{m.usuario?.nome || 'Sistema'}</td><td className="px-5 py-4 text-[11px] text-white/45">{relativeTime(m.createdAt)}</td></tr>)}</tbody></table></div>{!movs.length && <div className="p-10 text-center text-[13px] text-white/35">Nenhuma movimentação registrada.</div>}</div>; }
+
+/** Quantos cartões a grade mostra antes de resumir. Ver o rodapé. */
+const LIMITE_CARDS = 60;
+
+/**
+ * TRANSFERÊNCIAS ENTRE FILIAIS
+ * ============================
+ *
+ * A tela pedida aqui é "transferir de A para B". Antes ela não tinha NENHUM
+ * controle de filial: o componente recebia só `items` e `onSelect`, então a
+ * aba listava as linhas de TODAS as filiais misturadas sem forma de separar a
+ * origem, e o único seletor de destino ficava escondido dentro do drawer —
+ * dois cliques mais tarde. O sintoma era "não tem botão pra escolher a filial".
+ *
+ * O que mudou:
+ *   1. `origem` filtra a grade — o filtro que faltava;
+ *   2. `destino` aparece no topo e JÁ VAI PREENCHIDO no drawer;
+ *   3. a lista não é mais truncada em silêncio: o rodapé diz o total;
+ *   4. empresa com uma filial só explica o motivo, em vez de mostrar um
+ *      botão "Transferir estoque" cinza e morto.
+ */
+function TransferView({
+  items, filiais, origem, destino, busca, nomeFilial, onOrigem, onDestino, onBusca, onSelect,
+}: {
+  items: EstoqueItem[];
+  filiais: Array<[string, string]>;
+  origem: string;
+  destino: string;
+  busca: string;
+  nomeFilial: (id: string) => string;
+  onOrigem: (v: string) => void;
+  onDestino: (v: string) => void;
+  onBusca: (v: string) => void;
+  onSelect: (item: EstoqueItem) => void;
+}) {
+  // Só existe transferência onde existem DUAS filiais. `filiais` vem do
+  // cadastro da empresa (com as linhas de estoque como reserva), então este
+  // é o número real de destinos possíveis — não uma estimativa da tela.
+  const semDestinoPossivel = filiais.length < 2;
+
+  const texto = busca.trim().toLowerCase();
+  const transferiveis = useMemo(() => items.filter((i) => {
+    if (Number(i.quantidade) <= 0) return false;
+    if (origem !== 'ALL' && i.filialId !== origem) return false;
+    if (!texto) return true;
+    return [i.produto?.nome, i.produto?.sku, i.produto?.codigoBarras, i.local, i.lote]
+      .some((v) => String(v || '').toLowerCase().includes(texto));
+  }), [items, origem, texto]);
+
+  // Quanto o produto já vale no destino: o cartão mostra, porque "transferir
+  // 10 un. para uma filial que tinha 0" e "para uma que tinha 8" dá em
+  // resultados diferentes, e quem decide precisa saber antes de confirmar.
+  const saldoNoDestino = useMemo(() => {
+    if (destino === 'ALL') return null;
+    const mapa = new Map<string, number>();
+    for (const i of items) {
+      if (i.filialId !== destino) continue;
+      mapa.set(i.produtoId, (mapa.get(i.produtoId) ?? 0) + Number(i.quantidade));
+    }
+    return mapa;
+  }, [items, destino]);
+
+  const visiveis = transferiveis.slice(0, LIMITE_CARDS);
+  const ocultos = transferiveis.length - visiveis.length;
+  const rota = origem !== 'ALL' && destino !== 'ALL' && origem !== destino
+    ? `${nomeFilial(origem)} → ${nomeFilial(destino)}`
+    : null;
+if (semDestinoPossivel) {
+    return (
+      <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-5">
+        <h2 className="text-[15px] font-medium flex items-center gap-2">
+          <ArrowLeftRight className="w-4 h-4 text-violet-300" />Transferências entre filiais
+        </h2>
+        <p className="text-[11px] text-white/35 mt-1">Selecione um saldo para abrir a transferência real.</p>
+        <div className="mt-5 rounded-[14px] border border-amber-500/20 bg-amber-500/10 p-4 text-[12px] text-amber-200">
+          Transferência exige <strong>pelo menos duas filiais</strong>.
+          {filiais.length === 1
+            ? ` Hoje a empresa tem uma só (${filiais[0][1]}) — não existe para onde transferir.`
+            : ' Nenhuma filial ativa foi encontrada.'}
+          {' '}Cadastre a segunda filial em <strong>Empresa → Filiais</strong> para liberar esta aba.
+        </div>
+      </div>
+    );
+  }
+return (
+    <div className="rounded-[18px] border border-white/[0.06] bg-[#111113] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-[15px] font-medium flex items-center gap-2">
+            <ArrowLeftRight className="w-4 h-4 text-violet-300" />Transferências entre filiais
+          </h2>
+          <p className="text-[11px] text-white/35 mt-1">
+            Escolha a filial de <strong className="text-white/55">origem</strong> e o{' '}
+            <strong className="text-white/55">destino</strong>, e depois o saldo que vai mudar de lugar.
+          </p>
+        </div>
+        {rota && (
+          <span className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-[11px] font-medium text-violet-200">
+            <ArrowLeftRight className="w-3.5 h-3.5" />{rota}
+          </span>
+        )}
+      </div>
+
+      {/* Os dois selects de filial: origem FILTRA a lista, destino define o
+          preenchimento do drawer. É esta a peça que não existia. */}
+      <div className="flex flex-col xl:flex-row gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <input
+            value={busca}
+            onChange={(e) => onBusca(e.target.value)}
+            placeholder="Buscar produto, SKU ou EAN…"
+            className="w-full h-11 rounded-full bg-[#08080a] border border-white/[0.06] pl-11 pr-4 text-[13px] outline-none focus:border-violet-500/40"
+          />
+        </div>
+        <label className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-white/35 shrink-0">Origem</span>
+          <Select
+            value={origem}
+            onChange={onOrigem}
+            options={[['ALL', 'Todas as filiais'], ...filiais.map(([id, n]): [string, string] => [id, n])]}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-white/35 shrink-0">Destino</span>
+          <Select
+            value={destino}
+            onChange={onDestino}
+            options={[
+              ['ALL', 'Escolher depois'],
+              // A filial de origem não entra na lista: o backend recusa
+              // origem == destino, e oferecer a opção seria um beco sem saída.
+              ...filiais.filter(([id]) => id !== origem).map(([id, n]): [string, string] => [id, n]),
+            ]}
+          />
+        </label>
+      </div>
+<p className="text-[11px] text-white/35 mb-4">
+        {transferiveis.length === 0
+          ? 'Nenhum saldo disponível com os filtros atuais.'
+          : <>
+              <strong className="text-white/60">{transferiveis.length}</strong>{' '}
+              {transferiveis.length === 1 ? 'saldo pode' : 'saldos podem'} ser transferido
+              {transferiveis.length === 1 ? '' : 's'}
+              {rota ? <> de <strong className="text-white/60">{rota}</strong></> : ' entre as filiais'}.
+            </>}
+      </p>
+
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {visiveis.map((i) => (
+          <button
+            key={i.id}
+            type="button"
+            onClick={() => onSelect(i)}
+            className="text-left rounded-[15px] bg-[#08080a] border border-white/[0.06] p-4 hover:border-violet-500/30 transition"
+          >
+            <div className="flex justify-between gap-3">
+              <span className="text-[13px] font-medium truncate">{i.produto?.nome}</span>
+              <span className="font-mono text-[11px] text-violet-300 shrink-0">
+                {i.quantidade} {i.produto?.unidade || 'UN'}
+              </span>
+            </div>
+            <div className="text-[11px] text-white/35 mt-2">{i.filial?.nome} • {i.local || 'Sem local'}</div>
+            {saldoNoDestino && (
+              <div className="text-[10.5px] text-white/30 mt-1 font-mono">
+                destino tem {saldoNoDestino.get(i.produtoId) ?? 0} {i.produto?.unidade || 'UN'}
+              </div>
+            )}
+            <div className="mt-3 text-[11px] text-white/50">
+              {destino !== 'ALL' && destino !== i.filialId
+                ? `Transferir → ${nomeFilial(destino)}`
+                : 'Escolher destino →'}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* O corte de 30 sem aviso escondia saldos transferíveis: a mensagem de
+          vazio só aparecia com zero itens, então quem tinha 47 saldos via 30 e
+          nenhuma pista de que faltavam 17. */}
+      {ocultos > 0 && (
+        <p className="mt-4 rounded-[12px] border border-white/[0.07] bg-white/[0.03] p-3 text-[11px] text-white/45">
+          Mostrando {LIMITE_CARDS} de {transferiveis.length} saldos. Use a busca ou escolha uma
+          filial de origem para chegar aos outros {ocultos}.
+        </p>
+      )}
+
+      {!visiveis.length && (
+        <div className="p-10 text-center text-[13px] text-white/35">
+          {origem !== 'ALL'
+            ? `A filial ${nomeFilial(origem)} não tem saldo disponível para transferir${texto ? ' com essa busca' : ''}.`
+            : texto
+              ? 'Nenhum produto encontrado com essa busca.'
+              : 'Não há saldos disponíveis para transferência.'}
+        </div>
+      )}
+    </div>
+  );
+}

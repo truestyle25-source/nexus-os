@@ -751,7 +751,7 @@ export default function PDV() {
       '  ⬢ o estoque volta ao depósito;\n' +
       '  ⬢ a receita é marcada como cancelada;\n' +
       '  ⬢ faturamento, ticket médio e meta do dia são reduzidos;\n' +
-      '  ⬢ se foi paga em dinheiro, o valor SAI da gaveta do turno.\n\n' +
+      '  ⬢ se foi paga em dinheiro, o valor sai da gaveta do turno.\n\n' +
       'Esta ação não pode ser desfeita.'
     );
     if (!ok) return;

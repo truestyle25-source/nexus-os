@@ -1,0 +1,789 @@
+﻿'use client';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Chart from 'chart.js/auto';
+import { Search, Plus, Sparkles, X, Download } from 'lucide-react';
+import api, { getToken } from '@/lib/api';
+// Respeita Moeda / Idioma / Formato de hora da aba Configuracoes.
+import { formatBRL } from '@/lib/format';
+import { t as traduzir, tMenu } from '@/lib/i18n';
+
+/**
+ * Aba /fornecedores â€” clone fiel do HTML "nexus-fornecedores-add-v2".
+ * Design system gravado: body #0a0a14, sidebar 260px #0f0f1e, main #0e0e1f,
+ * cards #15152b, roxo #7c3aed â†’ #4f46e5, sem novas cores.
+ * ConteÃºdo interno da aba. Sidebar e topbar sÃ£o renderizados uma Ãºnica vez
+ * pelo layout compartilhado de app/(dashboard)/layout.tsx.
+ */
+
+type StatusFornecedor = 'Ativo' | 'CrÃ­tico' | 'Inativo';
+
+interface Fornecedor {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  categoria: string;
+  status: string;
+  contato: string | null;
+  whatsapp: string | null;
+  telefone: string | null;
+  email: string | null;
+  produtos: string | null;
+  condicaoPagamento: string | null;
+  observacoes: string | null;
+  totalComprado: number | string;
+  totalPedidos: number;
+  ultimoPedidoAt: string | null;
+  _count?: { compras: number };
+}
+
+interface Kpis {
+  totalFornecedores: number;
+  gastoMes: number;
+  pedidosPendentes: number;
+  ticketMedio: number;
+  criadosNoMes: number;
+  gastoMesAnterior: number;
+  pedidosAtrasados: number;
+  ticketGeral: number;
+  historico: Array<{ mes: string; valor: number }>;
+}
+
+interface Insights {
+  melhorNegociacao: string;
+  atrasoCritico: string;
+  oportunidade: string;
+}
+
+const CATEGORIAS = ['Malharia', 'Jeans', 'BonÃ©s', 'AcessÃ³rios', 'CalÃ§ados', 'Outros'] as const;
+const CONDICOES = ['Ã€ vista', '30 dias', '30/60', '30/60/90'] as const;
+const TABS: Array<'todos' | StatusFornecedor> = ['todos', 'Ativo', 'Inativo', 'CrÃ­tico'];
+
+const FORM_VAZIO = {
+  nome: '', cnpj: '', categoria: '', status: 'Ativo' as StatusFornecedor,
+  contato: '', whatsapp: '', email: '', cond: '', produtos: '', obs: '',
+};
+
+const brl = (v: number) => formatBRL(v);
+
+/** MÃ¡scara CNPJ 00.000.000/0000-00 */
+function maskCnpj(valor: string): string {
+  const d = valor.replace(/\D/g, '').slice(0, 14);
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+/** MÃ¡scara WhatsApp (00) 00000-0000 */
+function maskWhats(valor: string): string {
+  const d = valor.replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 2) return d ? `(${d}` : '';
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+
+const iniciais = (nome: string) =>
+  nome.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
+
+/** base64 (do backend) â†’ Blob â†’ download nativo. */
+function baixarBase64(base64: string, nome: string): void {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const blob = new Blob([bytes], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function FornecedoresPage() {
+  const router = useRouter();
+
+  const [lista, setLista] = useState<Fornecedor[]>([]);
+  const [kpis, setKpis] = useState<Kpis | null>(null);
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState('');
+  const [tab, setTab] = useState<'todos' | StatusFornecedor>('todos');
+  const [modalAberto, setModalAberto] = useState(false);
+  const [form, setForm] = useState(FORM_VAZIO);
+  // null = cadastro; preenchido = ediÃ§Ã£o. Sem isto, um fornecedor criado com
+  // status "CrÃ­tico"/"Inativo" ficava SEM REMÃ‰DIO: o mÃ³dulo Compras sÃ³ aceita
+  // fornecedor com status 'Ativo' (POST /compras), e esta aba nÃ£o tinha como
+  // mudar o status â€” nem corrigir um CNPJ digitado errado, jÃ¡ que
+  // PUT /api/v1/fornecedores/:id existia no backend e nunca era chamado.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; show: boolean }>({ msg: '', show: false });
+  const [iaQ, setIaQ] = useState('');
+  const [iaAnalisando, setIaAnalisando] = useState(false);
+
+  const doughnutRef = useRef<HTMLCanvasElement | null>(null);
+  const barRef = useRef<HTMLCanvasElement | null>(null);
+  const doughnutChart = useRef<Chart | null>(null);
+  const barChart = useRef<Chart | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setCampo = (k: keyof typeof FORM_VAZIO, v: string) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  function mostrarToast(msg: string) {
+    setToast({ msg, show: false });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    // dobro de setTimeout: primeiro aplica o estado fechado, depois .show (transiÃ§Ã£o .3s)
+    setTimeout(() => setToast({ msg, show: true }), 30);
+    toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 4000);
+  }
+
+  const carregar = async () => {
+    try {
+      const [{ data: forn }, { data: k }, { data: ins }] = await Promise.all([
+        api.get<Fornecedor[]>('/api/v1/fornecedores'),
+        api.get<Kpis>('/api/v1/fornecedores/kpis'),
+        api.get<Insights>('/api/v1/fornecedores/insights'),
+      ]);
+      setLista(Array.isArray(forn) ? forn : []);
+      setKpis(k);
+      setInsights(ins);
+    } catch (err: any) {
+      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel carregar os fornecedores.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!getToken()) { router.replace('/'); return; }
+    void carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
+
+  // Esc fecha o modal (comportamento do HTML).
+  useEffect(() => {
+    function aoTeclar(e: KeyboardEvent) {
+      if (e.key === 'Escape') setModalAberto(false);
+    }
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, []);
+
+  // Chart.js: doughnut "gasto por fornecedor" + bar "histÃ³rico" (6 meses).
+  useEffect(() => {
+    if (loading) return;
+    const labelsDoughnut = lista.slice(0, 6).map((f) => f.nome.length > 16 ? `${f.nome.slice(0, 16)}â€¦` : f.nome);
+    const valoresDoughnut = lista.slice(0, 6).map((f) => Number(f.totalComprado) || 0);
+    const cores = ['#7c3aed', '#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#7a7a9a'];
+
+    doughnutChart.current?.destroy();
+    if (doughnutRef.current) {
+      doughnutChart.current = new Chart(doughnutRef.current, {
+        type: 'doughnut',
+        data: {
+          labels: labelsDoughnut.length > 0 ? labelsDoughnut : ['Sem dados'],
+          datasets: [{
+            data: valoresDoughnut.length > 0 ? valoresDoughnut : [1],
+            backgroundColor: valoresDoughnut.length > 0 ? cores : ['#1f1f35'],
+            borderColor: '#15152b',
+            borderWidth: 2,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '68%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#8888aa', font: { size: 10 }, boxWidth: 10, padding: 8 } },
+          },
+        },
+      });
+    }
+
+    barChart.current?.destroy();
+    if (barRef.current) {
+      barChart.current = new Chart(barRef.current, {
+        type: 'bar',
+        data: {
+          labels: kpis?.historico.map((h) => h.mes) ?? [],
+          datasets: [{
+            label: 'Gasto/mÃªs',
+            data: kpis?.historico.map((h) => h.valor) ?? [],
+            backgroundColor: '#7c3aed',
+            hoverBackgroundColor: '#4f46e5',
+            borderRadius: 6,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#5a5a70', font: { size: 10 } }, grid: { display: false }, border: { color: '#23233f' } },
+            y: { ticks: { color: '#5a5a70', font: { size: 10 } }, grid: { color: '#1f1f35' }, border: { display: false } },
+          },
+        },
+      });
+    }
+    return () => {
+      doughnutChart.current?.destroy();
+      barChart.current?.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, lista, kpis]);
+
+  /** Normaliza status vindo do banco para os 3 valores que o <select> oferece.
+ *  Registros legados podem ter 'ATIVO'/'INATIVO'/'ARQUIVADO' gravados pela rota
+ *  antiga; sem isso o select ficaria em branco e o salvar enviaria um valor
+ *  fora do enum (400), travando a ediÃ§Ã£o justamente do registro que precisa
+ *  ser corrigido. */
+function statusParaForm(valor?: string): StatusFornecedor {
+  const s = (valor ?? '').trim().toLowerCase();
+  if (s === 'crÃ­tico' || s === 'critico') return 'CrÃ­tico';
+  if (s === 'inativo' || s === 'arquivado') return 'Inativo';
+  return 'Ativo';
+}
+
+/** Categoria fora da lista vigente (padrÃ£o antigo do schema) entra como
+ *  opÃ§Ã£o extra, senÃ£o o select fica vazio e o campo obrigatÃ³rio trava o
+ *  salvamento de um registro que o usuÃ¡rio sÃ³ queria editar. */
+function listaCategorias(valor?: string) {
+  return valor && !CATEGORIAS.includes(valor as any) ? [...CATEGORIAS, valor] : CATEGORIAS;
+}
+
+function listaCondicoes(valor?: string) {
+  return valor && !CONDICOES.includes(valor as any) ? [...CONDICOES, valor] : CONDICOES;
+}
+
+  /**
+   * openModal(): cadastro, com prefill opcional do nome (usado pela IA).
+   * openModal(f): EDIÃ‡ÃƒO â€” reaproveita exatamente o mesmo formulÃ¡rio, sem
+   * modal novo, para que o usuÃ¡rio consiga corrigir status/CNPJ.
+   */
+  function openModal(alvo?: Fornecedor | string) {
+    if (alvo && typeof alvo !== 'string') {
+      setEditId(alvo.id);
+      setForm({
+        nome: alvo.nome ?? '',
+        cnpj: alvo.cnpj ?? '',
+        categoria: alvo.categoria ?? '',
+        status: statusParaForm(alvo.status),
+        contato: alvo.contato ?? '',
+        whatsapp: alvo.whatsapp ?? '',
+        email: alvo.email ?? '',
+        cond: alvo.condicaoPagamento ?? '',
+        produtos: alvo.produtos ?? '',
+        obs: alvo.observacoes ?? '',
+      });
+    } else {
+      setEditId(null);
+      setForm({ ...FORM_VAZIO, nome: typeof alvo === 'string' ? alvo : '' });
+    }
+    setModalAberto(true);
+    setTimeout(() => document.getElementById('fNome')?.focus(), 60);
+  }
+
+  function closeModal() {
+    setModalAberto(false);
+    setEditId(null);
+    setForm(FORM_VAZIO);
+  }
+
+  /** POST (cadastro) ou PUT (ediÃ§Ã£o) /api/v1/fornecedores â€” persiste e realinha a tela. */
+  async function salvarFornecedor(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.nome.trim() || !form.categoria) {
+      mostrarToast('Preencha nome e categoria (obrigatÃ³rios).');
+      return;
+    }
+    setSalvando(true);
+    try {
+      const corpo = {
+        nome: form.nome.trim(),
+        cnpj: form.cnpj || undefined,
+        categoria: form.categoria,
+        status: form.status,
+        contato: form.contato || undefined,
+        whatsapp: form.whatsapp || undefined,
+        email: form.email || undefined,
+        produtos: form.produtos || undefined,
+        condicaoPagamento: form.cond || undefined,
+        observacoes: form.obs || undefined,
+      };
+      // `empresaId` NÃƒO vai no corpo: o escopo vem do JWT no backend. O
+      // campo era ignorado pelo schema, mas sugeria falsamente que o
+      // tenancy vinha do cliente.
+      const { data: salvo } = editId
+        ? await api.put<Fornecedor>(`/api/v1/fornecedores/${editId}`, corpo)
+        : await api.post<Fornecedor>('/api/v1/fornecedores', corpo);
+
+      if (editId) {
+        // O PUT devolve a linha completa jÃ¡ com os totais calculados pelo servidor;
+        // ainda assim a linha Ã© mesclada sobre a anterior para nÃ£o piscar os
+        // campos que a tela nÃ£o conhece, e a substituiÃ§Ã£o Ã© feita no lugar â€”
+        // sem reordenar a tabela enquanto o usuÃ¡rio estÃ¡ lendo.
+        setLista((atual) =>
+          atual.map((f) =>
+            f.id === editId
+              ? { ...f, ...salvo, status: salvo.status ?? f.status, categoria: salvo.categoria || f.categoria }
+              : f,
+          ),
+        );
+        closeModal();
+        mostrarToast(`Fornecedor ${salvo.nome} atualizado!`);
+      } else {
+        setLista((atual) => [salvo, ...atual]);
+        setKpis((k) => (k ? { ...k, totalFornecedores: k.totalFornecedores + 1, criadosNoMes: k.criadosNoMes + 1 } : k));
+        closeModal();
+        mostrarToast(`Fornecedor ${salvo.nome} adicionado!`);
+      }
+      void carregar(); // realinha lista/KPIs/insights com o banco
+    } catch (err: any) {
+      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel salvar o fornecedor.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  /**
+   * analisarIA(): "adicionar fornecedor X" â†’ openModal(X);
+   * "atraso/crÃ­tico" â†’ tab CrÃ­tico; demais â†’ POST /ia/analisar + toast.
+   */
+  async function analisarIA() {
+    const q = iaQ.trim();
+    if (!q) return;
+    const p = q.toLowerCase();
+
+    if (p.includes('adicionar fornecedor') || p.includes('criar fornecedor') || p.includes('cadastrar fornecedor')) {
+      const nome = q.replace(/.*fornecedor\s*/i, '').trim().replace(/[.!?]+$/, '');
+      setIaQ('');
+      openModal(nome || undefined);
+      mostrarToast(nome ? `Abrindo cadastro de "${nome}"â€¦` : 'Abrindo cadastro de fornecedorâ€¦');
+      return;
+    }
+    if (p.includes('atraso') || p.includes('atrasa') || p.includes('atrasad') || p.includes('crÃ­tic') || p.includes('critic')) {
+      setTab('CrÃ­tico');
+      setIaQ('');
+      mostrarToast('Filtro CrÃ­tico aplicado na lista.');
+      return;
+    }
+
+    setIaAnalisando(true);
+    try {
+      const { data } = await api.post<{ resposta: string; filtroSugerido?: string; fornecedorSugerido?: string }>(
+        '/ia/analisar',
+        { pergunta: q },
+      );
+      mostrarToast(data.resposta);
+      if (data.filtroSugerido && (TABS as string[]).includes(data.filtroSugerido)) {
+        setTab(data.filtroSugerido as StatusFornecedor);
+      }
+      setIaQ('');
+    } catch (err: any) {
+      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel analisar agora.');
+    } finally {
+      setIaAnalisando(false);
+    }
+  }
+
+  /** Filtra a tbody por tab (data-filter) + busca id="busca". */
+  const filtrados = lista.filter((f) => {
+    const okTab = tab === 'todos' || f.status === tab;
+    const t = busca.trim().toLowerCase();
+    const okBusca =
+      !t ||
+      f.nome.toLowerCase().includes(t) ||
+      (f.cnpj ?? '').toLowerCase().includes(t) ||
+      (f.contato ?? '').toLowerCase().includes(t) ||
+      f.categoria.toLowerCase().includes(t);
+    return okTab && okBusca;
+  });
+
+  /** CSV em blob local (mesmo recorte visÃ­vel da tabela). */
+  function exportCSV() {
+    const cabecalho = ['Nome', 'CNPJ', 'Categoria', 'Status', 'Contato', 'WhatsApp', 'Email', 'CondiÃ§Ã£o', 'Produtos', 'Total Comprado', 'Pedidos'];
+    const linhas = filtrados.map((f) => [
+      f.nome, f.cnpj ?? '', f.categoria, f.status, f.contato ?? '', f.whatsapp ?? '',
+      f.email ?? '', f.condicaoPagamento ?? '', f.produtos ?? '', String(Number(f.totalComprado) || 0), String(f.totalPedidos),
+    ]);
+    const csv = [cabecalho, ...linhas]
+      .map((l) => l.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';'))
+      .join('\n');
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fornecedores_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    mostrarToast('CSV exportado!');
+  }
+
+  /** Excel real via POST /fornecedores/export (exceljs â†’ base64). */
+  async function exportExcel() {
+    try {
+      const { data } = await api.post<{ base64: string; nome: string }>('/api/v1/fornecedores/export', { formato: 'excel' });
+      baixarBase64(data.base64, data.nome);
+      mostrarToast('Excel exportado!');
+    } catch (err: any) {
+      mostrarToast(err?.message || 'Falha ao exportar Excel.');
+    }
+  }
+
+  const badgeStatus = (s: string) => {
+    if (s === 'Ativo') return { background: 'var(--nx-green)', color: 'var(--nx-green-contrast)', border: '1px solid var(--nx-green-border)' };
+    if (s === 'CrÃ­tico') return { background: 'var(--nx-red)', color: 'var(--nx-red-contrast)', border: '1px solid var(--nx-red-border)' };
+    return { background: 'var(--nx-surface)', color: 'var(--nx-ink-2)', border: '1px solid var(--nx-border)' };
+  };
+
+  const kpiCards = [
+    {
+      id: 'kpiTotal',
+      label: 'FORNECEDORES',
+      valor: String(kpis?.totalFornecedores ?? 0),
+      delta: `${kpis?.criadosNoMes ?? 0} novo(s) no mÃªs`,
+      subiu: (kpis?.criadosNoMes ?? 0) > 0,
+    },
+    {
+      id: 'kpiGasto',
+      label: 'GASTO NO MÃŠS',
+      valor: brl(kpis?.gastoMes ?? 0),
+      delta: kpis && kpis.gastoMesAnterior > 0
+        ? `${(((kpis.gastoMes - kpis.gastoMesAnterior) / kpis.gastoMesAnterior) * 100).toFixed(0)}% vs mÃªs ant.`
+        : 'base anterior zerada',
+      subiu: (kpis?.gastoMes ?? 0) >= (kpis?.gastoMesAnterior ?? 0),
+    },
+    {
+      id: 'kpiPendentes',
+      label: 'PEDIDOS PENDENTES',
+      valor: String(kpis?.pedidosPendentes ?? 0),
+      delta: `${kpis?.pedidosAtrasados ?? 0} atrasado(s)`,
+      subiu: (kpis?.pedidosAtrasados ?? 0) === 0,
+    },
+    {
+      id: 'kpiTicket',
+      label: 'TICKET MÃ‰DIO',
+      valor: brl(kpis?.ticketMedio ?? 0),
+      delta: kpis && kpis.ticketGeral > 0 ? 'no mÃªs vs geral' : 'mÃ©dia por pedido',
+      subiu: (kpis?.ticketMedio ?? 0) >= (kpis?.ticketGeral ?? 0),
+    },
+  ];
+
+  return (
+    <div
+      className="p-[24px_28px]"
+      style={{ minHeight: '100%', background: 'var(--nx-surface)', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
+    >
+      <style>{`
+        /* Design system "nexus-fornecedores-add-v2" â€” cores exatas do artefato. */
+        @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .72; transform: scale(1.05); } }
+        .nx-card { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 16px; padding: 18px; }
+        .nx-input { background: var(--nx-surface-3); border: 1px solid var(--nx-border); border-radius: 8px; height: 42px; color: var(--nx-ink); font-size: 13px; padding: 0 12px; outline: none; width: 100%; transition: border-color .15s; box-sizing: border-box; }
+        .nx-input:focus { border-color: var(--nx-accent); }
+        .nx-back { background: var(--nx-surface-2); border: 1px solid var(--nx-border); border-radius: 20px; padding: 6px 14px; font-size: 12px; color: var(--nx-ink-2); margin-bottom: 16px; cursor: pointer; }
+        .nx-back:hover { color: var(--nx-ink); }
+        .nx-ia { position: relative; background: var(--nx-surface-2); border: 1px solid var(--nx-border); border-radius: 16px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; margin-bottom: 20px; overflow: hidden; }
+        .nx-ia::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--nx-accent), transparent); }
+        .nx-ia-icon { width: 42px; height: 42px; border-radius: 12px; background: var(--nx-accent); display: flex; align-items: center; justify-content: center; animation: pulse 2s ease-in-out infinite; flex-shrink: 0; }
+        .nx-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+        .nx-kpi { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 14px; padding: 16px; }
+        .nx-tab { background: var(--nx-surface); border: 1px solid var(--nx-border); color: var(--nx-ink-2); font-size: 12px; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-family: inherit; }
+        .nx-tab.ativa { background: var(--nx-surface-2); color: var(--nx-ink); border-color: var(--nx-accent); }
+        .nx-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+        .nx-th { font-size: 10px; color: var(--nx-ink-2); text-transform: uppercase; letter-spacing: .5px; padding: 10px 8px; border-bottom: 1px solid var(--nx-border); text-align: left; }
+        .nx-td { font-size: 12px; color: var(--nx-ink-2); padding: 12px 8px; border-bottom: 1px solid var(--nx-border); vertical-align: middle; }
+        .nx-avatar { width: 32px; height: 32px; background: var(--nx-surface-2); border-radius: 8px; font-weight: bold; font-size: 12px; color: var(--nx-ink); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .nx-tag { background: var(--nx-surface-2); border: 1px solid var(--nx-border); border-radius: 6px; padding: 3px 8px; font-size: 10px; color: var(--nx-ink-2); display: inline-block; }
+        .nx-badge { border-radius: 12px; padding: 4px 10px; font-size: 10px; display: inline-block; }
+        .nx-btn { border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .nx-btn-ghost { background: var(--nx-surface-2); border-color: var(--nx-border); color: var(--nx-ink-2); padding: 8px 14px; }
+        .nx-btn-ghost:hover { color: var(--nx-ink); }
+        .nx-btn-roxo { background: var(--nx-accent); color: #fff; padding: 8px 16px; font-weight: 600; }
+        .nx-btn-roxo:hover { background: var(--nx-accent-2); }
+        .nx-label { font-size: 10px; color: var(--nx-ink-2); text-transform: uppercase; letter-spacing: 1.5px; }
+        .nx-overlay { position: fixed; inset: 0; background: rgba(var(--nx-ink-rgb), .75); backdrop-filter: blur(8px); z-index: 999; display: none; align-items: center; justify-content: center; }
+        .nx-overlay.active { display: flex; }
+        .nx-modal { width: 580px; max-width: 92vw; background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 16px; padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.6); max-height: 90vh; overflow: auto; }
+        .nx-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+        .nx-flabel { font-size: 10px; color: var(--nx-ink-2); text-transform: uppercase; margin-bottom: 6px; display: block; letter-spacing: .5px; }
+        .nx-close { width: 28px; height: 28px; background: var(--nx-surface-2); border-radius: 8px; border: none; color: var(--nx-ink-2); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .nx-close:hover { color: var(--nx-ink); }
+        .nx-toast { position: fixed; bottom: 24px; right: 24px; background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 12px; padding: 14px 18px; color: var(--nx-ink); font-size: 12px; z-index: 1200; transform: translateY(100px); opacity: 0; transition: .3s; max-width: 380px; }
+        .nx-toast.show { transform: translateY(0); opacity: 1; }
+        textarea.nx-input { height: 80px; padding: 10px 12px; resize: vertical; font-family: inherit; }
+        select.nx-input { appearance: none; cursor: pointer; }
+        @media (max-width: 1100px) { .nx-kpis { grid-template-columns: repeat(2, 1fr); } .nx-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 760px) { .nx-form { grid-template-columns: 1fr; } }
+      `}</style>
+
+      {/* Back pill â† Dashboard */}
+      <button type="button" className="nx-back" onClick={() => router.push('/')}>â† Dashboard</button>
+
+      {/* Identidade e busca da pÃ¡gina â€” nÃ£o constituem uma segunda topbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <div className="nx-label" style={{ marginBottom: 6 }}>GESTÃƒO</div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', lineHeight: 1.2, margin: 0 }}>{traduzir('fornecedores', "Fornecedores")}</h1>
+          <p style={{ fontSize: 13, color: '#7a7a9a', margin: '5px 0 0' }}>Parceiros, categorias e desempenho de compra</p>
+        </div>
+        <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
+          <Search size={15} color="#5a5a70" style={{ position: 'absolute', left: 12, top: 13 }} />
+          <input
+            id="busca"
+            className="nx-input"
+            style={{ paddingLeft: 34 }}
+            placeholder="Buscar fornecedor, CNPJ, contatoâ€¦"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* IA BAR */}
+          <div className="nx-ia">
+            <div className="nx-ia-icon"><Sparkles size={20} color="#fff" /></div>
+            <div style={{ flex: 1, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                id="iaQ"
+                className="nx-input"
+                style={{ flex: 1, minWidth: 220 }}
+                placeholder='Ex.: "adicionar fornecedor Tecidos Brasil" ou "quem estÃ¡ atrasando?"'
+                value={iaQ}
+                onChange={(e) => setIaQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void analisarIA(); }}
+              />
+              <button type="button" className="nx-btn nx-btn-roxo" onClick={() => void analisarIA()} disabled={iaAnalisando}>
+                {iaAnalisando ? 'ANALISANDOâ€¦' : 'ANALISAR'}
+              </button>
+            </div>
+          </div>
+
+          {/* KPIs â€” grid 4 col */}
+          <div className="nx-kpis">
+            {kpiCards.map((k) => (
+              <div className="nx-kpi" key={k.id} id={k.id}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{k.valor}</div>
+                <div className="nx-label" style={{ color: '#6a6a8a', marginTop: 6 }}>{k.label}</div>
+                <div style={{ fontSize: 11, marginTop: 6, color: k.subiu ? '#22c55e' : '#ef4444' }}>
+                  {k.subiu ? 'â–²' : 'â–¼'} {k.delta}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabs (data-filter) */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+            {TABS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                data-filter={t}
+                className={`nx-tab ${tab === t ? 'ativa' : ''}`}
+                onClick={() => setTab(t)}
+              >
+                {t === 'todos' ? 'Todos' : t}
+              </button>
+            ))}
+          </div>
+
+          {/* Grid principal 1.6fr + 1fr */}
+          <div className="nx-grid">
+            {/* Card Lista */}
+            <section className="nx-card">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Lista de Fornecedores</div>
+                  <div style={{ fontSize: 12, color: '#7a7a9a' }}>{filtrados.length} de {lista.length} exibidos</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="nx-btn nx-btn-ghost" onClick={exportCSV}><Download size={13} /> CSV</button>
+                  <button type="button" className="nx-btn nx-btn-ghost" onClick={() => void exportExcel()}><Download size={13} /> Excel</button>
+                  <button type="button" className="nx-btn nx-btn-roxo" id="btnNovo" onClick={() => openModal()}><Plus size={14} /> Novo Fornecedor</button>
+                </div>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th className="nx-th">{traduzir('fornecedor', "Fornecedor")}</th>
+                      <th className="nx-th">{traduzir('categoria', "Categoria")}</th>
+                      <th className="nx-th">Contato</th>
+                      <th className="nx-th">{traduzir('status', "Status")}</th>
+                      <th className="nx-th" style={{ textAlign: 'right' }}>Total Comprado</th>
+                      <th className="nx-th" style={{ textAlign: 'right' }}>Pedidos</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tabelaFornecedores">
+                    {loading && (
+                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: '#5a5a70' }}>Carregando fornecedoresâ€¦</td></tr>
+                    )}
+                    {!loading && filtrados.length === 0 && (
+                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: '#5a5a70' }}>Nenhum fornecedor encontrado.</td></tr>
+                    )}
+                    {!loading && filtrados.map((f) => (
+                      <tr key={f.id}>
+                        <td className="nx-td">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div className="nx-avatar">{iniciais(f.nome)}</div>
+                            <div>
+                              {/* Nome vira o gatilho de ediÃ§Ã£o. MantÃ©m a mesma
+                                  cor/fonte do texto anterior (nada muda no
+                                  layout) e resolve o impasse: fornecedor criado
+                                  como "CrÃ­tico"/"Inativo" Ã© rejeitado por
+                                  POST /compras e, sem isto, nunca voltava a
+                                  "Ativo" â€” nem corrigia um CNPJ com erro. */}
+                              <button
+                                type="button"
+                                onClick={() => openModal(f)}
+                                title="Editar fornecedor"
+                                style={{ background: 'none', border: 'none', padding: 0, color: '#fff', fontWeight: 600, fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+                              >
+                                {f.nome}
+                              </button>
+                              <div style={{ fontSize: 10, color: '#5a5a70' }}>{f.cnpj || 'CNPJ nÃ£o informado'}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="nx-td"><span className="nx-tag">{f.categoria}</span></td>
+                        <td className="nx-td">{f.contato || f.whatsapp || f.email || 'â€”'}</td>
+                        <td className="nx-td"><span className="nx-badge" style={badgeStatus(f.status)}>{f.status}</span></td>
+                        <td className="nx-td" style={{ textAlign: 'right', color: '#fff', fontWeight: 600 }}>{brl(Number(f.totalComprado))}</td>
+                        <td className="nx-td" style={{ textAlign: 'right' }}>{f.totalPedidos}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* Card Insights + grÃ¡ficos */}
+            <section className="nx-card">
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 4 }}>Insights</div>
+              <div style={{ fontSize: 12, color: '#7a7a9a', marginBottom: 14 }}>AnÃ¡lise automÃ¡tica dos seus fornecedores</div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ background: '#0f0f24', border: '1px solid #2f2f55', borderRadius: 10, padding: '10px 12px' }}>
+                  <div className="nx-label" style={{ color: '#7c3aed', marginBottom: 4 }}>MELHOR NEGOCIAÃ‡ÃƒO</div>
+                  <div style={{ fontSize: 12, color: '#d0d0e0' }}>{insights?.melhorNegociacao ?? 'Carregandoâ€¦'}</div>
+                </div>
+                <div style={{ background: '#0f0f24', border: '1px solid #2f2f55', borderRadius: 10, padding: '10px 12px' }}>
+                  <div className="nx-label" style={{ color: '#f59e0b', marginBottom: 4 }}>ATRASO CRÃTICO</div>
+                  <div style={{ fontSize: 12, color: '#d0d0e0' }}>{insights?.atrasoCritico ?? 'Carregandoâ€¦'}</div>
+                </div>
+                <div style={{ background: '#0f0f24', border: '1px solid #2f2f55', borderRadius: 10, padding: '10px 12px' }}>
+                  <div className="nx-label" style={{ color: '#22c55e', marginBottom: 4 }}>OPORTUNIDADE</div>
+                  <div style={{ fontSize: 12, color: '#d0d0e0' }}>{insights?.oportunidade ?? 'Carregandoâ€¦'}</div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <div className="nx-label" style={{ marginBottom: 8 }}>GASTO POR FORNECEDOR</div>
+                <div style={{ height: 200 }}><canvas id="chartFornecedores" ref={doughnutRef} /></div>
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <div className="nx-label" style={{ marginBottom: 8 }}>HISTÃ“RICO (6 MESES)</div>
+                <div style={{ height: 180 }}><canvas id="chart2" ref={barRef} /></div>
+              </div>
+            </section>
+          </div>
+
+      {/* ===== Modal ADD FORNECEDOR (overlay id="modalOverlay") ===== */}
+      <div
+        id="modalOverlay"
+        className={`nx-overlay ${modalAberto ? 'active' : ''}`}
+        onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+      >
+        <div className="nx-modal" role="dialog" aria-modal="true" aria-label={editId ? 'Editar Fornecedor' : 'Novo Fornecedor'}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div>
+              <b style={{ fontSize: 18, color: 'var(--nx-ink)' }}>{editId ? 'Editar Fornecedor' : 'Novo Fornecedor'}</b>
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--nx-ink-2)', marginTop: 2 }}>Cadastre um novo parceiro</span>
+            </div>
+            <button type="button" className="nx-close" id="closeModal" aria-label={traduzir('fechar', "Fechar")} onClick={closeModal}>
+              <X size={15} />
+            </button>
+          </div>
+
+          <form id="formFornecedor" className="nx-form" onSubmit={(e) => void salvarFornecedor(e)}>
+            <div>
+              <label className="nx-flabel" htmlFor="fNome">Nome / RazÃ£o Social *</label>
+              <input id="fNome" className="nx-input" required value={form.nome} onChange={(e) => setCampo('nome', e.target.value)} />
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fCnpj">CNPJ</label>
+              <input id="fCnpj" className="nx-input" placeholder="00.000.000/0000-00" value={form.cnpj} onChange={(e) => setCampo('cnpj', maskCnpj(e.target.value))} />
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fCategoria">Categoria *</label>
+              <select id="fCategoria" className="nx-input" required value={form.categoria} onChange={(e) => setCampo('categoria', e.target.value)}>
+                <option value="">{traduzir('selecione', "Selecioneâ€¦")}</option>
+                {listaCategorias(form.categoria).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fStatus">{traduzir('status', "Status")}</label>
+              <select id="fStatus" className="nx-input" value={form.status} onChange={(e) => setCampo('status', e.target.value)}>
+                <option value="Ativo">{traduzir('ativo', "Ativo")}</option>
+                <option value="CrÃ­tico">CrÃ­tico</option>
+                <option value="Inativo">{traduzir('inativo', "Inativo")}</option>
+              </select>
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fContato">Contato</label>
+              <input id="fContato" className="nx-input" value={form.contato} onChange={(e) => setCampo('contato', e.target.value)} />
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fWhatsapp">WhatsApp</label>
+              <input id="fWhatsapp" className="nx-input" placeholder="(00) 00000-0000" value={form.whatsapp} onChange={(e) => setCampo('whatsapp', maskWhats(e.target.value))} />
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fEmail">Email</label>
+              <input id="fEmail" type="email" className="nx-input" value={form.email} onChange={(e) => setCampo('email', e.target.value)} />
+            </div>
+            <div>
+              <label className="nx-flabel" htmlFor="fCond">CondiÃ§Ã£o de Pagamento</label>
+              <select id="fCond" className="nx-input" value={form.cond} onChange={(e) => setCampo('cond', e.target.value)}>
+                <option value="">{traduzir('selecione', "Selecioneâ€¦")}</option>
+                {listaCondicoes(form.cond).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="nx-flabel" htmlFor="fProdutos">Produtos Fornecidos</label>
+              <input id="fProdutos" className="nx-input" placeholder="Camisa, BonÃ©, CalÃ§a" value={form.produtos} onChange={(e) => setCampo('produtos', e.target.value)} />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="nx-flabel" htmlFor="fObs">{traduzir('observacoes', "ObservaÃ§Ãµes")}</label>
+              <textarea id="fObs" className="nx-input" value={form.obs} onChange={(e) => setCampo('obs', e.target.value)} />
+            </div>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              <button type="button" id="btnCancel" onClick={closeModal}
+                style={{ background: 'var(--nx-surface-2)', border: '1px solid var(--nx-border)', color: 'var(--nx-ink-2)', padding: '10px 18px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>{traduzir('cancelar', "Cancelar")}</button>
+              <button type="submit" disabled={salvando}
+                style={{ background: 'var(--nx-accent)', border: 'none', color: '#fff', padding: '10px 22px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: salvando ? 0.7 : 1 }}>
+                {salvando ? 'Salvandoâ€¦' : 'Salvar'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* ===== Toast ===== */}
+      <div className={`nx-toast ${toast.show ? 'show' : ''}`} role="status">{toast.msg}</div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
+

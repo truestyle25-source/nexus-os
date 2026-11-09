@@ -1,0 +1,25 @@
+NEXUS OS - Auditoria Enterprise (fase 1: navegacao autenticada)
+
+1) Extraia auditoria-completa.ps1 na raiz do repositorio.
+2) Copie frontend/tests/e2e/auditoria-enterprise.spec.ts para o mesmo caminho no projeto.
+3) Abra PowerShell na raiz e execute:
+   .\auditoria-completa.ps1
+
+O script solicita email e senha de uma conta EXCLUSIVA de auditoria no terminal.
+Tambem pode definir antes:
+   $env:NEXUS_AUDIT_EMAIL = "email-da-conta-de-teste"
+   $env:NEXUS_AUDIT_PASSWORD = Read-Host "Senha da conta de teste"
+
+Pre-requisitos: frontend com dependencias instaladas, Playwright/Chromium instalado,
+frontend acessivel em localhost:3000 e, para chamadas de API funcionarem, backend
+ja iniciado em localhost:3333 e apontado para ambiente isolado.
+
+Esta fase descobre paginas page.tsx, autentica, navega pelas rotas estaticas,
+captura screenshots, erros de console, erros JavaScript e respostas/falhas HTTP.
+Gera JSONs em relatorios-auditoria.
+
+LIMITES: nao cria/edita/exclui dados; nao executa compras, vendas, folha ou pagamentos;
+nao realiza stress test; nao aprova um modulo apenas porque a pagina abriu. Para
+transacoes e carga enterprise, a proxima fase precisa mapear os contratos reais
+dos endpoints e confirmar isolamento do banco nexus_os_test. O script nao inicia
+o backend nem altera DATABASE_URL.

@@ -119,17 +119,17 @@ export default function PixSettingsTab({
 
   return (
     <Panel>
-      <SectionTitle kicker="Configurações • PIX / Recebimentos">PIX no PDV</SectionTitle>
+      <SectionTitle kicker="Configurações • PIX / Recebimentos">PIX no Estoque</SectionTitle>
       <p className="mt-2 text-[12px] leading-relaxed text-amber-200/90 rounded-[10px] bg-amber-500/10 border border-amber-500/20 px-3 py-2">
         {cfg.providerConfigured
           ? 'Provider oficial conectado. A confirmação do pagamento depende do status informado pelo provider.'
-          : 'Nenhum provider PIX oficial está configurado. Salvar a chave não habilita cobrança nem confirmação no PDV.'}
+          : 'Nenhum provider PIX oficial está configurado. Salvar a chave não habilita cobrança nem confirmação no Estoque.'}
       </p>
       {erro && <p className="mt-3 text-[12px] text-red-300">{erro}</p>}
       {ok && <p className="mt-3 text-[12px] text-emerald-300">{ok}</p>}
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         <label className="flex items-center justify-between gap-3 rounded-[10px] bg-[#121221] border border-white/[0.05] px-3 py-2.5 text-[13px] md:col-span-2">
-          <span className="text-white/70">Ativar PIX no PDV</span>
+          <span className="text-white/70">Ativar PIX no Estoque</span>
           <button
             type="button" role="switch" aria-checked={cfg.enabled} disabled={!cfg.providerConfigured}
             onClick={() => setCfg((c) => ({ ...c, enabled: !c.enabled }))}

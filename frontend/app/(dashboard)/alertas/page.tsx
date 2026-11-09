@@ -163,7 +163,7 @@ const TIPO_META: Record<string, { label: string; icone: Icone; cor: string }> = 
   FALTA: { label: 'Falta de registro', icone: AlertTriangle, cor: 'var(--nx-amber)' },
   ATRASO: { label: 'Atraso', icone: Clock, cor: 'var(--nx-amber)' },
   HORA_EXTRA: { label: 'Hora extra', icone: Clock, cor: 'var(--nx-green)' },
-  ANOMALIA_IA: { label: 'Anomalia IA', icone: Zap, cor: 'var(--nx-accent)' },
+  ANOMALIA_IA: { label: 'Anomalia de IA', icone: Zap, cor: 'var(--nx-accent)' },
 };
 
 const TIPO_PADRAO = { label: 'Alerta', icone: AlertTriangle, cor: 'var(--nx-accent)' };
@@ -196,9 +196,9 @@ const SE_OPTIONS: Array<{
 }> = [
   {
     id: 'estoque_min',
-    rotulo: 'Estoque abaixo do minimo',
-    curto: 'estoque < minimo',
-    descricao: 'Saldo do produto menor ou igual ao minimo cadastrado',
+    rotulo: 'Estoque abaixo do mínimo',
+    curto: 'estoque < mínimo',
+    descricao: 'Saldo do produto menor ou igual ao mínimo cadastrado',
     icone: Package,
     cor: 'var(--nx-red)',
     unidade: 'un',
@@ -207,7 +207,7 @@ const SE_OPTIONS: Array<{
   },
   {
     id: 'validade',
-    rotulo: 'Validade proxima',
+    rotulo: 'Validade próxima',
     curto: 'validade < dias',
     descricao: 'Produto vence dentro do prazo definido',
     icone: Clock,
@@ -220,7 +220,7 @@ const SE_OPTIONS: Array<{
     id: 'meta_70',
     rotulo: 'Meta abaixo do percentual',
     curto: 'meta < %',
-    descricao: 'Meta do periodo abaixo do percentual definido',
+    descricao: 'Meta do período abaixo do percentual definido',
     icone: Target,
     cor: 'var(--nx-accent)',
     unidade: '%',
@@ -229,9 +229,9 @@ const SE_OPTIONS: Array<{
   },
   {
     id: 'despesa_up',
-    rotulo: 'Despesas acima da media',
-    curto: 'despesa > media',
-    descricao: 'Despesa do dia acima da media dos ultimos 7 dias',
+    rotulo: 'Despesas acima da média',
+    curto: 'despesa > média',
+    descricao: 'Despesa do dia acima da média dos últimos 7 dias',
     icone: CreditCard,
     cor: 'var(--nx-amber)',
     unidade: '%',
@@ -240,9 +240,9 @@ const SE_OPTIONS: Array<{
   },
   {
     id: 'compra_parada',
-    rotulo: 'Compra parada ha dias',
+    rotulo: 'Compra parada há dias',
     curto: 'compra parada > dias',
-    descricao: 'Compra em SOLICITADA/PEDIDO sem confirmacao',
+    descricao: 'Compra em SOLICITADA/PEDIDO sem confirmação',
     icone: Timer,
     cor: 'var(--nx-green)',
     unidade: 'dias',
@@ -261,13 +261,13 @@ const ACAO_OPTIONS: Array<{
   {
     id: 'notificar_gestor',
     rotulo: 'Notificar gestor',
-    descricao: 'Gera notificacao na central',
+    descricao: 'Gera notificação na central',
     icone: Bell,
     cor: 'var(--nx-accent)',
   },
   {
     id: 'alerta_critico',
-    rotulo: 'Alerta critico',
+    rotulo: 'Alerta crítico',
     descricao: 'Abre alerta com prioridade alta',
     icone: Flame,
     cor: 'var(--nx-red)',
@@ -275,28 +275,28 @@ const ACAO_OPTIONS: Array<{
   {
     id: 'ordem_compra',
     rotulo: 'Ordem de compra',
-    descricao: 'Registra a sugestao de reposicao na regra',
+    descricao: 'Registra a sugestão de reposição na regra',
     icone: ShoppingCart,
     cor: 'var(--nx-green)',
   },
   {
     id: 'whatsapp',
     rotulo: 'WhatsApp',
-    descricao: 'Guarda a intencao de avisar (sem envio integrado)',
+    descricao: 'Guarda a intenção de avisar (sem envio integrado)',
     icone: MessageCircle,
     cor: 'var(--nx-accent)',
   },
   {
     id: 'pausar_produto',
     rotulo: 'Pausar produto',
-    descricao: 'Guarda a intencao de pausa (nao altera o cadastro)',
+    descricao: 'Guarda a intenção de pausa (não altera o cadastro)',
     icone: Ban,
     cor: 'var(--nx-amber)',
   },
   {
     id: 'bloquear_categoria',
     rotulo: 'Bloquear categoria',
-    descricao: 'Guarda a intencao de bloqueio (nao altera lancamentos)',
+    descricao: 'Guarda a intenção de bloqueio (não altera lançamentos)',
     icone: ShieldAlert,
     cor: 'var(--nx-red)',
   },
@@ -304,9 +304,9 @@ const ACAO_OPTIONS: Array<{
 
 /** Severidade escolhida no modal - define a `prioridade` do alerta gerado. */
 const SEVERIDADES: Array<{ id: Prioridade; rotulo: string; descricao: string }> = [
-  { id: 'CRITICA', rotulo: 'Critico', descricao: 'Interrompe a operacao' },
-  { id: 'ALTA', rotulo: 'Aviso', descricao: 'Exige atencao' },
-  { id: 'MEDIA', rotulo: 'Info', descricao: 'Apenas informativo' },
+  { id: 'CRITICA', rotulo: 'Crítico', descricao: 'Interrompe a operação' },
+  { id: 'ALTA', rotulo: 'Alto', descricao: 'Exige atenção' },
+  { id: 'MEDIA', rotulo: 'Médio', descricao: 'Apenas informativo' },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -357,7 +357,7 @@ interface CondicaoLida {
 /** Le a coluna `condicao` tolerando JSON novo e texto livre legado. */
 function lerCondicao(texto: string | null | undefined): CondicaoLida {
   if (!texto) {
-    return { rotulo: 'Condicao livre', resumo: 'nao informada', tipo: null };
+    return { rotulo: 'Condição livre', resumo: 'não informada', tipo: null };
   }
   try {
     const dados = JSON.parse(texto) as { se?: string; param?: number; tipo?: string };
@@ -371,7 +371,7 @@ function lerCondicao(texto: string | null | undefined): CondicaoLida {
       tipo: dados.tipo ?? se.tipo,
     };
   } catch {
-    return { rotulo: 'Condicao livre', resumo: texto, tipo: null };
+    return { rotulo: 'Condição livre', resumo: texto, tipo: null };
   }
 }
 

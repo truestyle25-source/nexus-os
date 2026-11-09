@@ -48,7 +48,7 @@ test('1. usuario por ID - sucesso, validacao, 401/403/nao-conectado/falha e endp
   assert.equal(c.chamadas[0]?.path, `${BASE_ML}/users/123`);
   assert.deepEqual(await consultarUsuarioPorIdML(c, '   '), {
     estado: 'validacao',
-    mensagem: 'Informe o ID do usuario do Mercado Livre.',
+    mensagem: 'Informe o ID do usuário do Mercado Livre.',
   });
   assert.equal((await consultarUsuarioPorIdML(clienteFalso(null, { status: 401 }), '1')).estado, 'sessao_invalida');
   assert.equal((await consultarUsuarioPorIdML(clienteFalso(null, { status: 403, message: 'negado' }), '1')).estado, 'sem_permissao');

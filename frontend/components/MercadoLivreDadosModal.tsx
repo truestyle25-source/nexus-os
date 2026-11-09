@@ -237,7 +237,7 @@ export default function MercadoLivreDadosModal({ onClose, contaId = null, contaN
           {aba === 'porId' && (
             <div className="space-y-3">
               <div className="flex gap-2">
-                <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="ID do usuario" aria-label="ID do usuario" className="flex-1 h-9 rounded-[10px] bg-[#0F0F14] border border-[#2A2A35] px-3 text-zinc-100" />
+                <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="ID do usuário" aria-label="ID do usuário" className="flex-1 h-9 rounded-[10px] bg-[#0F0F14] border border-[#2A2A35] px-3 text-zinc-100" />
                 <button type="button" onClick={() => void buscarPorId()} disabled={buscando} className="h-9 px-3 rounded-[10px] bg-[#7C3AED] text-white disabled:opacity-50">{buscando ? 'Buscando...' : 'Buscar'}</button>
               </div>
               <BlocoEstado secao={porId} />
@@ -251,11 +251,11 @@ export default function MercadoLivreDadosModal({ onClose, contaId = null, contaN
                 {campo('last_name', 'Sobrenome', usuario?.last_name as string | undefined)}
                 {campo('phone_area_code', 'DDD')}
                 {campo('phone_number', 'Telefone')}
-                {campo('address_address', 'Endereco')}
+                {campo('address_address', 'Endereço')}
                 {campo('address_city', 'Cidade')}
                 {campo('address_state', 'Estado')}
                 {campo('address_zip_code', 'CEP')}
-                {campo('company_corporate_name', 'Razao social')}
+                {campo('company_corporate_name', 'Razão social')}
                 {campo('company_brand_name', 'Nome fantasia')}
               </div>
               {editErro && <p className="rounded-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-200">{editErro}</p>}
@@ -278,7 +278,7 @@ export default function MercadoLivreDadosModal({ onClose, contaId = null, contaN
           {aba === 'aplicacao' && (
             <div className="space-y-3">
               <div className="flex gap-2">
-                <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="ID da aplicacao" aria-label="ID da aplicacao" className="flex-1 h-9 rounded-[10px] bg-[#0F0F14] border border-[#2A2A35] px-3 text-zinc-100" />
+                <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="ID da aplicação" aria-label="ID da aplicação" className="flex-1 h-9 rounded-[10px] bg-[#0F0F14] border border-[#2A2A35] px-3 text-zinc-100" />
                 <button type="button" onClick={() => void buscarAplicacao()} className="h-9 px-3 rounded-[10px] bg-[#7C3AED] text-white">Buscar</button>
               </div>
               <BlocoEstado secao={aplicacao} />
@@ -299,7 +299,7 @@ export default function MercadoLivreDadosModal({ onClose, contaId = null, contaN
           )}
           {aba === 'notificacoes' && (
             <div className="space-y-2">
-              <BlocoEstado secao={notificacoes} vazioTexto="Nenhuma notificacao perdida." />
+              <BlocoEstado secao={notificacoes} vazioTexto="Nenhuma notificação perdida." />
               {listaNotif && <ListaGenerica itens={listaNotif} campos={['id', 'topic', 'resource', 'user_id']} />}
             </div>
           )}

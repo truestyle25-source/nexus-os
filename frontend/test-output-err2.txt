@@ -1,0 +1,36 @@
+[WebServer] <w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving '../../../typescript/lib/typescript' in c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build for build dependencies doesn't lead to expected result 'C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js', but to 'c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js' instead. Resolving dependencies are ignored for this path.
+[WebServer] <w>  at resolve commonjs file ../../../typescript/lib/typescript (expected C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js)
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at resolve commonjs c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving '../../../typescript/lib/typescript' in c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build for build dependencies doesn't lead to expected result 'C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js', but to 'c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js' instead. Resolving dependencies are ignored for this path.
+[WebServer] <w>  at resolve commonjs file ../../../typescript/lib/typescript (expected C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\typescript\lib\typescript.js)
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\load-jsconfig.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack-config.js
+[WebServer] <w>  at file dependencies c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at file c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+[WebServer] <w>  at resolve commonjs c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\node_modules\next\dist\build\webpack\loaders\next-swc-loader.js
+ERROR during browser simulation: page.waitForURL: Target page, context or browser has been closed
+=========================== logs ===========================
+waiting for navigation to "**/" until "load"
+  navigated to "http://localhost:3000/login"
+============================================================
+    at c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\simulacao-nexus.spec.js:35:16 {
+  log: []
+}
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+page.screenshot: Target page, context or browser has been closed
+    at c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\simulacao-nexus.spec.js:56:16 {
+  log: []
+}
+
+Node.js v24.19.0

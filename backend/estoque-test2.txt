@@ -1,0 +1,89 @@
+
+1. GET /estoque: saldo, filiais e indicadores
+  ok   POST /estoque/movimentar (ENTRADA) -> 200
+  ok   o saldo foi para 100 no PostgreSQL
+  ok   GET /estoque -> 200
+  ok   devolve as linhas de estoque
+  ok   devolve as filiais cadastradas (nao so as que tem estoque)
+  ok   devolve os indicadores
+  ok   qtdBaixo conta o item abaixo do minimo (100 nao)
+  ok   sem custos: podeVerCusto = false
+  ok   sem custos: valorTotal nao vem no corpo
+  ok   sem custos: o produto NAO traz o campo custo
+  ok   sem custos: a linha NAO traz valorTotal
+  ok   com custos: o produto traz o custo
+
+2. SAIDA subtrai e nunca deixa o estoque negativo
+  ok   POST /estoque/movimentar (SAIDA) -> 200
+  ok   o saldo caiu para 70
+  ok   saida maior que o saldo -> recusada
+  ok   o estoque NAO virou negativo
+  ok   da para zerar o estoque (ruptura e um estado valido)
+  ok   saldo zerado
+  ok   GET /estoque/movimentacoes -> 200
+  ok   o historico traz o total de movimentos registrados
+
+3. AJUSTE grava SALDO FINAL, nao delta
+  ok   pre-condicao: saldo 40
+  ok   POST com tipo AJUSTE -> 200
+  ok   AJUSTE gravou 12 como SALDO FINAL (nao 40+12 nem 40-28)
+
+4. Transferencia entre filiais
+  ok   pre-condicao: 62 na origem
+  ok   POST /estoque/transferir -> 200
+  ok   a origem ficou com 42
+  ok   o destino recebeu 20
+  ok   a resposta traz o documento que liga as duas pontas
+  ok   foram gravadas DUAS linhas de movimentacao
+  FAIL uma com delta negativo (saida da origem) e outra positivo -> deltas=-20,20
+  ok   transferir mais do que existe -> recusada
+  ok   transferir para a MESMA filial -> recusada
+  ok   o saldo da origem nao mudou nas tentativas recusadas
+
+5. Inventario: folha, contagem e fechamento
+  ok   POST /estoque/inventarios -> 200
+  ok   a sessao nasce ABERTA
+  ok   a folha congelou o saldo do sistema
+  FAIL cada item guarda o saldo do instante da abertura -> sistema=42 esperado=42
+  ok   PUT /contagens -> 200
+  FAIL a contagem foi gravada -> contada=27
+  ok   a divergencia foi CLASSIFICADA (SOBROU/FALTOU)
+  ok   guarda QUEM contou
+  ok   abrir uma 2a folha na MESMA filial -> recusada
+  ok   POST /fechar -> 200
+  ok   a sessao ficou CONCLUIDA
+  ok   CONCLUIR O INVENTARIO NAO ALTERA O ESTOQUE (decisao da empresa)
+  ok   a folha aparece no historico
+  ok   filial sem nenhum item em estoque -> recusada
+
+6. Isolamento multi-tenant e permissoes
+  ok   empresa B responde 200
+  ok   empresa B nao ve o produto da empresa A
+  ok   empresa B nao movimenta produto da empresa A -> 404
+  ok   o saldo da empresa A nao mudou
+  ok   movimentar em filial de outra empresa -> recusada
+  ok   GET /estoque sem permissao -> 403
+  ok   POST /estoque/movimentar sem permissao -> 403
+  ok   POST /estoque/transferir sem permissao -> 403
+  ok   GET /estoque sem token -> 401
+  ok   GET /estoque/inventarios sem permissao -> 403
+  ok   tipo de movimento desconhecido -> recusado
+  ok   o saldo segue intacto apos as tentativas invalidas
+
+RESULTADO: 56 ok, 3 falha(s)
+✔ integração: aba estoque (1125.8941ms)
+✖ tests\estoque-aba.test.ts (2331.633ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2342.249
+
+✖ failing tests:
+
+test at tests\estoque-aba.test.ts:1:1
+✖ tests\estoque-aba.test.ts (2331.633ms)
+  'test failed'

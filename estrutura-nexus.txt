@@ -1,0 +1,373 @@
+﻿C:.
+---- package-lock.json
+---- estrutura-nexus.txt
+---- DEBITO-TECNICO.md
+---- package.json
+---- RH BASE.html
+---- README.md
+---- README-PRODUCAO.md
+---- vercel.json
+---- BUILD-VALIDATION.md
+---- .env
+---- .gitignore
++--- backend
+|   ---- Dockerfile
+|   ---- docker-compose.yml
+|   ---- .srv.log
+|   ---- tsconfig.json
+|   ---- package.json
+|   ---- package-lock.json
+|   ---- vercel.json
+|   ---- .env.example
+|   ---- .dev4.log
+|   ---- .env
+|   +--- prisma
+|   |   ---- schema.prisma.dbpull-backup
+|   |   ---- schema.prisma.before-prisma-fix
+|   |   ---- schema.prisma.backup-erro
+|   |   ---- schema.prisma
+|   |   +--- migrations
+|   |       ---- migration_lock.toml
+|   |       +--- 202609271200_ponto_fuso_empresa
+|   |       |   ---- migration.sql
+|   |       +--- 202609271400_funcionario_horarios_previstos
+|   |       |   ---- migration.sql
+|   |       +--- 202609280900_radar_inteligencia
+|   |       |   ---- migration.sql
+|   |       +--- 202609270900_funcionario_beneficios
+|   |       |   ---- migration.sql
+|   |       +--- 202609261400_rh_verbas_arquivamento
+|   |       |   ---- migration.sql
+|   |       +--- 202609261500_documentos_bucket
+|   |       |   ---- migration.sql
+|   |       +--- 202609261600_rh_folha_pagamento
+|   |       |   ---- migration.sql
+|   |       +--- 202609301000_pontuacao_configuravel
+|   |       |   ---- migration.sql
+|   |       +--- 202609301100_pontuacao_presente
+|   |       |   ---- migration.sql
+|   |       +--- 202609110001_integrity_security
+|   |       |   ---- migration.sql
+|   |       +--- 202609300900_loja_recompensas
+|   |       |   ---- migration.sql
+|   |       +--- 202609281200_plano_desenvolvimento_disc
+|   |       |   ---- migration.sql
+|   |       +--- 202609290900_treinamentos_participantes
+|   |       |   ---- migration.sql
+|   |       +--- 202609291200_feedback_lideranca
+|   |       |   ---- migration.sql
+|   |       +--- 202609261300_corrige_sync_schema
+|   |       |   ---- migration.sql
+|   |       +--- 202609130002_fix_empresa_status_type
+|   |       |   ---- migration.sql
+|   |       +--- 202609131200_alerta_compra_pendente
+|   |       |   ---- migration.sql
+|   |       +--- 202609131300_api_publica_chaves
+|   |       |   ---- migration.sql
+|   |       +--- 202609130001_importacao
+|   |       |   ---- migration.sql
+|   |       +--- 202609111200_fundacao_auth_empresa
+|   |       |   ---- migration.sql
+|   |       +--- 202609121000_estoque_filial_produtos
+|   |       |   ---- migration.sql
+|   |       +--- 202609121600_compra_filial_e_snapshot_estoque
+|   |       |   ---- migration.sql
+|   |       +--- 202609261000_rh_desligamento
+|   |       |   ---- migration.sql
+|   |       +--- 202609261100_sync_schema_banco
+|   |       |   ---- migration.sql
+|   |       +--- 202609261200_sync_schema_banco_2
+|   |       |   ---- migration.sql
+|   |       +--- 202609240003_fornecedores_v2
+|   |       |   ---- migration.sql
+|   |       +--- 202609201000_pdv_caixa
+|   |       |   ---- migration.sql
+|   |       +--- 202609240001_pix_universal
+|   |       |   ---- migration.sql
+|   |       +--- 202609240002_relatorio_gerado
+|   |           ---- migration.sql
+|   +--- scripts
+|   |   ---- migrate.ts
+|   +--- tests
+|   |   ---- ponto-fechamento.test.ts
+|   |   ---- pontuacao.test.ts
+|   |   ---- pix.test.ts
+|   |   ---- plano-desenvolvimento.test.ts
+|   |   ---- radar-disc.test.ts
+|   |   ---- vendas-filtros.test.ts
+|   |   ---- verbas-rescisao.test.ts
+|   |   ---- storage.test.ts
+|   |   ---- treinamentos.test.ts
+|   |   ---- competencia-folha.test.ts
+|   |   ---- folha.test.ts
+|   |   ---- ciclo3-lideranca.test.ts
+|   |   ---- cnpj.test.ts
+|   |   ---- fuso-ponto.test.ts
+|   |   ---- loja.test.ts
+|   |   ---- permissoes.test.ts
+|   |   ---- hash.test.ts
+|   |   ---- jwt.test.ts
+|   +--- src
+|       ---- seed.ts
+|       ---- server.ts
+|       +--- scripts
+|       |   ---- restaurar-backup.ts
+|       |   ---- scheduler.ts
+|       |   ---- backup.ts
+|       |   ---- gerarSnapshotsDiarios.ts
+|       +--- types
+|       |   ---- fastify.d.ts
+|       +--- auth
+|       |   ---- jwt.ts
+|       |   ---- hash.ts
+|       +--- modules
+|       |   +--- payments
+|       |   |   ---- pixUniversal.ts
+|       |   |   ---- pix.routes.ts
+|       |   +--- pdv
+|       |   |   ---- pdv.routes.ts
+|       |   +--- produtos
+|       |   |   ---- produtos.routes.ts
+|       |   +--- importacao
+|       |   |   ---- importacao.routes.ts
+|       |   +--- integracoes
+|       |   |   ---- integracoes.routes.ts
+|       |   +--- lgpd
+|       |   |   ---- lgpd.routes.ts
+|       |   +--- tts
+|       |   |   ---- tts.service.ts
+|       |   |   ---- tts.controller.ts
+|       |   +--- usuarios
+|       |   |   ---- usuarios.routes.ts
+|       |   +--- vendas
+|       |   |   ---- vendas.routes.ts
+|       |   |   ---- vendas.filtros.ts
+|       |   +--- radar
+|       |   |   ---- radar.resumo.ts
+|       |   |   ---- radar.routes.ts
+|       |   |   ---- radar.disc.ts
+|       |   |   ---- radar.regras.ts
+|       |   +--- relatorios
+|       |   |   ---- relatorios.routes.ts
+|       |   |   ---- relatorios.service.ts
+|       |   |   ---- export.service.ts
+|       |   |   ---- iaRelatorios.service.ts
+|       |   +--- rh
+|       |   |   ---- pontuacao.ts
+|       |   |   ---- rh.routes.ts
+|       |   |   ---- ponto-fechamento.service.ts
+|       |   |   ---- pontuacao.routes.ts
+|       |   |   ---- treinamentos.ts
+|       |   |   ---- verbas.ts
+|       |   |   ---- rh.utils.ts
+|       |   |   ---- treinamentos.routes.ts
+|       |   |   ---- lideranca.routes.ts
+|       |   |   ---- lideranca.ts
+|       |   |   ---- folha.routes.ts
+|       |   |   ---- gestao-tempo.routes.ts
+|       |   |   ---- plano-desenvolvimento.routes.ts
+|       |   |   ---- plano-desenvolvimento.ts
+|       |   |   ---- loja.routes.ts
+|       |   |   ---- loja.ts
+|       |   +--- auth
+|       |   |   ---- auth.routes.ts
+|       |   +--- chat
+|       |   |   ---- chat.service.ts
+|       |   +--- compras
+|       |   |   ---- compras.routes.ts
+|       |   +--- api-publica
+|       |   |   ---- api-publica.routes.ts
+|       |   +--- assinatura
+|       |   |   ---- assinatura.routes.ts
+|       |   +--- auditoria
+|       |   |   ---- auditoria.service.ts
+|       |   +--- fornecedores
+|       |   |   ---- iaFornecedores.service.ts
+|       |   |   ---- fornecedores.service.ts
+|       |   |   ---- fornecedores.routes.ts
+|       |   +--- gestao
+|       |   |   ---- gestao.routes.ts
+|       |   +--- ia
+|       |   |   ---- ia.service.ts
+|       |   |   ---- ia.routes.ts
+|       |   +--- dashboard
+|       |   |   ---- dashboard.routes.ts
+|       |   +--- empresa
+|       |   |   ---- empresa.routes.ts
+|       |   +--- estoque
+|       |       ---- estoque.service.ts
+|       |       ---- estoque.routes.ts
+|       |       ---- estoque-indicadores.service.ts
+|       +--- domain
+|       |   ---- cnpj.ts
+|       +--- config
+|       |   ---- prisma.ts
+|       |   ---- env.ts
+|       +--- middlewares
+|       |   ---- rateLimiter.ts
+|       |   ---- auth.ts
+|       |   ---- apiKeyAuth.ts
+|       +--- lib
+|           ---- permissoes.ts
+|           ---- permissoes-catalogo.ts
+|           ---- pdf.ts
+|           ---- storage.ts
+|           ---- secrets.ts
+|           ---- prisma.ts
+|           ---- erros.ts
+|           ---- email.ts
+|           ---- auth.ts
+|           ---- fuso.ts
+|           ---- format.ts
+|           ---- folha.ts
++--- .vscode
+|   ---- tasks.json
++--- frontend
+|   ---- package-lock.json
+|   ---- package.json
+|   ---- tsconfig.tsbuildinfo
+|   ---- next.config.js
+|   ---- postcss.config.js
+|   ---- tsconfig.check.tsbuildinfo
+|   ---- tsconfig.json
+|   ---- tailwind.config.js
+|   ---- TODO_SNIFFER_ENTIDADES.cjs
+|   ---- .env.local
+|   ---- .env.example
+|   ---- next-env.d.ts
+|   ---- middleware.ts
+|   ---- manifest.json
+|   ---- .env.local.example
+|   +--- app
+|   |   ---- globals.css
+|   |   ---- layout.tsx
+|   |   +--- redefinir-senha
+|   |   |   ---- page.tsx
+|   |   +--- (dashboard)
+|   |   |   ---- page.tsx
+|   |   |   ---- layout.tsx
+|   |   |   ---- _recovered.txt
+|   |   |   +--- plataforma
+|   |   |   |   ---- page.tsx
+|   |   |   +--- ponto
+|   |   |   |   ---- page.tsx
+|   |   |   +--- products
+|   |   |   |   ---- page.tsx
+|   |   |   +--- pesquisa
+|   |   |   |   ---- page.tsx
+|   |   |   +--- intelligence
+|   |   |   |   ---- page.tsx
+|   |   |   +--- metas
+|   |   |   |   ---- page.tsx
+|   |   |   +--- pdv
+|   |   |   |   ---- page.tsx
+|   |   |   +--- usuarios
+|   |   |   |   ---- page.tsx
+|   |   |   +--- vendas
+|   |   |   |   ---- page.tsx
+|   |   |   +--- admin
+|   |   |   |   ---- page.tsx
+|   |   |   +--- rh
+|   |   |   |   ---- page.tsx
+|   |   |   +--- produtos
+|   |   |   |   ---- page.tsx
+|   |   |   +--- radar-organizacional
+|   |   |   |   ---- page.tsx
+|   |   |   +--- relatorios
+|   |   |   |   ---- page.tsx
+|   |   |   +--- compras
+|   |   |   |   ---- page.tsx
+|   |   |   +--- clientes
+|   |   |   |   ---- page.tsx
+|   |   |   +--- dre
+|   |   |   |   ---- page.tsx
+|   |   |   +--- configuracoes
+|   |   |   |   ---- page.tsx
+|   |   |   +--- assinatura
+|   |   |   |   ---- page.tsx
+|   |   |   +--- alertas
+|   |   |   |   ---- page.tsx
+|   |   |   +--- central-integracoes
+|   |   |   |   ---- page.tsx
+|   |   |   +--- auditoria
+|   |   |   |   ---- page.tsx
+|   |   |   +--- ia
+|   |   |   |   ---- page.tsx
+|   |   |   +--- fornecedores
+|   |   |   |   ---- page.tsx
+|   |   |   +--- indicadores
+|   |   |   |   ---- page.tsx
+|   |   |   +--- importacao
+|   |   |   |   ---- page.tsx
+|   |   |   +--- financeiro
+|   |   |   |   ---- page.tsx
+|   |   |   +--- estoque
+|   |   |   |   ---- page.tsx
+|   |   |   +--- fluxo
+|   |   |   |   ---- page.tsx
+|   |   |   |   ---- FluxoAreaChart.tsx
+|   |   |   +--- fiscal
+|   |   |       ---- page.tsx
+|   |   +--- auth
+|   |   |   +--- [...caminho]
+|   |   |       ---- page.tsx
+|   |   +--- esqueci-senha
+|   |   |   ---- page.tsx
+|   |   +--- login
+|   |       ---- page.tsx.backup
+|   |       ---- page.tsx
+|   |       +--- auth
+|   |           +--- [...caminho]
+|   |               ---- page.tsx
+|   +--- components
+|   |   ---- PixQrCodeModal.tsx
+|   |   ---- PixSettingsTab.tsx
+|   |   ---- ThemeScript.tsx
+|   |   ---- ThemeSync.tsx
+|   |   ---- ModuleHeader.tsx
+|   |   +--- relatorios
+|   |   |   ---- RelatorioCard.tsx
+|   |   |   ---- IaCriadoraRelatorios.tsx
+|   |   |   ---- FormularioDisc.tsx
+|   |   +--- ui
+|   |   |   ---- LineChart.tsx
+|   |   |   ---- KpiCard.tsx
+|   |   |   ---- Panel.tsx
+|   |   |   ---- TabsPill.tsx
+|   |   |   ---- SectionTitle.tsx
+|   |   |   ---- index.ts
+|   |   |   ---- BarChart.tsx
+|   |   |   ---- Badge.tsx
+|   |   |   ---- DataTable.tsx
+|   |   |   ---- formulas.ts
+|   |   |   ---- EmptyState.tsx
+|   |   +--- rh
+|   |       ---- PlanoDesenvolvimentoModal.tsx
+|   |       ---- PontuacaoConfigPainel.tsx
+|   |       ---- TreinamentoModal.tsx
+|   |       ---- LojaRecompensasPainel.tsx
+|   |       ---- FeedbackLiderancaModal.tsx
+|   |       ---- GestaoTempoPainel.tsx
+|   |       ---- LiderancaEmpaticPainel.tsx
+|   +--- src
+|   |   ---- App.tsx
+|   +--- lib
+|       ---- radar.tsx
+|       ---- prefs.ts
+|       ---- uploadDocumento.ts
+|       ---- theme.ts
+|       ---- i18n.ts
+|       ---- cnpj.ts
+|       ---- api.ts
+|       ---- format.ts
+|       ---- dashboard.ts
++--- docs
+|   ---- README-PARTE-5-RH-PONTO.md
+|   ---- README-PARTE-6-IA.md
+|   ---- README-PARTE-7-PRODUCAO.md
+|   ---- README-PARTE-4-GESTAO.md
+|   ---- README-PARTE-1-FUNDACAO.md
+|   ---- README-PARTE-2-COMERCIAL.md
+|   ---- README-PARTE-3-VENDAS-PDV.md
++--- database
+    ---- schema.sql
