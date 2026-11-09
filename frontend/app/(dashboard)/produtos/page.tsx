@@ -250,7 +250,7 @@ async function dup(p:P){
 		try{
 			await api.put(`/produtos/${detail.id}`,{precoPromocional:pv,promocaoInicio:inicio,promocaoFim:fim,promocaoLimite:promoF.limite?Number(promoF.limite):null,origem:'MANUAL'});
 			await carregarProdutos();const {data}=await api.get<any>(`/produtos/${detail.id}`);setDetail(mapProduto(data,0));setShowPromo(false);addToast('Promoção persistida no backend');
-		}catch(error){addToast(error instanceof Error?error.message:'Nção foi possível atualizar promoçção','err');}
+		}catch(error){addToast(error instanceof Error?error.message:'Não foi possível atualizar promoção','err');}
 	}
 function exportCSV(){
  const h='Nome,SKU,Categoria,Marca,PrecoCusto,PrecoVenda,Estoque,CodigoBarras';
@@ -267,7 +267,7 @@ function exportCSV(){
  a.click();
  a.remove();
  // A URL do objeto precisa ser revogada em algum momento: sem isto, cada
- // exportaçãoƒ£o mantinha o CSV inteiro na memória da aba até recarregar.
+ // exportação mantinha o CSV inteiro na memória da aba até recarregar.
  // Revogada DEPOIS do clique, senão o navegador cancela o download.
  window.setTimeout(()=>URL.revokeObjectURL(url),4000);
  addToast(filteredProducts.length+' exportados');
@@ -382,7 +382,7 @@ return (<div className="nexus-products-page" style={{padding:24,maxWidth:1400,ma
 <td style={{padding:'12px 8px'}}><Badge kind="info">{p.categoria}</Badge><div style={{fontSize:11,color:'var(--nx-ink-2)',marginTop:4}}>{p.marca}</div></td>
 <td style={{padding:'12px 8px'}}><div style={{fontSize:11,color:'var(--nx-ink-2)'}}>{p.estoque} un</div><div style={{fontSize:11,color:'var(--nx-ink-3)'}}>{p.local}</div><div style={{height:4,background:'var(--nx-surface-3)',borderRadius:4,marginTop:4,width:80}}><div style={{height:4,borderRadius:4,background:'var(--nx-green)',width:pct+'%'}} /></div></td>
 <td style={{padding:'12px 8px'}}><div style={{fontSize:12,fontWeight:800}}>{brl(p.promo?p.precoPromocional??p.precoVenda:p.precoVenda)}</div><div style={{fontSize:10,color:'var(--nx-ink-3)'}}>custo {p.precoCusto===undefined?'Oculto':brl(p.precoCusto)}</div><span style={{fontSize:10,fontWeight:800,background:'var(--nx-amber)',color:'var(--nx-ink)',borderRadius:6,padding:'2px 6px'}}>{calcMargem(p.precoCusto,p.precoVenda)}</span></td>
-<td style={{padding:'12px 8px'}}>{p.status==='ATIVO'?<Badge kind="success">{traduzir('ativo', "Ativo")}</Badge>:p.status==='INATIVO'?<Badge>{traduzir('inativo', "Inativo")}</Badge>:<Badge kind="muted">{p.status}</Badge>}{p.promo&&(<span style={{marginLeft:6}}><Badge kind="warning">Promoçção</Badge></span>)}</td>
+<td style={{padding:'12px 8px'}}>{p.status==='ATIVO'?<Badge kind="success">{traduzir('ativo', "Ativo")}</Badge>:p.status==='INATIVO'?<Badge>{traduzir('inativo', "Inativo")}</Badge>:<Badge kind="muted">{p.status}</Badge>}{p.promo&&(<span style={{marginLeft:6}}><Badge kind="warning">Promoção</Badge></span>)}</td>
 <td style={{padding:'12px 8px'}}><div style={{display:'flex',gap:6}}><button onClick={e=>{e.stopPropagation();openEdit(p);}} aria-label={traduzir('editar', "Editar")} style={{background:'none',border:'none',color:'var(--nx-ink-2)',cursor:'pointer'}}><Edit3 size={14}/></button><button onClick={e=>{e.stopPropagation();void dup(p);}} aria-label={traduzir('duplicar', "Duplicar")} style={{background:'none',border:'none',color:'var(--nx-ink-2)',cursor:'pointer'}}><Copy size={14}/></button><button onClick={e=>{e.stopPropagation();void abrirDetalhe(p);}} aria-label="Mais" style={{background:'none',border:'none',color:'var(--nx-ink-2)',cursor:'pointer'}}><MoreVertical size={14}/></button></div></td>
 </tr>);})}
 </tbody></table></div>
@@ -466,7 +466,7 @@ return (<div className="nexus-products-page" style={{padding:24,maxWidth:1400,ma
 <button onClick={()=>void abrirConfiguracaoKit(detail)} style={btnGhost}><Layers size={13}/>{detail.kit?'Editar composição':'Configurar kit'}</button>
 {detail.kit&&<button onClick={()=>{setProduction({filialId:detail.estoques?.length===1?detail.estoques[0].filialId:'',quantidade:'1',idempotencyKey:crypto.randomUUID()});setShowProduction(true);}} style={btnPri}><Package size={13}/> Produzir</button>}
 <button onClick={()=>{setAdj({...adj,filialId:detail.estoques?.length===1?detail.estoques[0].filialId:''});setShowAdjust(true);}} style={btnGhost}><Package size={13}/> Ajustar Estoque</button>
-<button onClick={()=>{setPromoF({preco:detail.precoPromocional===undefined?'':String(detail.precoPromocional),ini:detail.promocaoInicio?.slice(0,10)||'',fim:detail.promocaoFim?.slice(0,10)||'',limite:detail.promocaoLimite?String(detail.promocaoLimite):''});setShowPromo(true);}} style={btnGhost}><Tag size={13}/> Criar Promoçção</button>
+<button onClick={()=>{setPromoF({preco:detail.precoPromocional===undefined?'':String(detail.precoPromocional),ini:detail.promocaoInicio?.slice(0,10)||'',fim:detail.promocaoFim?.slice(0,10)||'',limite:detail.promocaoLimite?String(detail.promocaoLimite):''});setShowPromo(true);}} style={btnGhost}><Tag size={13}/> Criar Promoção</button>
 <button onClick={()=>router.push('/pdv')} style={btnGhost}><ShoppingCart size={13}/> Abrir PDV</button>
 </div>
 </Modal>)}
@@ -503,7 +503,7 @@ return (<div className="nexus-products-page" style={{padding:24,maxWidth:1400,ma
 <Field label="Início"><input type="date" value={promoF.ini} onChange={e=>setPromoF({...promoF,ini:e.target.value})} style={inpStyle} /></Field>
 <Field label="Fim"><input type="date" value={promoF.fim} onChange={e=>setPromoF({...promoF,fim:e.target.value})} style={inpStyle} /></Field>
 <Field label="Limite (informativo)"><input value={promoF.limite} onChange={e=>setPromoF({...promoF,limite:e.target.value.replace(/\D/g,'')})} style={inpStyle} /><div style={{fontSize:10,color:'var(--nx-amber)',marginTop:4}}>Esse limite ainda não bloqueia vendas.</div></Field>
-<button onClick={confirmPromo} style={{...btnPri,justifyContent:'center'}}>Criar Promoçção</button>
+<button onClick={confirmPromo} style={{...btnPri,justifyContent:'center'}}>Criar Promoção</button>
 </div>
 </Modal>)}
 {showImport&&(<Modal width={500}>
