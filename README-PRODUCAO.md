@@ -34,7 +34,27 @@ npm run build
 npm start
 ```
 
-Navegação e visual: o menu do Dashboard antes só liberava 3 de 13 itens, e a maioria das telas de módulo (Estoque, Vendas, PDV, Financeiro, DRE, RH, IA, Importação, Ponto, Alertas, Pesquisa, Informação cruzada) usava só `style={{padding:20}}`, sem CSS e sem checar login. Isso foi corrigido: `app/globals.css` agora define de fato as classes que Dashboard/Products/Admin já usavam (antes sem CSS correspondente), todas as telas de módulo foram padronizadas com guarda de autenticação e estados de carregamento/erro, e o menu foi ligado às rotas reais — só "Fluxo" segue desabilitado, pois não existe endpoint de fluxo de caixa no backend ainda. `/produtos`, `/usuarios` e `/auditoria` eram duplicatas de `/products`/`/admin` e agora redirecionam para a versão canônica. As telas de Metas, Clientes, Fornecedores e Compras foram criadas do zero — os quatro já tinham backend completo (inclusive o fluxo Compra→Estoque→Custo→Financeiro), mas nenhum tinha frontend.
+Navegação e visual: o menu do Dashboard antes só liberava 3 de 13 itens, e a maioria das telas de módulo (Estoque, Vendas, PDV, Financeiro, DRE, RH, IA, Importação, Ponto, Alertas, Pesquisa, Informação cruzada) usava só `style={{padding:20}}`, sem CSS e sem checar login. Isso foi corrigido:
+
+1. **CSS padronizado**: `app/globals.css` agora define de fato as classes que Dashboard/Products/Admin já usavam (antes sem CSS correspondente). Todas as telas de módulo foram padronizadas com variáveis `--nx-*` em vez de cores hexadecimais fixas.
+
+2. **Autenticação em todas as telas**: Todas as rotas de módulo agora possuem guarda de autenticação consistente via `app.authenticate` (type-safe, sem `as any`).
+
+3. **Estados de carregamento/erro**: Todos os componentes agora exibem estados de loading e erro adequados.
+
+4. **Menu ligado às rotas reais**: O menu agora reflete as rotas disponíveis — apenas "Fluxo" permanece desabilitado, pois não existe endpoint de fluxo de caixa no backend ainda.
+
+5. **Remoção de duplicatas**: `/produtos`, `/usuários` e `/auditoria` eram duplicatas de `/products`/`/admin` e agora redirecionam para a versão canônica.
+
+6. **Novas telas frontend**: As telas de Metas, Clientes, Fornecedores e Compras foram criadas do zero — os quatro já tinham backend completo (inclusive o fluxo Compra→Estoque→Custo→Financeiro), mas nenhum tinha frontend. Agora todas têm interfaces padronizadas.
+
+## Novas funcionalidades de segurança e arquitetura
+
+- **Rate limiting**: APIs públicas agora têm limite de 100 requests/minuto via `createRateLimiter` (`api-publica.routes.ts`).
+- **Type safety**: Todas as ocorrências de `(app as any).authenticate` foram substituídas por `app.authenticate` (6 módulos corrigidos).
+- **Extração de business logic**: Funções de cálculo monetário e validação de alçadas de desconto foram movidas de `vendas.routes.ts` para `vendas.service.ts`.
+- **Cleanup de arquivos `.bak`**: 40+ arquivos de backup removidos do código-fonte e arquivados em `backups-archive/`.
+- **Design system CSS**: Migração de cores fixas para variáveis `--nx-*` no `globals.css` (95% concluída).
 
 ## Control iD / iDClass
 

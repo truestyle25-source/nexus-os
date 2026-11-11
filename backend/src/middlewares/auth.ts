@@ -74,8 +74,13 @@ export const registerAuthentication = fp(async (app: any) => {
     }
 
     // Armazenar o usuario validado no request para uso subsequente das rotas
-    // @ts-expect-error - adicionando propriedade dinamica ao tipo FastifyRequest
     request.usuarioValidado = usuarioValidado
+
+    // Sobrescreve a empresaId do JWT com o valor validado no banco de dados.
+    // Isso elimina o risco de acesso inter-empresa caso o JWT seja forjado
+    // com uma empresaId diferente (ex.: JWT_SECRET comprometido). Todas as
+    // rotas que leem req.user.empresaId passam a usar o valor do banco.
+    request.user.empresaId = usuarioValidado.empresaId
 
     // Revogacao de token (Seção 5 — "Alterar senha").
     //

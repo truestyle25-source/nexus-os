@@ -1,8 +1,6 @@
 {
-  "dependencies": {
-    "@google/generative-ai": "^0.24.1"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   }
 }

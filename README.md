@@ -6,8 +6,8 @@
 
 This is **not** a generic CRUD application. It is a mission-critical business system with:
 
-- **200+ Prisma models** covering every business domain
-- **50+ route modules** in the backend
+- **85 Prisma models** covering every business domain
+- **38 route modules** in the backend
 - **PWA capabilities** with offline data persistence via IndexedDB
 - **Complex HR & payroll modules** with scoring, rewards, and attendance tracking
 - **External integrations** (Shopee, Mercado Livre, PDV, PIX, APIs)
@@ -90,7 +90,7 @@ This is **not** a generic CRUD application. It is a mission-critical business sy
 
 ✅ **Core CRUD operations** for Empresa, Usuario, Produto, Estoque, Filial  
 ✅ **Authentication flow** with JWT + cookies  
-✅ **Prisma schema** fully defined with 200+ models  
+✅ **Prisma schema** fully defined with 85 models  
 ✅ **Fastify server** starts with valid JWT_SECRET  
 ✅ **Health endpoint** `/health`  
 ✅ **Next.js frontend** renders without errors  

@@ -21,4 +21,8 @@ declare module 'fastify' {
     // Decorado em registerAuthentication() (src/middlewares/auth.ts).
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
+
+  interface FastifyRequest {
+    usuarioValidado: { id: string; empresaId: string } | null;
+  }
 }

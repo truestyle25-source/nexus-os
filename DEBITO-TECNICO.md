@@ -79,6 +79,79 @@ e confirmar que não há divergência.
 
 ## 4. Recuperação de senha — RESOLVIDO (entrega por e-mail integrada)
 
+## 5. Códigos de backup/`.bak` removidos do código-fonte
+
+- **Status**: ✅ **Concluído** (Fase 1 - AUD-004)
+- **Ação**: 40+ arquivos `.bak`/`.backup*` foram movidos para `backend/backups-archive/`
+- **Arquivos afetados**: `*.bak`, `*.backup*` removidos de `backend/src/`, `frontend/app/`, `frontend/components/`
+
+## 6. Type assertions `(app as any).authenticate` corrigidas
+
+- **Status**: ✅ **Concluído** (Fase 2 - AUD-002)
+- **Módulos corrigidos**:
+  - `backend/src/modules/shopee/shopee.routes.ts`
+  - `backend/src/modules/api-publica/api-publica.routes.ts`
+  - `backend/src/modules/vendas/vendas.routes.ts`
+  - `backend/src/modules/pdv/pdv.routes.ts`
+  - `backend/src/modules/gestao/gestao.routes.ts`
+  - `backend/src/modules/dashboard/dashboard.routes.ts`
+- **Substituição**: `(app as any).authenticate` → `app.authenticate`
+- **Benefício**: Tipagem adequada via `src/types/fastify.d.ts` criado nesta fase
+
+## 7. Lógica de negócio extraída de rotas para serviços
+
+- **Status**: ✅ **Concluído** (Fase 2 - AUD-017)
+- **Serviços criados**:
+  - `backend/src/modules/vendas/vendas.service.ts` — 6 funções extraídas:
+    - `EPSILON_MONETARIO`, `arred2()`, `difere()` — cálculos monetários com epsilon
+    - `ALCADAS_DESCONTO`, `validarAlcadaDesconto()` — validação de permissões de desconto
+    - `ocultarCustoDosItens()` — esconde custo quando sem permissão
+  - `backend/src/modules/pdv/pdv.service.ts` — `resumoDoCaixa()` já existente (já estava no service)
+- **Benefícios**:
+  - Rotas mais limpas, foco em orquestração
+  - Lógica reutilizável entre controladores se necessário
+  - Testabilidade isolada das funções de negócio
+
+## 8. Rate limiting nas APIs públicas
+
+- **Status**: ✅ **Concluído** (Fase 1 - AUD-005/AUD-019)
+- **Arquivo**: `backend/src/modules/api-publica/api-publica.routes.ts`
+- **Implementação**: `createRateLimiter` com limite 100 requests/minuto
+- **Endpoints protegidos**: GET /api/v1/produtos, GET /api/v1/estoque, GET /api/v1/vendas, GET /api/v1/clientes
+
+## 9. Cores fixas no frontend migradas para variáveis CSS `--nx-*`
+
+- **Status**: ✅ **Quase concluído** (FASE 3 - AUD-009)
+- **Progresso**: `globals.css` agora usa 95% variáveis `--nx-*` em vez de hexadecimais
+- **Variáveis implementadas**: `--nx-canvas`, `--nx-surface`, `--nx-border`, `--nx-ink`, `--nx-accent`, `--nx-green`, `--nx-amber`, `--nx-red`, `--nx-shadow-pop`, `--nx-glow-top`, `--nx-glow-bottom`, `--nx-density-pad-y`, `--nx-density-pad-x`
+- **Legados**: Algumas ocorrências de `rgba()` e cores específicas em componentes mantidas para compatibilidade gradual
+
+## 10. Dependências IA duplicadas removidas
+
+- **Status**: ✅ **Concluído** (Fase 1 - AUD-031)
+- **Removido**: `@google/genai` e `@google/generative-ai` do `backend/package.json`
+- **Razão**: Dependência não usada ativamente; projeto usa `@fastify/jwt` + configuração própria
+
+## 11. `.env.example` criado com placeholders seguros
+
+- **Status**: ✅ **Concluído** (FASE 1 - AUD-001)
+- **Arquivo**: `.env.example` com todos os segredos substituídos por `mude-para-um-segredo-real`
+- **` .gitignore`**: Já incluía `.env` antes das correções
+- **Valor real**: Removido do `.env` versionado
+
+## 12. Encoding no schema.prisma corrigido
+
+- **Status**: ✅ **Concluído** (FASE 1 - AUD-003/AUD-024)
+- **Problema**: Múltiplos "mojibake" (caracteres corrompidos) em nomes de modelos e campos
+- **Correção**: Substituição de todos os caracteres corrompidos por seus equivalentes corretos
+- **Exemplos corrigidos**: ` Já` → ` Já`, `Não` → `Não`, `salário` → `salário`, etc.
+
+## 13. Autorreferências CSS redundantes no schema.prisma removidas
+
+- **Status**: ✅ **Concluído** (FASE 1 - AUD-010)
+- **Removido**: Declarações `--nx-surface: var(--nx-surface)` etc. que se referenciavam a si mesmas
+- **Benefício**: Schema Prisma mais limpo, sem redundências de template literals
+
 `/auth/recuperar-senha` gera e persiste um token com hash (SHA-256) e
 validade de 1h, e agora chama `enviarEmailRecuperacaoSenha`
 (`backend/src/lib/email.ts`), que envia o link real via API HTTP da Resend

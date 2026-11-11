@@ -45,7 +45,7 @@ export async function gestaoRoutes(app: FastifyInstance) {
   // `X-Truncated`/`X-Total-Count`; aqui o mesmo aviso é aplicado, e os totais
   // passam a ser calculados sobre o conjunto INTEIRO do filtro (aggregate),
   // não sobre a página exibida.
-  app.get('/financeiro', { preHandler: [(app as any).authenticate, await permissaoMiddleware('financeiro', 'visualizar')] }, async (req:any, reply:any) => {
+  app.get('/financeiro', { preHandler: [app.authenticate, await permissaoMiddleware('financeiro', 'visualizar')] }, async (req:any, reply:any) => {
     const { tipo, status, periodoInicio, periodoFim } = req.query as any;
     const where:any = { empresaId: req.user.empresaId };
     if (tipo) where.tipo = tipo;

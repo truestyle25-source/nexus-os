@@ -1,0 +1,5 @@
+﻿nexus-os-backend@1.0.0 C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend
+Ôö£ÔöÇÔöÇ @google/genai@2.22.0 extraneous
+ÔööÔöÇÔöÇ @google/generative-ai@0.24.1 extraneous
+
+

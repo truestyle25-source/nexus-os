@@ -41,7 +41,7 @@ import {
 
 /** `empresaId` do token. Única origem do tenant neste arquivo. */
 function empresaDoRequisicao(req: FastifyRequest): string {
-  const empresaId = (req as any).user?.empresaId;
+  const empresaId = (req as { user?: { empresaId?: string } }).user?.empresaId;
   if (!empresaId) throw new Error('Empresa não identificada.');
   return empresaId;
 }

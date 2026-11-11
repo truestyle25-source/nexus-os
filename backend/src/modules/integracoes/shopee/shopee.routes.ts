@@ -36,7 +36,7 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/integracoes/shopee', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
   }, async (req: any) => {
     const lojas = await listarConexoesShopee(req.user.empresaId);
     return {
@@ -47,7 +47,7 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/integracoes/shopee/central', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
   }, async (req: any) => {
     const lojas = await listarConexoesShopee(req.user.empresaId);
     const configuradoAmbiente = configuracaoShopeeDisponivel();
@@ -58,18 +58,18 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/integracoes/shopee/conectar', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'criar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'criar')],
   }, async (req: any) => iniciarAutorizacaoShopee({ empresaId: req.user.empresaId, usuarioId: req.user.id }));
 
   app.post('/integracoes/shopee/:connectionId/testar', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'editar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'editar')],
   }, async (req: any) => {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
     return testarConexaoShopee(req.user.empresaId, req.user.id, params.connectionId);
   });
 
   app.get('/integracoes/shopee/:connectionId/pedidos', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
   }, async (req: any) => {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
     const query = z.object({
@@ -89,7 +89,7 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/integracoes/shopee/:connectionId/produtos', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'visualizar')],
   }, async (req: any) => {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
     const query = z.object({ offset: z.coerce.number().int().min(0).default(0) }).parse(req.query);
@@ -98,7 +98,7 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete('/integracoes/shopee/:connectionId', {
-    preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'excluir')],
+    preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'excluir')],
   }, async (req: any) => {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
     const result = await desconectarLocalmenteShopee(req.user.empresaId, req.user.id, params.connectionId);

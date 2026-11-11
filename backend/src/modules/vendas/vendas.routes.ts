@@ -122,7 +122,7 @@ async function nomesDeVendedores(
 export async function vendasRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/vendas',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('vendas', 'visualizar')] },
+    { preHandler: [app.authenticate, await permissaoMiddleware('vendas', 'visualizar')] },
     async (req: FastifyRequest) => {
       const user = (req as any).user;
       const query = z
@@ -744,9 +744,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/vendas/dashboard',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('vendas', 'visualizar')] },
+    { preHandler: [app.authenticate, await permissaoMiddleware('vendas', 'visualizar')] },
     async (req: FastifyRequest) => {
-      const user = (req as any).user;
+      const user = req.usuarioValidado || req.user;
       // `dias` alimenta o seletor Hoje / 7 dias / 30 dias do layout de
       // referÃªncia. Os campos antigos (faturamento/qtdVendas/ticketMedio/
       // indicadores/crescimento) continuam vindo exatamente iguais â€” a

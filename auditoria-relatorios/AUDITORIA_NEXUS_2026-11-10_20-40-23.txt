@@ -1,0 +1,450 @@
+﻿NEXUS OS - RELATORIO DE AUDITORIA
+Data: 11/10/2026 20:40:23
+Diretorio: C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os
+
+============================================================
+1. ESTRUTURA DO PROJETO
+============================================================
+Backend existe: True
+Frontend existe: True
+Schema Prisma existe: True
+Arquivo de tipos Fastify existe: True
+Service de vendas existe: True
+Service de PDV existe: True
+
+============================================================
+2. GEMINI - DEPENDENCIAS E UTILIZACAO
+============================================================
+Dependencias relacionadas ao Google/Gemini:
+Nenhuma dependencia Google/Gemini encontrada no package.json.
+
+Referencias Gemini no codigo-fonte:
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:3 - * Integração oficial com Google Gemini.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:13 - const apiKey = process.env.GEMINI_API_KEY;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:15 - throw new Error('GEMINI_API_KEY não configurada no .env do backend');
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:18 - // Modelo vem SEMPRE do .env (GEMINI_MODEL) — nunca hardcoded.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:19 - const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts:55 - if (err?.name === 'AbortError') throw new Error('Gemini demorou demais (timeout 15s)');
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\fornecedores.routes.ts:163 - // POST /ia/analisar — IA da barra (interpretar + Gemini/fallback).
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:7 - * complementa com Gemini quando há GEMINI_API_KEY, usando dados REAIS do
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:22 - /** true = montada localmente (Gemini ausente/erro). */
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:73 - * Interpreta + cruza com dados reais + Gemini (quando disponível).
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:107 - const apiKey = process.env.GEMINI_API_KEY;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:110 - // Modelo vem SEMPRE do .env (GEMINI_MODEL) — nunca hardcoded.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts:111 - const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts:388 - const apiKey = process.env.GEMINI_API_KEY;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts:390 - const msg = `Olá! Sou a IA da NEXUS OS. Configure GEMINI_API_KEY no .env para respostas completas de IA. ${contextoDados}`;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts:404 - req.log.error({ motivo: chamada.motivo }, 'Gemini indisponível');
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts:405 - const fallback = `Olá! Sou a IA da NEXUS OS. Não consegui consultar o Gemini agora (${chamada.motivo}). ${contextoDados || 'Tudo pronto para ajudar com estoque, finanças e vendas.'}`;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts:6 - * A chamada ao Gemini estava escrita DENTRO do handler de rota, ou seja, não
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts:62 - const apiKey = process.env.GEMINI_API_KEY;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts:64 - return { ok: false, motivo: 'GEMINI_API_KEY não configurada no ambiente.' };
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts:67 - // Modelo vem SEMPRE do .env (GEMINI_MODEL) — nunca fixo no código.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts:68 - const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\importacao\importacao.routes.ts:165 - gemini: { nome:'Google Gemini API oficial', status: process.env.GEMINI_API_KEY?'CONECTADO':'NAO_CONFIGURADO', configuracao:'GEMINI_API_KEY no .env backend - nunca frontend Seção 39', ultimaSincronizacao: new Date() },
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\integracoes.routes.ts:64 - * apenas se a credencial está configurada no ambiente (`GEMINI_API_KEY`,
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\integracoes.routes.ts:92 - categoria: 'IA_GEMINI', nome: 'NEXUS AI (Google Gemini)',
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\integracoes.routes.ts:93 - status: process.env.GEMINI_API_KEY ? 'CONECTADO' : 'NAO_CONFIGURADO',
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\integracoes\integracoes.routes.ts:94 - configurado: Boolean(process.env.GEMINI_API_KEY),
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:29 - /** true = estrutura montada localmente (Gemini ausente/erro). */
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:236 - * Fallback determinístico (sem Gemini): título/resumo/insights calculados
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:287 - * REAIS calculados — se o Gemini paraphrasear o número, o KPI é descartado.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:304 - * Estrutura o relatório com o Gemini (mesmo padrão da IA do ia.routes.ts).
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:314 - const apiKey = process.env.GEMINI_API_KEY;
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:316 - const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:400 - * (Gemini/fallback determinístico) → persistência em RelatorioGerado → DTO.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts:427 - // 3. Estrutura: Gemini quando disponível; senão fallback determinístico.
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\relatorios.routes.ts:55 - // usa o Gemini para estruturar KPIs/insights/gráfico (com fallback local)
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\lideranca.ts:403 - if (!process.env.GEMINI_API_KEY) {
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\lideranca.ts:404 - return { ok: false, motivo: 'GEMINI_API_KEY não configurada no ambiente.', dadosInsuficientes: false };
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\plano-desenvolvimento.ts:342 - if (!process.env.GEMINI_API_KEY) {
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\plano-desenvolvimento.ts:343 - return { ok: false, motivo: 'GEMINI_API_KEY não configurada no ambiente.' };
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\treinamentos.ts:385 - if (!process.env.GEMINI_API_KEY) {
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\rh\treinamentos.ts:386 - return { ok: false, motivo: 'GEMINI_API_KEY não configurada no ambiente.', dadosInsuficientes: false };
+
+============================================================
+3. SCHEMA PRISMA
+============================================================
+Modelos encontrados: 85
+Enums encontrados: 47
+Tipos encontrados: 0
+
+Comparacao com schema do Git (origin/main):
+Modelos no origin/main: 85
+Modelos no arquivo atual: 85
+
+============================================================
+4. VALIDACAO DO PRISMA
+============================================================
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+The schema at prisma\schema.prisma is valid ­ƒÜÇ
+CODIGO DE SAIDA: 0
+
+============================================================
+5. VERIFICACAO TYPESCRIPT - SEM GERAR ARQUIVOS
+============================================================
+CODIGO DE SAIDA: 0
+
+============================================================
+6. SERVICE DE VENDAS
+============================================================
+Service de vendas encontrado.
+
+Imports e exports encontrados:
+import type { Prisma } from '@prisma/client';
+import { prisma } from '../../lib/prisma.js';
+export const EPSILON_MONETARIO = 1e-9;
+export function arred2(n: number): number {
+export function difere(a: number, b: number): boolean {
+export const ALCADAS_DESCONTO = [
+export async function validarAlcadaDesconto(
+export function ocultarCustoDosItens<T extends { itens: Array<Record<string, unknown>> }>(
+export async function nomesDeVendedores(
+
+Verificacao de PrismaTransaction:
+
+Imports relacionados ao service nas rotas:
+
+============================================================
+7. SERVICE DE PDV
+============================================================
+Service de PDV encontrado.
+
+Referencias nas rotas do PDV:
+
+============================================================
+8. SEGURANCA E AUTENTICACAO
+============================================================
+
+Arquivo: .\backend\src\middlewares\auth.ts
+
+Arquivo: .\backend\src\types\fastify.d.ts
+
+============================================================
+9. RATE LIMITING
+============================================================
+
+============================================================
+10. ARQUIVOS DE AMBIENTE E GITIGNORE
+============================================================
+.env existe: True
+.env.example existe: True
+.gitignore existe: True
+
+Regras relacionadas a arquivos de ambiente:
+
+Verificacao se .env esta rastreado pelo Git:
+
+============================================================
+11. RESUMO DAS ALTERACOES
+============================================================
+ .vscode/settings.json                              |    3 +-
+ DEBITO-TECNICO.md                                  |   73 +
+ README-PRODUCAO.md                                 |   22 +-
+ README.md                                          |    6 +-
+ backend/package.json                               |    2 -
+ backend/prisma/schema.prisma                       |    2 +-
+ backend/prisma/schema.prisma.bak                   | 2870 ---------------
+ backend/src/middlewares/auth.ts                    |    7 +-
+ backend/src/middlewares/auth.ts.bak                |   76 +
+ .../src/modules/api-publica/api-publica.routes.ts  |    6 +-
+ ...versao.service.ts.backup-prisma-20261028-131030 |  323 --
+ .../src/modules/estoque/conversao.service.ts.bak   |  286 --
+ backend/src/modules/gestao/gestao.routes.ts        |    2 +-
+ .../modules/integracoes/shopee/shopee.routes.ts    |   14 +-
+ backend/src/modules/pdv/pdv.routes.ts              |   36 +-
+ .../src/modules/rh/plano-desenvolvimento.routes.ts |    2 +-
+ backend/src/modules/rh/pontuacao.routes.ts         |    2 +-
+ backend/src/modules/rh/treinamentos.routes.ts      |    2 +-
+ backend/src/modules/vendas/vendas.routes.ts        |    6 +-
+ .../modules/vendas/vendas.routes.ts.backup-sintaxe |  780 -----
+ backend/src/modules/vendas/vendas.routes.ts.bak    |  780 -----
+ ...ts.backup-isolamento-enterprise-20261028-131528 |  220 --
+ backend/src/types/fastify.d.ts                     |    4 +
+ .../clientes/page.tsx.backup-tema-20261028-115541  |  906 -----
+ .../clientes/page.tsx.backup-tema-20261028-120452  |  907 -----
+ .../compras/page.tsx.backup-tema-20261028-113751   |  570 ---
+ .../compras/page.tsx.backup-tema-20261028-114033   |  571 ---
+ .../page.tsx.backup-visual-20261029-184217         | 2864 ---------------
+ .../page.tsx.backup-visual-20261029-184955         | 2864 ---------------
+ .../page.tsx.backup-visual-20261029-191746         | 2856 ---------------
+ .../dre/page.tsx.backup-visual-20261029-202946     | 1672 ---------
+ .../estoque/page.tsx.backup-cores-20261028-110152  | 1235 -------
+ .../page.tsx.backup-tema-claro-20261028-110624     | 1236 -------
+ .../financeiro/page.tsx.backup-20261028-103515     | 1555 ---------
+ .../page.tsx.backup-cores-20261028-104609          | 1555 ---------
+ .../page.tsx.backup-financeiro-20261028-105116     | 1556 ---------
+ .../page.tsx.backup-tooltips-20261028-105234       | 1557 ---------
+ .../fluxo/page.tsx.backup-tema-20261028-215121     | 1045 ------
+ .../page.tsx.backup-canvas-20261028-204736         |  888 -----
+ ...age.tsx.backup-correcao-sintaxe-20261028-120939 |  787 -----
+ .../page.tsx.backup-sintaxe-20261028-123614        |  788 -----
+ .../page.tsx.backup-tema-20261028-125519           |  789 -----
+ .../page.tsx.backup-tipos-20261028-125805          |  890 -----
+ .../metas/page.tsx.backup-theme-20261029-204358    |  670 ----
+ .../pdv/page.tsx.backup-tema-20261028-111330       | 1314 -------
+ .../pdv/page.tsx.backup-tema-20261028-112521       | 1315 -------
+ ...page.tsx.backup-identificadores-20261028-130440 |  551 ---
+ .../produtos/page.tsx.backup-tema-20261028-205717  |  551 ---
+ .../produtos/page.tsx.backup-tipo-20261028-130154  |  551 ---
+ frontend/app/(dashboard)/produtos/page.tsx.bak     |  533 ---
+ .../produtos/page.tsx.pre-duplicate-fix.bak        |  532 ---
+ .../(dashboard)/produtos/page.tsx.pre-jsx-fix.bak  |  533 ---
+ .../page.tsx.backup-20261028-104321                | 3085 -----------------
+ .../rh/page.tsx.backup-antes-tema-20261030-200658  | 3649 --------------------
+ .../rh/page.tsx.backup-theme-20261030-194858       | 3649 --------------------
+ frontend/app/globals.css.backup                    | 1219 -------
+ frontend/app/globals.css.backup2                   | 1219 -------
+ frontend/app/globals.css.backup3                   | 1219 -------
+ ...staoTempoPainel.tsx.backup-tema-20261030-203157 |  280 --
+ .../tests/e2e/auditoria-enterprise.spec.ts.bak     |   77 -
+ frontend/tsconfig.tsbuildinfo                      |    2 +-
+ package.json                                       |    6 +-
+ 62 files changed, 211 insertions(+), 53359 deletions(-)
+CODIGO DE SAIDA: 0
+
+============================================================
+12. ARQUIVOS MODIFICADOS E EXCLUIDOS
+============================================================
+M	.vscode/settings.json
+M	DEBITO-TECNICO.md
+M	README-PRODUCAO.md
+M	README.md
+M	backend/package.json
+M	backend/prisma/schema.prisma
+D	backend/prisma/schema.prisma.bak
+M	backend/src/middlewares/auth.ts
+M	backend/src/middlewares/auth.ts.bak
+M	backend/src/modules/api-publica/api-publica.routes.ts
+D	backend/src/modules/estoque/conversao.service.ts.backup-prisma-20261028-131030
+D	backend/src/modules/estoque/conversao.service.ts.bak
+M	backend/src/modules/gestao/gestao.routes.ts
+M	backend/src/modules/integracoes/shopee/shopee.routes.ts
+M	backend/src/modules/pdv/pdv.routes.ts
+M	backend/src/modules/rh/plano-desenvolvimento.routes.ts
+M	backend/src/modules/rh/pontuacao.routes.ts
+M	backend/src/modules/rh/treinamentos.routes.ts
+M	backend/src/modules/vendas/vendas.routes.ts
+D	backend/src/modules/vendas/vendas.routes.ts.backup-sintaxe
+D	backend/src/modules/vendas/vendas.routes.ts.bak
+D	backend/src/server.ts.backup-isolamento-enterprise-20261028-131528
+M	backend/src/types/fastify.d.ts
+D	frontend/app/(dashboard)/clientes/page.tsx.backup-tema-20261028-115541
+D	frontend/app/(dashboard)/clientes/page.tsx.backup-tema-20261028-120452
+D	frontend/app/(dashboard)/compras/page.tsx.backup-tema-20261028-113751
+D	frontend/app/(dashboard)/compras/page.tsx.backup-tema-20261028-114033
+D	frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-184217
+D	frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-184955
+D	frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-191746
+D	frontend/app/(dashboard)/dre/page.tsx.backup-visual-20261029-202946
+D	frontend/app/(dashboard)/estoque/page.tsx.backup-cores-20261028-110152
+D	frontend/app/(dashboard)/estoque/page.tsx.backup-tema-claro-20261028-110624
+D	frontend/app/(dashboard)/financeiro/page.tsx.backup-20261028-103515
+D	frontend/app/(dashboard)/financeiro/page.tsx.backup-cores-20261028-104609
+D	frontend/app/(dashboard)/financeiro/page.tsx.backup-financeiro-20261028-105116
+D	frontend/app/(dashboard)/financeiro/page.tsx.backup-tooltips-20261028-105234
+D	frontend/app/(dashboard)/fluxo/page.tsx.backup-tema-20261028-215121
+D	frontend/app/(dashboard)/fornecedores/page.tsx.backup-canvas-20261028-204736
+D	frontend/app/(dashboard)/fornecedores/page.tsx.backup-correcao-sintaxe-20261028-120939
+D	frontend/app/(dashboard)/fornecedores/page.tsx.backup-sintaxe-20261028-123614
+D	frontend/app/(dashboard)/fornecedores/page.tsx.backup-tema-20261028-125519
+D	frontend/app/(dashboard)/fornecedores/page.tsx.backup-tipos-20261028-125805
+D	frontend/app/(dashboard)/metas/page.tsx.backup-theme-20261029-204358
+D	frontend/app/(dashboard)/pdv/page.tsx.backup-tema-20261028-111330
+D	frontend/app/(dashboard)/pdv/page.tsx.backup-tema-20261028-112521
+D	frontend/app/(dashboard)/produtos/page.tsx.backup-identificadores-20261028-130440
+D	frontend/app/(dashboard)/produtos/page.tsx.backup-tema-20261028-205717
+D	frontend/app/(dashboard)/produtos/page.tsx.backup-tipo-20261028-130154
+D	frontend/app/(dashboard)/produtos/page.tsx.bak
+D	frontend/app/(dashboard)/produtos/page.tsx.pre-duplicate-fix.bak
+D	frontend/app/(dashboard)/produtos/page.tsx.pre-jsx-fix.bak
+D	frontend/app/(dashboard)/radar-organizacional/page.tsx.backup-20261028-104321
+D	frontend/app/(dashboard)/rh/page.tsx.backup-antes-tema-20261030-200658
+D	frontend/app/(dashboard)/rh/page.tsx.backup-theme-20261030-194858
+D	frontend/app/globals.css.backup
+D	frontend/app/globals.css.backup2
+D	frontend/app/globals.css.backup3
+D	frontend/components/rh/GestaoTempoPainel.tsx.backup-tema-20261030-203157
+D	frontend/tests/e2e/auditoria-enterprise.spec.ts.bak
+M	frontend/tsconfig.tsbuildinfo
+M	package.json
+CODIGO DE SAIDA: 0
+
+============================================================
+13. ARQUIVOS NOVOS NAO RASTREADOS
+============================================================
+'
+.env.example
+AUDITORIA-IA-NEXUS/01-arquivos-ia.txt
+AUDITORIA-IA-NEXUS/02-referencias-modelos-apis.txt
+AUDITORIA-IA-NEXUS/03-voz-audio-streaming.txt
+AUDITORIA-IA-NEXUS/04-dependencias.txt
+AUDITORIA-IA-NEXUS/05-variaveis-ambiente.txt
+AUDITORIA-IA-NEXUS/06-arquivos-env.txt
+AUDITORIA-IA-NEXUS/07-rotas-servicos-ia.txt
+AUDITORIA-IA-NEXUS/08-status-gemini.txt
+AUDITORIA-IA-NEXUS/RELATORIO-COMPLETO.txt
+AUDITORIA_FINAL_09_11_2026.md
+backend/fix-dashboard.ps1
+backend/prisma/fix-schema.ps1
+backend/prisma/fix.ps1
+backend/prisma/fix2.ps1
+backend/src/modules/pdv/pdv.service.ts
+backend/src/modules/vendas/vendas.service.ts
+backups/code-backups/backend/auth.ts.bak
+backups/code-backups/backend/conversao.service.ts.backup-prisma-20261028-131030
+backups/code-backups/backend/conversao.service.ts.bak
+backups/code-backups/backend/schema.prisma.bak
+backups/code-backups/backend/server.ts.backup-isolamento-enterprise-20261028-131528
+backups/code-backups/backend/vendas.routes.ts.backup-sintaxe
+backups/code-backups/backend/vendas.routes.ts.bak
+backups/code-backups/frontend/GestaoTempoPainel.tsx.backup-tema-20261030-203157
+backups/code-backups/frontend/auditoria-enterprise.spec.ts.bak
+backups/code-backups/frontend/globals.css.backup
+backups/code-backups/frontend/globals.css.backup2
+backups/code-backups/frontend/globals.css.backup3
+backups/code-backups/frontend/page.tsx.backup-20261028-103515
+backups/code-backups/frontend/page.tsx.backup-20261028-104321
+backups/code-backups/frontend/page.tsx.backup-antes-tema-20261030-200658
+backups/code-backups/frontend/page.tsx.backup-canvas-20261028-204736
+backups/code-backups/frontend/page.tsx.backup-cores-20261028-104609
+backups/code-backups/frontend/page.tsx.backup-cores-20261028-110152
+backups/code-backups/frontend/page.tsx.backup-correcao-sintaxe-20261028-120939
+backups/code-backups/frontend/page.tsx.backup-financeiro-20261028-105116
+backups/code-backups/frontend/page.tsx.backup-identificadores-20261028-130440
+backups/code-backups/frontend/page.tsx.backup-sintaxe-20261028-123614
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-111330
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-112521
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-113751
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-114033
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-115541
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-120452
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-125519
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-205717
+backups/code-backups/frontend/page.tsx.backup-tema-20261028-215121
+backups/code-backups/frontend/page.tsx.backup-tema-claro-20261028-110624
+backups/code-backups/frontend/page.tsx.backup-theme-20261029-204358
+backups/code-backups/frontend/page.tsx.backup-theme-20261030-194858
+backups/code-backups/frontend/page.tsx.backup-tipo-20261028-130154
+backups/code-backups/frontend/page.tsx.backup-tipos-20261028-125805
+backups/code-backups/frontend/page.tsx.backup-tooltips-20261028-105234
+backups/code-backups/frontend/page.tsx.backup-visual-20261029-184217
+backups/code-backups/frontend/page.tsx.backup-visual-20261029-184955
+backups/code-backups/frontend/page.tsx.backup-visual-20261029-191746
+backups/code-backups/frontend/page.tsx.backup-visual-20261029-202946
+backups/code-backups/frontend/page.tsx.bak
+backups/code-backups/frontend/page.tsx.pre-duplicate-fix.bak
+backups/code-backups/frontend/page.tsx.pre-jsx-fix.bak
+check.ps1
+check2.ps1
+find-api.ps1
+read-env.js
+test.ps1
+CODIGO DE SAIDA: 0
+
+============================================================
+14. STATUS COMPLETO DO GIT
+============================================================
+ M .vscode/settings.json
+ M DEBITO-TECNICO.md
+ M README-PRODUCAO.md
+ M README.md
+ M backend/package.json
+ M backend/prisma/schema.prisma
+ D backend/prisma/schema.prisma.bak
+ M backend/src/middlewares/auth.ts
+ M backend/src/middlewares/auth.ts.bak
+ M backend/src/modules/api-publica/api-publica.routes.ts
+ D backend/src/modules/estoque/conversao.service.ts.backup-prisma-20261028-131030
+ D backend/src/modules/estoque/conversao.service.ts.bak
+ M backend/src/modules/gestao/gestao.routes.ts
+ M backend/src/modules/integracoes/shopee/shopee.routes.ts
+ M backend/src/modules/pdv/pdv.routes.ts
+ M backend/src/modules/rh/plano-desenvolvimento.routes.ts
+ M backend/src/modules/rh/pontuacao.routes.ts
+ M backend/src/modules/rh/treinamentos.routes.ts
+ M backend/src/modules/vendas/vendas.routes.ts
+ D backend/src/modules/vendas/vendas.routes.ts.backup-sintaxe
+ D backend/src/modules/vendas/vendas.routes.ts.bak
+ D backend/src/server.ts.backup-isolamento-enterprise-20261028-131528
+ M backend/src/types/fastify.d.ts
+ D frontend/app/(dashboard)/clientes/page.tsx.backup-tema-20261028-115541
+ D frontend/app/(dashboard)/clientes/page.tsx.backup-tema-20261028-120452
+ D frontend/app/(dashboard)/compras/page.tsx.backup-tema-20261028-113751
+ D frontend/app/(dashboard)/compras/page.tsx.backup-tema-20261028-114033
+ D frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-184217
+ D frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-184955
+ D frontend/app/(dashboard)/configuracoes/page.tsx.backup-visual-20261029-191746
+ D frontend/app/(dashboard)/dre/page.tsx.backup-visual-20261029-202946
+ D frontend/app/(dashboard)/estoque/page.tsx.backup-cores-20261028-110152
+ D frontend/app/(dashboard)/estoque/page.tsx.backup-tema-claro-20261028-110624
+ D frontend/app/(dashboard)/financeiro/page.tsx.backup-20261028-103515
+ D frontend/app/(dashboard)/financeiro/page.tsx.backup-cores-20261028-104609
+ D frontend/app/(dashboard)/financeiro/page.tsx.backup-financeiro-20261028-105116
+ D frontend/app/(dashboard)/financeiro/page.tsx.backup-tooltips-20261028-105234
+ D frontend/app/(dashboard)/fluxo/page.tsx.backup-tema-20261028-215121
+ D frontend/app/(dashboard)/fornecedores/page.tsx.backup-canvas-20261028-204736
+ D frontend/app/(dashboard)/fornecedores/page.tsx.backup-correcao-sintaxe-20261028-120939
+ D frontend/app/(dashboard)/fornecedores/page.tsx.backup-sintaxe-20261028-123614
+ D frontend/app/(dashboard)/fornecedores/page.tsx.backup-tema-20261028-125519
+ D frontend/app/(dashboard)/fornecedores/page.tsx.backup-tipos-20261028-125805
+ D frontend/app/(dashboard)/metas/page.tsx.backup-theme-20261029-204358
+ D frontend/app/(dashboard)/pdv/page.tsx.backup-tema-20261028-111330
+ D frontend/app/(dashboard)/pdv/page.tsx.backup-tema-20261028-112521
+ D frontend/app/(dashboard)/produtos/page.tsx.backup-identificadores-20261028-130440
+ D frontend/app/(dashboard)/produtos/page.tsx.backup-tema-20261028-205717
+ D frontend/app/(dashboard)/produtos/page.tsx.backup-tipo-20261028-130154
+ D frontend/app/(dashboard)/produtos/page.tsx.bak
+ D frontend/app/(dashboard)/produtos/page.tsx.pre-duplicate-fix.bak
+ D frontend/app/(dashboard)/produtos/page.tsx.pre-jsx-fix.bak
+ D frontend/app/(dashboard)/radar-organizacional/page.tsx.backup-20261028-104321
+ D frontend/app/(dashboard)/rh/page.tsx.backup-antes-tema-20261030-200658
+ D frontend/app/(dashboard)/rh/page.tsx.backup-theme-20261030-194858
+ D frontend/app/globals.css.backup
+ D frontend/app/globals.css.backup2
+ D frontend/app/globals.css.backup3
+ D frontend/components/rh/GestaoTempoPainel.tsx.backup-tema-20261030-203157
+ D frontend/tests/e2e/auditoria-enterprise.spec.ts.bak
+ M frontend/tsconfig.tsbuildinfo
+ M package.json
+?? '
+?? .env.example
+?? AUDITORIA-IA-NEXUS/
+?? AUDITORIA_FINAL_09_11_2026.md
+?? backend/fix-dashboard.ps1
+?? backend/prisma/fix-schema.ps1
+?? backend/prisma/fix.ps1
+?? backend/prisma/fix2.ps1
+?? backend/src/modules/pdv/pdv.service.ts
+?? backend/src/modules/vendas/vendas.service.ts
+?? backups/code-backups/
+?? check.ps1
+?? check2.ps1
+?? find-api.ps1
+?? read-env.js
+?? test.ps1
+CODIGO DE SAIDA: 0
+
+============================================================
+15. SCRIPTS DO BACKEND
+============================================================
+dev: tsx watch src/server.ts
+build: tsc
+start: node dist/server.js
+test: tsx --test tests/*.test.ts
+db:push: prisma db push
+db:seed: tsx src/seed.ts
+prisma:generate: prisma generate
+db:migrate: prisma migrate deploy
+estoque:snapshot: tsx src/scripts/gerarSnapshotsDiarios.ts
+backup: tsx src/scripts/backup.ts
+backup:restaurar: tsx src/scripts/restaurar-backup.ts
+
+============================================================
+FIM DA AUDITORIA
+============================================================
+Auditoria concluida em: 11/10/2026 20:40:39
+Nenhum commit, push ou deploy foi executado.
+O codigo-fonte nao foi editado por este script.
+Arquivo de relatorio: C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\auditoria-relatorios\AUDITORIA_NEXUS_2026-11-10_20-40-23.txt

@@ -32,7 +32,7 @@ export async function apiPublicaRoutes(app: FastifyInstance): Promise<void> {
   // ----------------------- Gestão de chaves -----------------------
   app.get(
     '/api-publica/chaves',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('api_publica', 'visualizar')] },
+    { preHandler: [app.authenticate, await permissaoMiddleware('api_publica', 'visualizar')] },
     async (req: FastifyRequest) => {
       const chaves = await prisma.chaveApi.findMany({
         where: { empresaId: (req as any).user.empresaId },
@@ -45,7 +45,7 @@ export async function apiPublicaRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/api-publica/chaves',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('api_publica', 'criar')] },
+    { preHandler: [app.authenticate, await permissaoMiddleware('api_publica', 'criar')] },
     async (req: FastifyRequest) => {
       const { nome, escopos } = z.object({ nome: z.string().min(2), escopos: z.array(z.enum(ESCOPOS_VALIDOS)).min(1) }).parse(req.body);
       const user = (req as any).user;
@@ -67,7 +67,7 @@ export async function apiPublicaRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/api-publica/chaves/:id/revogar',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('api_publica', 'excluir')] },
+    { preHandler: [app.authenticate, await permissaoMiddleware('api_publica', 'excluir')] },
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
       const user = (req as any).user;

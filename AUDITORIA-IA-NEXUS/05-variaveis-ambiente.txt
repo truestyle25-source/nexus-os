@@ -1,0 +1,12 @@
+﻿
+Name                      Configurada
+----                      -----------
+EMAIL_FROM                       True
+GEMINI_API_KEY                   True
+GEMINI_MODEL                     True
+USERDOMAIN                       True
+USERDOMAIN_ROAMINGPROFILE        True
+VSCODE_GIT_ASKPASS_MAIN          True
+
+
+

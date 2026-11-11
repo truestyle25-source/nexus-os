@@ -1,0 +1,74 @@
+﻿
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\.env ==========
+
+Variavel                   Configurada
+--------                   -----------
+NODE_ENV                          True
+PORT                              True
+DATABASE_URL                      True
+JWT_SECRET                        True
+FRONTEND_URLS                     True
+GEMINI_API_KEY                    True
+GEMINI_MODEL                      True
+CONTROLID_URL                     True
+CONTROLID_USER                    True
+INFINITEPAY_CHECKOUT_URL          True
+TRIAL_DAYS                        True
+SUBSCRIPTION_PRICE                True
+RESEND_API_KEY                    True
+EMAIL_FROM                        True
+SNAPSHOT_AUTO_ENABLED             True
+SNAPSHOT_HOUR_UTC                 True
+BACKUP_DIR                        True
+BACKUP_RETENCAO_DIAS              True
+STORAGE_PROVIDER                  True
+STORAGE_BUCKET                    True
+SUPABASE_URL                      True
+SUPABASE_SERVICE_ROLE_KEY         True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\.env.example ==========
+NODE_ENV                          True
+PORT                              True
+DATABASE_URL                      True
+JWT_SECRET                        True
+FRONTEND_URLS                     True
+GEMINI_API_KEY                    True
+GEMINI_MODEL                      True
+CONTROLID_URL                     True
+CONTROLID_USER                    True
+INFINITEPAY_CHECKOUT_URL          True
+TRIAL_DAYS                        True
+SUBSCRIPTION_PRICE                True
+RESEND_API_KEY                    True
+EMAIL_FROM                        True
+SNAPSHOT_AUTO_ENABLED             True
+SNAPSHOT_HOUR_UTC                 True
+MERCADOLIVRE_CLIENT_ID            True
+MERCADOLIVRE_CLIENT_SECRET        True
+MERCADOLIVRE_REDIRECT_URI         True
+BACKUP_DIR                        True
+BACKUP_RETENCAO_DIAS              True
+SHOPEE_PARTNER_ID                 True
+SHOPEE_PARTNER_KEY                True
+SHOPEE_REDIRECT_URI               True
+SHOPEE_SYNC_AUTO                  True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\.env ==========
+NEXUS_AUDIT_EMAIL                 True
+NEXUS_AUDIT_PASSWORD              True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\.env.example ==========
+NEXT_PUBLIC_API_URL               True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\.env.local ==========
+NEXT_PUBLIC_API_URL               True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\.env.local.example ==========
+NEXT_PUBLIC_API_URL               True
+
+========== C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\.env.test ==========
+NEXUS_AUDIT_EMAIL                 True
+NEXUS_AUDIT_PASSWORD              True
+
+
+

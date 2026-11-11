@@ -1,0 +1,39 @@
+﻿
+FullName                                                                                                      Length
+--------                                                                                                      ------
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\diagnostico-correcao.txt                            51302
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\diagnostico-nexus-vendas.txt                       425915
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\diagnostico-typescript-final.txt                    11278
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\email.ts                                     3770
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\lib\idempotencia.ts                              6332
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\auditoria\auditoria.service.ts           1073
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\chat\chat.service.ts                     2538
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\fornecedores\iaFornecedores.service.ts   6850
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.routes.ts                         35634
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\ia\ia.service.ts                         4911
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\relatorios\iaRelatorios.service.ts      17164
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\tts\tts.controller.ts                    1582
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\modules\tts\tts.service.ts                       1085
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\src\scripts\gerarSnapshotsDiarios.ts                 1219
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\competencia-folha.test.ts                      7279
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\fluxo-caixa.test.ts                           12286
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\ia-nexus.test.ts                              12577
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\pdv-concorrencia.test.ts                       7678
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\pdv-fase3-concorrencia.test.ts                 5919
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\pdv-fase4-reconciliacao.test.ts                3415
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\pdv-fluxo-caixa.test.ts                        7309
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend\tests\pdv-idempotencia-movimentacao.test.ts          5500
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\auditoria-rotas.json                                3894
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tailwind.config.js                                   194
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\relatorios\IaCriadoraRelatorios.tsx      9637
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\rh\GestaoTempoPainel.tsx                13674
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\rh\LiderancaEmpaticPainel.tsx           12947
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\rh\LojaRecompensasPainel.tsx            18268
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\components\rh\PontuacaoConfigPainel.tsx            17591
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\lib\pdv\enviarOperacao.ts                           4624
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\pdv-persistencia.test.ts                      3175
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\pdv-reconciliacao.test.ts                     4642
+C:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\frontend\tests\e2e\auditoria-enterprise.spec.ts              3717
+
+
+

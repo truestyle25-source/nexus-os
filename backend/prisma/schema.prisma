@@ -1351,7 +1351,7 @@ model Desligamento {
   diasAviso            Int?     // dias de aviso prÃƒÆ’Ã‚Â©vio gerados
   // FGTS e multa rescisÃƒÆ’Ã‚Â³ria dependem do saldo DEPOSITADO do FGTS, que nÃƒÆ’Ã‚Â£o
   // existe no schema (nÃƒÆ’Ã‚Â£o hÃƒÆ’Ã‚Â¡ tabela de depÃƒÆ’Ã‚Â³sitos). Ficam nulos de propÃƒÆ’Ã‚Â³sito:
-  // o termo os exibe como "nÃƒÆ’Ã‚Â£o apurado" em vez de estimar por percentual.
+  // o termo os exibe como "não apurado" em vez de estimar por percentual.
   saldoFgts            Decimal? @db.Decimal(12, 2)
   multaFgts            Decimal? @db.Decimal(12, 2)
   fgtsApurado          Boolean   @default(false)
