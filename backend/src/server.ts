@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
+import { opcoesCors } from './lib/cors.js';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import dotenv from 'dotenv';
@@ -90,7 +91,8 @@ const app = Fastify({
   trustProxy: true,
 });
 
-await app.register(cors, { origin: (process.env.FRONTEND_URLS || 'http://localhost:3000').split(','), credentials: true });
+// Métodos declarados e origens normalizadas: ver lib/cors.ts.
+await app.register(cors, opcoesCors());
 await app.register(cookie);
 validarJwtSecret();
   await app.register(jwt, { secret: process.env.JWT_SECRET! });
