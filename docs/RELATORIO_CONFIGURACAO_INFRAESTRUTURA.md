@@ -154,3 +154,22 @@ Duas tentativas anteriores com erro de cópia (DATABASE_URL renomeada; chave com
 Rollback: voltar a `DATABASE_URL` do Render para o valor do `backend/.env` local (hash `337419ee…`) e salvar.
 Recifragem: 0 credenciais cifradas em produção, nada a converter.
 Observação: os testes de produção gravaram 1 registro de tentativa de login falha (comportamento normal do sistema).
+
+## 12. Ajustes solicitados em 2026-11-20 ("altere isso")
+
+### Vercel — segredos sem uso
+- A integração Supabase–Vercel havia criado um **projeto Supabase novo e separado** (`supabase-amethyst-pendant`, ID `weqljnwpzhhywpmrvbps`, plano Free, criado hoje) e copiado 16 variáveis dele para o `nexus-os`. **Esse banco não é o do NEXUS** e não foi excluído (regra: não excluir bancos).
+- **Removida a conexão** do projeto `nexus-os` com esse banco: as 16 variáveis da integração saíram (reversível: "Connect to Project").
+- **Removidas** as 9 entradas antigas de `OPENAI_API_KEY`, `JWT_SECRET` e `DATABASE_URL` (Production/Preview/Development), sem uso no frontend. Os valores continuam onde são usados (backend no Render, painel da OpenAI). A Vercel avisa que a exclusão não invalida os segredos: **se algum deles for de produção, trocá-lo**.
+- **Adicionada** `NEXT_PUBLIC_API_URL = https://nexus-os-7u4g.onrender.com` (tipo Config, Production). Vale a partir da próxima publicação; é o mesmo valor que o código já usa como padrão.
+- Resultado: o projeto do frontend tem **1 variável**, pública.
+
+### Supabase — chaves estrangeiras de `empresaId`
+- Backup novo antes (`backend/backups/prod-antes-fk-20261120.dump`, restauração testada).
+- Aplicadas em produção, com `nexus_migrator`: `202611200900_sincroniza_schema_drift` e `202611201200_fk_empresa_id` (PR #8).
+- Resultado: **75/75 FKs para `Empresa` válidas** (antes 14), `RESTRICT` exceto `Auditoria` (`SET NULL`); `01_rls_policies.sql` reaplicado: **RLS 85/86** (inclui `NexusErpRecord`), 85 policies; 51 migrações; dados intactos (1 empresa, 1 usuário).
+- Backend depois: `/health` 200, login 401 (correto), conectado como `nexus_app`.
+
+### Render — região e plano (não alterável pelo assistente)
+- **Região**: o Render não muda a região de um serviço existente. Para Virginia (mesma região do banco): criar um Web Service novo em **Virginia (US East)** com as mesmas configurações e variáveis, validar, apontar `NEXT_PUBLIC_API_URL` (Vercel) para a URL nova e então suspender o antigo. Exige você colar os segredos de novo.
+- **Plano**: sair do Free (hibernação) é uma compra no painel do Render (Upgrade → Starter ou superior). Decisão e pagamento são seus.
