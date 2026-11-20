@@ -49,9 +49,12 @@ async function limparBackupsAntigos(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
+  // Com RLS, o backup precisa do papel dono das tabelas (nexus_migrator, via
+  // DIRECT_URL): com nexus_app o pg_dump não lê _prisma_migrations e as
+  // policies esconderiam as linhas. DATABASE_URL fica como fallback.
+  const databaseUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
   if (!databaseUrl) {
-    console.error('[backup] DATABASE_URL não configurada — nada para fazer backup.');
+    console.error('[backup] DIRECT_URL/DATABASE_URL não configurada — nada para fazer backup.');
     process.exitCode = 1;
     return;
   }

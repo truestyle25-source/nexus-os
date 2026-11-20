@@ -8,6 +8,7 @@
  */
 import { prisma } from '../lib/prisma.js';
 import { gerarSnapshotDoDia } from '../modules/estoque/estoque-indicadores.service.js';
+import { comoSistema } from '../lib/tenant-context.js';
 
 async function main(): Promise<void> {
   const empresas = await prisma.empresa.findMany({ where: { status: 'ATIVO' }, select: { id: true, nome: true } });
@@ -20,7 +21,8 @@ async function main(): Promise<void> {
   console.log(`[snapshot] concluído: ${empresas.length} empresas, ${total} linhas no total.`);
 }
 
-main()
+// Fora de requisição: percorre todas as empresas em escopo de sistema (RLS).
+comoSistema('script:snapshot-estoque', main)
   .catch((err) => {
     console.error('[snapshot] falhou:', err);
     process.exitCode = 1;
