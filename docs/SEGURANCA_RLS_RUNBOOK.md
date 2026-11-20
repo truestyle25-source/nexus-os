@@ -70,3 +70,6 @@ Depois do passo 5 estável: trocar a senha do `postgres` no painel do Supabase
 - Dentro de `prisma.$transaction(async tx => …)` prefira `tx`; o `prisma` global também funciona (é redirecionado para a mesma transação).
 - `$queryRaw` no `prisma` global **dentro** de uma transação roda fora dela (comportamento original), com o contexto da empresa — prefira `tx.$queryRaw`.
 - Testes de isolamento: `tests/rls-isolamento.test.ts` (rodar como `nexus_app`).
+
+## Status em produção (2026-11-20)
+Passos 2, 3 e 4 já aplicados no Supabase e validados (10/10); o pooler aceita `nexus_app`. Faltam os passos 1, 5 e 7 (deploy, troca da `DATABASE_URL` e rotação da senha do `postgres`). As URLs prontas ficam em `backend/.env.seguranca.local` (fora do Git).

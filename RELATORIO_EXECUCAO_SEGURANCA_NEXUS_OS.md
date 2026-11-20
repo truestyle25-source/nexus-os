@@ -17,7 +17,7 @@
 | E2E com o servidor real via HTTP | **25/25** como `nexus_app` e **25/25** como `postgres` |
 | Ciclo aplicar → reverter → reaplicar dos scripts SQL | ✅ validado no staging |
 | Bugs encontrados e corrigidos no caminho | **9** (ver §5), 1 deles pré-existente e grave |
-| **Banco de produção (Supabase)** | **Não alterado.** Só consultas de leitura e cópia da estrutura (sem dados) |
+| **Banco de produção (Supabase)** | RLS, papéis e posse aplicados em 2026-11-20 (sem efeito para o sistema no ar até trocar a `DATABASE_URL`); ver §11 |
 
 **Por que a produção não foi alterada:** o próprio plano exige staging antes de produção, e a troca
 efetiva depende de dois passos que só você pode fazer: (1) publicar o backend novo no provedor
@@ -142,7 +142,7 @@ Seguir [`docs/SEGURANCA_RLS_RUNBOOK.md`](docs/SEGURANCA_RLS_RUNBOOK.md), na orde
 
 | Risco | Situação |
 |---|---|
-| Supavisor aceitar papel customizado | **NÃO VERIFICADO** (só dá para testar no Supabase); se não aceitar, o rollback é voltar a `DATABASE_URL` |
+| Supavisor aceitar papel customizado | **Verificado em 2026-11-20**: aceita `nexus_app.<ref>` |
 | Escopo `sistema` é uma liberação controlada pelo backend | Mitigado: só código do servidor define, sempre com motivo; `nexus_app` continua sem DDL/TRUNCATE |
 | Tabelas criadas em migrações futuras | Recebem privilégios automaticamente; **é preciso rodar `01` de novo** (o script falha se alguma ficar sem RLS) |
 | Custo por consulta | +1 instrução (`set_config`) por operação; não medido em produção |
@@ -151,3 +151,32 @@ Seguir [`docs/SEGURANCA_RLS_RUNBOOK.md`](docs/SEGURANCA_RLS_RUNBOOK.md), na orde
 ## 10. Limpeza opcional
 - Staging: `docker rm -f nexus_staging_pg`
 - Papéis de teste no Docker local: `backend/prisma/seguranca/02_papeis_rollback.sql` no banco `nexus_os_test`.
+
+
+## 11. Execução em produção — 2026-11-20
+
+Os passos 2, 3 e 4 do runbook foram aplicados no Supabase de produção, depois da abertura do PR. São os
+passos que **não mudam nada para o sistema no ar**, porque o backend publicado continua conectando
+como `postgres` (BYPASSRLS).
+
+| Etapa | Resultado |
+|---|---|
+| Backup completo do schema `public` (estrutura + dados) | ✅ `backend/backups/prod-antes-seguranca-20261120.dump` (ignorado pelo Git); **restauração testada**: 85 tabelas, 1 empresa, 1 usuário |
+| `01_rls_policies.sql` | ✅ 84 de 85 tabelas com RLS (só `_prisma_migrations` fica de fora), 84 policies |
+| `02_papeis.sql` | ✅ `nexus_app` e `nexus_migrator` sem BYPASSRLS/superuser; senhas geradas e guardadas em `backend/.env.seguranca.local` (ignorado pelo Git, nunca exibidas) |
+| `03_ownership.sql` | ✅ dono das tabelas: `nexus_migrator` |
+| Sistema atual (`postgres`) continua lendo tudo | ✅ 1 empresa, 1 usuário |
+| `04_validacao_rls.sql` na produção (transação desfeita) | ✅ **10/10**; 0 linhas de teste restantes |
+| **Pooler do Supabase aceita `nexus_app.<ref>`** | ✅ **verificado** (era o único item não verificado) |
+| `nexus_app` pelo pooler: sem contexto / com contexto / DDL | 0 empresas / 1 empresa e 1 usuário / `permission denied` |
+| Código real do backend (Prisma com contexto) contra a produção, só leitura | ✅ sem contexto 0; empresa real: 1 empresa, 1 usuário, 174 permissões, transação ok; outra empresa: 0 |
+
+**Ainda não feito, e depende de você** (o RLS só passa a proteger depois dos 2 primeiros itens):
+1. Fazer o merge do PR e publicar o backend.
+2. No provedor do backend, copiar de `backend/.env.seguranca.local` as variáveis `DATABASE_URL` (já com `nexus_app`), `CREDENTIALS_ENCRYPTION_KEY` e `PRISMA_CONNECTION_LIMIT`, e reiniciar. Depois rodar `npx tsx src/scripts/recifrar-credenciais.ts --aplicar`.
+3. Trocar a senha do `postgres` no painel do Supabase.
+4. Guardar as senhas de `backend/.env.seguranca.local` num cofre de senhas e apagar o arquivo.
+
+Rollback, se algo der errado depois do passo 2: voltar a `DATABASE_URL` antiga no provedor e reiniciar.
+Para desfazer o banco: `03_ownership_rollback.sql` → `02_papeis_rollback.sql` → `01_rls_policies_rollback.sql`,
+ou restaurar o backup.
