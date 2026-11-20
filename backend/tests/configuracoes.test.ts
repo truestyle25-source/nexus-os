@@ -126,8 +126,11 @@ async function main() {
     ok('nome curto -> 400', semNome.statusCode === 400, `status=${semNome.statusCode}`);
 
     console.log('\n2. POST /auth/alterar-senha');
+    // IP próprio: sem e-mail no corpo, o rate limit conta por IP, e todos os
+    // testes usam 127.0.0.1 — tentativas falhas de outros testes na mesma janela
+    // de 1 min davam 429 aqui (visto no CI, que roda duas suítes seguidas).
     const troca = await app.inject({
-      method: 'POST', url: '/auth/alterar-senha', headers: H,
+      method: 'POST', url: '/auth/alterar-senha', headers: H, remoteAddress: '198.51.100.27',
       payload: { senhaAtual: 'senha12345', novaSenha: 'novaSenha456' },
     });
     ok('POST /auth/alterar-senha -> 200', troca.statusCode === 200, `status=${troca.statusCode} corpo=${troca.body.slice(0, 180)}`);
