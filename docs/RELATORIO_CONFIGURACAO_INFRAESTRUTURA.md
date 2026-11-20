@@ -132,18 +132,18 @@ Nenhuma variável secreta tem prefixo `NEXT_PUBLIC_`, portanto **nenhuma vai par
 Valores secretos colados por você no Render (Environment) e conferidos por hash, sem exibição, antes do deploy:
 | Variável | Conferência |
 |---|---|
-|  | 178 caracteres, usuário **nexus_app**, hash idêntico ao arquivo local |
-|  | 163 caracteres, usuário nexus_migrator, hash idêntico |
-|  | 64 caracteres, impressão sha256  |
-| removidas antes de salvar |  e  (coladas por engano; desnecessárias) |
+| `DATABASE_URL` | 178 caracteres, usuário **nexus_app**, hash idêntico ao arquivo local |
+| `DIRECT_URL` | 163 caracteres, usuário nexus_migrator, hash idêntico |
+| `CREDENTIALS_ENCRYPTION_KEY` | 64 caracteres, impressão sha256 `2e2856d3` |
+| removidas antes de salvar | `NEXUS_APP_PASSWORD` e `NEXUS_MIGRATOR_PASSWORD` (coladas por engano; desnecessárias) |
 
 Duas tentativas anteriores com erro de cópia (DATABASE_URL renomeada; chave com caractere a mais) foram **canceladas antes de salvar**; a produção não foi afetada.
 
 **Evidências após o deploy (Live):**
 | Teste | Resultado |
 |---|---|
-| Conexões no banco | **nexus_app: 2 (19:36 UTC)**; postgres só a interna  |
-|  | 200 |
+| Conexões no banco | **nexus_app: 2 (19:36 UTC)**; postgres só a interna `pg_net` |
+| `/health` | 200 |
 | Login com e-mail inexistente (lê Usuario e grava LoginAttempt em escopo de sistema) | 401 "Credenciais inválidas" ✅ |
 | Rotas protegidas sem token / token falso | 401 |
 | CORS do domínio de produção | liberado ✅ |
@@ -151,6 +151,6 @@ Duas tentativas anteriores com erro de cópia (DATABASE_URL renomeada; chave com
 | Logs após a troca | 0 erros de permissão, RLS ou conexão; único erro = ZodError do teste com corpo inválido (400 esperado) |
 
 **Estado: a proteção RLS está ATIVA em produção.**
-Rollback: voltar a  do Render para o valor do  local (hash ) e salvar.
+Rollback: voltar a `DATABASE_URL` do Render para o valor do `backend/.env` local (hash `337419ee…`) e salvar.
 Recifragem: 0 credenciais cifradas em produção, nada a converter.
 Observação: os testes de produção gravaram 1 registro de tentativa de login falha (comportamento normal do sistema).
