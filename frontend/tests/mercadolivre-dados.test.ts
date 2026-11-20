@@ -95,6 +95,10 @@ test('2. PUT parcial - allowlist/trim, corpo vazio barrado, sucesso e 400', asyn
   const lenta = () => new Promise<string>((res) => setTimeout(() => { execucoes += 1; res('ok'); }, 20));
   const [r1, r2] = await Promise.all([trava.executar(lenta), trava.executar(lenta)]);
   assert.equal(r1.executou, true);
+  assert.equal(r2.executou, false);
+  assert.equal(execucoes, 1);
+  assert.equal(trava.emAndamento, false);
+});
 
 test('3. usuario autenticado - GET /users/me (sem ID na URL)', async () => {
   const c = clienteFalso({ ok: true, dados: { id: 7 } });
@@ -168,9 +172,4 @@ test('executarConsulta nunca confunde vazio com erro nem erro com sucesso', asyn
   assert.equal((await executarConsulta(async () => ({ data: { ok: true, dados: {} } }), { tipo: 'objeto' })).estado, 'sucesso');
   assert.equal((await executarConsulta(async () => ({ data: { ok: true } }), { tipo: 'objeto' })).estado, 'inesperado');
   assert.equal((await executarConsulta(async () => { throw { status: 401 }; }, { tipo: 'objeto' })).estado, 'sessao_invalida');
-});
-
-  assert.equal(r2.executou, false);
-  assert.equal(execucoes, 1);
-  assert.equal(trava.emAndamento, false);
 });
