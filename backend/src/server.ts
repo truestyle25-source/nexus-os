@@ -56,6 +56,7 @@ import { radarRoutes } from './modules/radar/radar.routes.js';
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
 import { registerAuthentication } from './middlewares/auth.js';
 import { prisma } from './lib/prisma.js';
+import { comoSistema } from './lib/tenant-context.js';
 import { ErroDeNegocio } from './lib/erros.js';
 import { serializerDeRequest } from './lib/log-redacao.js';
 import { iniciarAgendadorDeSnapshot } from './scripts/scheduler.js';
@@ -188,12 +189,14 @@ await app.register(radarRoutes, { prefix: "/radar" });
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT || 3333);
   await app.listen({ port, host: '0.0.0.0' });
-  iniciarAgendadorDeSnapshot();
+  // Agendadores rodam fora de requisições: escopo de sistema explícito. Os
+  // timers criados aqui herdam este contexto (AsyncLocalStorage).
+  void comoSistema('agendador:snapshot-estoque', () => iniciarAgendadorDeSnapshot());
   // Agendador persistente de sync ML: provisiona tarefas das contas CONECTADAS
   // e inicia o despertador recursivo (o estado vive no banco — sobrevive a
   // restart). Desabilitável com ML_SYNC_AUTO=false.
-  void iniciarAgendadorML();
-  iniciarAgendadorShopee();
+  void comoSistema('agendador:mercadolivre', () => iniciarAgendadorML());
+  void comoSistema('agendador:shopee', () => iniciarAgendadorShopee());
 
   async function encerrarComCuidado(sinal: string) {
     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);

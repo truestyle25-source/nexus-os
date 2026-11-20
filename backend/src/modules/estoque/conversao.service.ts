@@ -96,6 +96,21 @@ export async function converterUnidade({
     });
   }
 
+  // Mesma unidade (ex.: produto vendido em "UN" com base "UN"): não há conversão
+  // a fazer, então não exigimos o cadastro da unidade na tabela Unidade. Sem
+  // este atalho, uma empresa recém-cadastrada (sem unidades) não conseguia
+  // registrar nenhuma venda nem consumo de produto simples.
+  if (unidadeOrigemSimbolo.trim() === unidadeDestinoSimbolo.trim()) {
+    return {
+      quantidadeOrigem: qtd,
+      unidadeOrigem: unidadeOrigemSimbolo,
+      quantidadeDestino: qtd,
+      unidadeDestino: unidadeDestinoSimbolo,
+      fator: new Decimal(1),
+      mesmaDimensao: true,
+    };
+  }
+
   const origem = await buscarUnidadePorSimbolo(empresaId, unidadeOrigemSimbolo);
   if (!origem) {
     throw new ErroConversao(`Unidade de origem "${unidadeOrigemSimbolo}" não encontrada nesta empresa.`, {

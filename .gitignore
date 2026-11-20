@@ -7,3 +7,8 @@ dist/
 .DS_Store
 coverage/
 backend/backups/
+
+# Segurança: scripts ad-hoc e saídas locais que podem conter credenciais
+backend/audit_query.js
+.env.*
+!.env.example

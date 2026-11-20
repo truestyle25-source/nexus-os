@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
+import { comoSistema, definirTenantDaRequisicao } from '../lib/tenant-context.js';
 
 const hashChave = (chave: string): string => createHash('sha256').update(chave).digest('hex');
 
@@ -21,7 +22,10 @@ export function apiKeyAuth(escopoRequerido: string) {
       reply.status(401).send({ error: 'Chave de API ausente. Envie Authorization: Bearer <chave>.' });
       return;
     }
-    const registro = await prisma.chaveApi.findUnique({ where: { chaveHash: hashChave(chave) } });
+    // A empresa ainda não é conhecida: a busca pela chave roda em escopo de sistema.
+    const registro = await comoSistema('api-publica:validar-chave', () =>
+      prisma.chaveApi.findUnique({ where: { chaveHash: hashChave(chave) } }),
+    );
     if (!registro || registro.status !== 'ATIVA') {
       reply.status(401).send({ error: 'Chave de API inválida ou revogada.' });
       return;
@@ -30,6 +34,8 @@ export function apiKeyAuth(escopoRequerido: string) {
       reply.status(403).send({ error: `Esta chave não tem o escopo necessário: ${escopoRequerido}.` });
       return;
     }
+    // Daqui em diante a requisição opera no contexto da empresa dona da chave.
+    definirTenantDaRequisicao(registro.empresaId, '');
     await prisma.chaveApi.update({ where: { id: registro.id }, data: { ultimoUso: new Date() } });
     (request as any).apiEmpresaId = registro.empresaId;
   };

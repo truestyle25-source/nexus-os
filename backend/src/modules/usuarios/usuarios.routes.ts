@@ -7,6 +7,7 @@ import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { MODULOS, ACOES } from '../../lib/permissoes.js';
 import { Conflito, NaoEncontrado } from '../../lib/erros.js';
+import { comoSistema } from '../../lib/tenant-context.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 // Valida modulo/acao contra o catálogo central (lib/permissoes.ts) em vez de
@@ -50,7 +51,12 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
         if (!setor) throw NaoEncontrado('Setor inválido para esta empresa.');
       }
       const email = data.email.toLowerCase().trim();
-      if (await prisma.usuario.findUnique({ where: { email } })) throw Conflito('E-mail já cadastrado.');
+      // E-mail é único no sistema inteiro (login): a checagem precisa enxergar
+      // usuários de outras empresas (RLS). Só o id é lido.
+      const emailEmUso = await comoSistema('usuarios:email-unico', () =>
+        prisma.usuario.findUnique({ where: { email }, select: { id: true } }),
+      );
+      if (emailEmUso) throw Conflito('E-mail já cadastrado.');
       const senhaHash = await hashSenha(data.senha);
       const usuario = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const novo = await tx.usuario.create({
