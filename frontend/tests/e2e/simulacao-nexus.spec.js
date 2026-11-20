@@ -5,8 +5,9 @@ const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
-  const email = 'admin@nexus.com';
-  const password = '12345678';
+  const email = process.env.NEXUS_AUDIT_EMAIL || '';
+  const password = process.env.NEXUS_AUDIT_PASSWORD || '';
+  if (!email || !password) throw new Error('Defina NEXUS_AUDIT_EMAIL e NEXUS_AUDIT_PASSWORD (conta exclusiva de teste).');
   const resultsRoot = path.resolve(__dirname, '../../test-results/nexus-simulacao');
   fs.mkdirSync(resultsRoot, { recursive: true });
 

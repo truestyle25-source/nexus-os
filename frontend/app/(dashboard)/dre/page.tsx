@@ -3,81 +3,81 @@
 import { t as traduzir } from '@/lib/i18n';
 
 /**
- * NEXUS OS â€” /dre (2Âª passada: melhoria visual e de cÃ³digo aplicada EM CIMA da
- * tela que jÃ¡ existia â€” nada recriado, nada movido de lugar).
+ * NEXUS OS — /dre (2ª passada: melhoria visual e de código aplicada EM CIMA da
+ * tela que já existia — nada recriado, nada movido de lugar).
  *
- * REGRA DE OURO cumprida: este continua sendo o ÃšNICO arquivo de DRE do
- * projeto. Nenhuma pÃ¡gina de configuraÃ§Ã£o nova, nenhum arquivo novo, nenhum
- * endpoint novo: continua sendo `GET /dre` + os helpers jÃ¡ existentes em
+ * REGRA DE OURO cumprida: este continua sendo o ÚNICO arquivo de DRE do
+ * projeto. Nenhuma página de configuração nova, nenhum arquivo novo, nenhum
+ * endpoint novo: continua sendo `GET /dre` + os helpers já existentes em
  * `@/lib`.
  *
- * AUDITORIA DESTA PASSA â€” o que ainda estava errado na versÃ£o anterior:
- *  1. Delta de margem em % relativo: 38,2% -> 39,4% saÃ­a como "+3,1%", quando
- *     o movimento real Ã© de +1,2 ponto percentual. Margens agora usam `p.p.`
- *     (deltaPp); os demais indicadores mantÃªm variaÃ§Ã£o relativa.
- *  2. VariaÃ§Ã£o exatamente zero caÃ­a no ramo "caiu": desenhava seta vermelha de
- *     descida com "âˆ’0,0%". Passou a existir um terceiro estado (estÃ¡vel).
+ * AUDITORIA DESTA PASSA — o que ainda estava errado na versão anterior:
+ *  1. Delta de margem em % relativo: 38,2% -> 39,4% saía como "+3,1%", quando
+ *     o movimento real é de +1,2 ponto percentual. Margens agora usam `p.p.`
+ *     (deltaPp); os demais indicadores mantêm variação relativa.
+ *  2. Variação exatamente zero caía no ramo "caiu": desenhava seta vermelha de
+ *     descida com "−0,0%". Passou a existir um terceiro estado (estável).
  *  3. O tooltip herdava `text-transform:uppercase` e o `letter-spacing` do
- *     rÃ³tulo: as fÃ³rmulas contÃ¡beis dos KPIs e dos indicadores saÃ­am em CAIXA
+ *     rótulo: as fórmulas contábeis dos KPIs e dos indicadores saíam em CAIXA
  *     ALTA. O `.dre-tip` agora zera text-transform/tracking/weight.
- *  4. O tooltip era `absolute` dentro de `<div class="overflow-x-auto">` â€” e
- *     `overflow-x:auto` torna `overflow-y` `auto`, entÃ£o a bolha era CORTADA
+ *  4. O tooltip era `absolute` dentro de `<div class="overflow-x-auto">` — e
+ *     `overflow-x:auto` torna `overflow-y` `auto`, então a bolha era CORTADA
  *     pelas linhas da tabela. Pior: os cards usam `backdrop-filter` e
- *     `transform` no hover, e os dois criam bloco de contenÃ§Ã£o para
+ *     `transform` no hover, e os dois criam bloco de contenção para
  *     `position:fixed`. Resolvido com portal em <body> + ancoragem por
  *     getBoundingClientRect, com flip para cima e clamp dentro da viewport.
- *  5. `title="VariaÃ§Ã£o vs. <descriÃ§Ã£o do KPI>"` virava "VariaÃ§Ã£o vs. 12 venda(s)
- *     finalizada(s) no perÃ­odo". Agora nomeia a janela de comparaÃ§Ã£o real.
- *  6. O CSV exportava margem sob o cabeÃ§alho "Valor (BRL)": 38,2 (que Ã© %)
+ *  5. `title="Variação vs. <descrição do KPI>"` virava "Variação vs. 12 venda(s)
+ *     finalizada(s) no período". Agora nomeia a janela de comparação real.
+ *  6. O CSV exportava margem sob o cabeçalho "Valor (BRL)": 38,2 (que é %)
  *     virava R$ 38,20 no Excel. Passou a existir a coluna "Unidade" (BRL / %).
- *  7. Corrida de requisiÃ§Ã£o: o guard `vivo` sÃ³ protegia o unmount, entÃ£o
- *     trocar de perÃ­odo rÃ¡pido fazia uma resposta velha sobrescrever a nova.
- *     Agora hÃ¡ token monotÃ´nico e sÃ³ a Ãºltima resposta grava estado.
+ *  7. Corrida de requisição: o guard `vivo` só protegia o unmount, então
+ *     trocar de período rápido fazia uma resposta velha sobrescrever a nova.
+ *     Agora há token monotônico e só a última resposta grava estado.
  *  8. Contraste: `text-white/25` e `/30` davam ~3:1 sobre o card #1A1A2E,
  *     abaixo do AA (4,5:1) para texto pequeno. Regra nova: nenhum texto
  *     informativo abaixo de `white/50` (~5,1:1); a hierarquia passa a vir de
- *     tamanho e peso, nÃ£o sÃ³ de opacidade.
+ *     tamanho e peso, não só de opacidade.
  *  9. Os filtros ficavam `disabled` durante o loading: roubavam o teclado e
- *     brigavam com o usuÃ¡rio. Agora seguem operÃ¡veis e o carregamento Ã©
+ *     brigavam com o usuário. Agora seguem operáveis e o carregamento é
  *     anunciado por `aria-busy` no skeleton.
- * 10. Fora da rÃ©gua de 4px (p-3.5, mt-2.5, gap-2.5, h-2.5) e com raios
- *     misturados (10/12/14/16/20). Normalizado para 4px e trÃªs raios.
- * 11. "Fluxo da DRE" nÃ£o era uma ponte: todas as barras nasciam do zero, entÃ£o
- *     ler "receita -> lucro" era impossÃ­vel. Agora Ã© uma ponte cumulativa de
- *     verdade â€” os segmentos flutuam entre o saldo anterior e o novo, os
+ * 10. Fora da régua de 4px (p-3.5, mt-2.5, gap-2.5, h-2.5) e com raios
+ *     misturados (10/12/14/16/20). Normalizado para 4px e três raios.
+ * 11. "Fluxo da DRE" não era uma ponte: todas as barras nasciam do zero, então
+ *     ler "receita -> lucro" era impossível. Agora é uma ponte cumulativa de
+ *     verdade — os segmentos flutuam entre o saldo anterior e o novo, os
  *     subtotais ancoram em zero e a linha do zero fica marcada.
- * 12. Tooltip sem `aria-describedby` (a fÃ³rmula era lida duas vezes: uma como
- *     nome do botÃ£o, outra como texto) e badge "derivado" com gÃªnero frÃ¡gil.
+ * 12. Tooltip sem `aria-describedby` (a fórmula era lida duas vezes: uma como
+ *     nome do botão, outra como texto) e badge "derivado" com gênero frágil.
  *
- * PASSADA ANTERIOR â€” o que a primeira versÃ£o jÃ¡ tinha resolvido:
+ * PASSADA ANTERIOR — o que a primeira versão já tinha resolvido:
  *  - `any` em tudo, apesar do `strict: true` do tsconfig;
- *  - o erro real nunca aparecia: `err.response?.data?.error` nÃ£o existe,
- *    porque o cliente de API lanÃ§a `Error` â€” o usuÃ¡rio via sÃ³ o texto fixo;
+ *  - o erro real nunca aparecia: `err.response?.data?.error` não existe,
+ *    porque o cliente de API lança `Error` — o usuário via só o texto fixo;
  *  - valor sem locale: `R$ ${n.toFixed(2)}` imprimia "R$ 12345.00";
- *  - sem perÃ­odo: o backend aceita `periodoInicio`/`periodoFim` e a tela
- *    nunca os mandava, entÃ£o o DRE ficava travado no mÃªs corrente;
- *  - sem comparaÃ§Ã£o, sem sparkline, sem exportaÃ§Ã£o e sem fÃ³rmula;
+ *  - sem período: o backend aceita `periodoInicio`/`periodoFim` e a tela
+ *    nunca os mandava, então o DRE ficava travado no mês corrente;
+ *  - sem comparação, sem sparkline, sem exportação e sem fórmula;
  *  - sem skeleton e sem estado vazio: receita zero aparecia como se fosse um
- *    resultado real (o NEXUS OS nunca mostra nÃºmero fictÃ­cio);
- *  - sem proteÃ§Ã£o contra race: trocar de perÃ­odo podia gravar resposta velha.
+ *    resultado real (o NEXUS OS nunca mostra número fictício);
+ *  - sem proteção contra race: trocar de período podia gravar resposta velha.
  *
- * O que esta versÃ£o entrega:
+ * O que esta versão entrega:
  *  - vidro, raio 20px, hairline em gradiente, lift no hover e entrada suave;
- *  - filtro de perÃ­odo real (30 dias / mÃªs / ano) e comparaÃ§Ã£o com a janela
- *    anterior REAL â€” nada de multiplicador inventado para "escalar" a DRE;
+ *  - filtro de período real (30 dias / mês / ano) e comparação com a janela
+ *    anterior REAL — nada de multiplicador inventado para "escalar" a DRE;
  *  - subcomponentes memoizados (Sparkline, Tooltip, KpiCard, WaterfallBar,
  *    DreRow, IndicadorCard), `useMemo` nos derivados e `useCallback` nos
  *    handlers, paleta em `COLORS`;
- *  - fÃ³rmulas contÃ¡beis reais nos tooltips, estado vazio, skeleton e CSV;
- *  - acessibilidade: <table> semÃ¢ntica, foco visÃ­vel, aria-label/pressed,
- *    aria-live no toast, aria-busy no carregamento e nÃºmeros tabulares.
+ *  - fórmulas contábeis reais nos tooltips, estado vazio, skeleton e CSV;
+ *  - acessibilidade: <table> semântica, foco visível, aria-label/pressed,
+ *    aria-live no toast, aria-busy no carregamento e números tabulares.
  *
- * RÃ©gua de honestidade: o DRE nÃ£o devolve sÃ©rie temporal, entÃ£o o sparkline
- * compara as DUAS janelas reais (anterior -> atual) e nÃ£o uma sÃ©rie inventada.
- * A Ãºnica linha derivada na tela Ã© "Lucro bruto" (Receita LÃ­quida - Custos),
- * que Ã© exatamente a conta do backend para a margem bruta; o rodapÃ© explica
- * por que nÃ£o existe uma linha de impostos separada: o backend jÃ¡ soma
- * impostos e devoluÃ§Ãµes dentro de `deducoes`.
+ * Régua de honestidade: o DRE não devolve série temporal, então o sparkline
+ * compara as DUAS janelas reais (anterior -> atual) e não uma série inventada.
+ * A única linha derivada na tela é "Lucro bruto" (Receita Líquida - Custos),
+ * que é exatamente a conta do backend para a margem bruta; o rodapé explica
+ * por que não existe uma linha de impostos separada: o backend já soma
+ * impostos e devoluções dentro de `deducoes`.
  */
 
 import {
@@ -123,10 +123,10 @@ import {
 
 /* ============================================================================
    1. CSS LOCAL DA TELA
-   Mesmo padrÃ£o de /fluxo, /vendas e /pdv: regras com escopo `.dre-root`
-   injetadas num <style>, para nÃ£o espalhar especificidade em globals.css.
-   MantÃ©m os tokens do Layout Mestre (#1A1A2E, #7C3AED) e soma o acabamento
-   pedido: vidro, raio 20px, lift, shimmer, entrada suave e foco visÃ­vel.
+   Mesmo padrão de /fluxo, /vendas e /pdv: regras com escopo `.dre-root`
+   injetadas num <style>, para não espalhar especificidade em globals.css.
+   Mantém os tokens do Layout Mestre (#1A1A2E, #7C3AED) e soma o acabamento
+   pedido: vidro, raio 20px, lift, shimmer, entrada suave e foco visível.
    ========================================================================== */
 const dreCss = `
 .dre-root{color-scheme:dark;--dre-card-bg:linear-gradient(180deg,rgba(38,35,56,.72),rgba(26,26,46,.70));--dre-card-border:rgba(255,255,255,.07);--dre-line-soft:rgba(255,255,255,.18);--dre-chip-text:rgba(255,255,255,.72);--dre-chip-bg:rgba(255,255,255,.05);--dre-chip-border:rgba(255,255,255,.09);--dre-active-chip-text:#fff;--dre-skeleton-bg:rgba(255,255,255,.06);--dre-skeleton-shine:rgba(255,255,255,.09);--dre-track-bg:rgba(255,255,255,.05);--dre-zero-color:rgba(255,255,255,.28);--dre-card-shadow:0 18px 40px -28px rgba(0,0,0,.9);--dre-card-hover-shadow:0 26px 54px -30px rgba(0,0,0,.95)}
@@ -145,12 +145,12 @@ const dreCss = `
 .dre-root select.dre-field option{background:var(--nx-surface);color:var(--nx-ink)}
 .dre-root .dre-help{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:999px;cursor:help;color:var(--nx-ink-3);transition:color .16s ease,background-color .16s ease}
 .dre-root .dre-help:hover{color:var(--nx-ink);background:color-mix(in srgb,var(--nx-ink) 9%,transparent)}
-/* --- Tooltip: ÃšNICO bloco de regras sem o prefixo .dre-root, de propÃ³sito.
-   A bolha Ã© renderizada por portal direto em <body> (ver Tooltip). Dentro da
-   Ã¡rvore da tela ela morreria: overflow-x:auto da tabela forÃ§a
+/* --- Tooltip: ÚNICO bloco de regras sem o prefixo .dre-root, de propósito.
+   A bolha é renderizada por portal direto em <body> (ver Tooltip). Dentro da
+   árvore da tela ela morreria: overflow-x:auto da tabela força
    overflow-y:auto (a bolha era cortada) e backdrop-filter/transform dos
-   cards viram bloco de contenÃ§Ã£o para position:fixed. O prefixo dre-
-   continua evitando colisÃ£o com o resto do app. --- */
+   cards viram bloco de contenção para position:fixed. O prefixo dre-
+   continua evitando colisão com o resto do app. --- */
 .dre-tip{position:fixed;z-index:80;width:304px;max-width:calc(100vw - 24px);padding:12px;border-radius:12px;background:var(--nx-surface);border:1px solid var(--nx-border);box-shadow:0 18px 44px var(--nx-shadow-pop);color:var(--nx-ink-2);font-size:11.5px;line-height:1.5;text-align:left;text-transform:none;letter-spacing:normal;font-weight:400;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .16s ease,transform .16s ease,visibility .16s}
 .dre-tip[data-lado='baixo']{transform:translateY(-6px)}
 .dre-tip[data-lado='topo']{transform:translateY(6px)}
@@ -166,14 +166,14 @@ const dreCss = `
 .dre-root .dre-row{transition:background-color .15s ease}
 .dre-root .dre-row:hover{background:color-mix(in srgb,var(--nx-accent) 8%,transparent)}
 .dre-root .dre-track{position:relative;height:8px;border-radius:999px;background:var(--dre-track-bg);overflow:hidden}
-/* Ponte: a linha do zero fica sempre visÃ­vel para a rÃ©gua nÃ£o mentir quando
-   o resultado Ã© negativo â€” sem ela, uma barra "para cima" Ã© ambÃ­gua. */
+/* Ponte: a linha do zero fica sempre visível para a régua não mentir quando
+   o resultado é negativo — sem ela, uma barra "para cima" é ambígua. */
 .dre-root .dre-zero{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--dre-zero-color)}
 .dre-root .dre-hl{transition:width .55s cubic-bezier(.2,.8,.3,1),left .55s cubic-bezier(.2,.8,.3,1)}
 .dre-root :where(button,select,a,[tabindex]):focus-visible{outline:2px solid var(--nx-accent);outline-offset:2px;border-radius:8px}
 .dre-root .dre-toast{animation:dreToast .28s cubic-bezier(.2,.8,.3,1) both}
 @keyframes dreToast{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
-/* O lift sÃ³ existe onde hÃ¡ ponteiro de verdade: em toque, hover gruda e o
+/* O lift só existe onde há ponteiro de verdade: em toque, hover gruda e o
    card fica deslocado depois do tap. */
 @media (hover:hover) and (pointer:fine){
 .dre-root .dre-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--nx-accent) 38%,transparent);box-shadow:var(--dre-card-hover-shadow),0 0 0 1px color-mix(in srgb,var(--nx-accent) 10%,transparent)}
@@ -187,7 +187,7 @@ const dreCss = `
 /* ============================================================================
    2. CONTRATOS E PALETA
    O contrato espelha exatamente o que `GET /dre` devolve: um registro de
-   histÃ³rico (`dre`, com perÃ­odo e origem) e os nÃºmeros do perÃ­odo (`detalhes`).
+   histórico (`dre`, com período e origem) e os números do período (`detalhes`).
    ========================================================================== */
 type DreResposta = {
   dre: {
@@ -198,50 +198,50 @@ type DreResposta = {
   detalhes: DreDetalhes | null;
 };
 
-/** SÃ³ os trÃªs perÃ­odos que fazem sentido para um DRE gerencial. */
+/** Só os três períodos que fazem sentido para um DRE gerencial. */
 type PeriodoDre = Extract<PresetKey, '30d' | 'mes' | 'ano'>;
 
 type Tom = 'accent' | 'emerald' | 'red' | 'amber' | 'neutral';
 
 /**
  * Unidade do valor. Existe porque o demonstrativo MIXTURA as duas: as contas
- * sÃ£o em reais, as margens em percentual. Sem isso, o CSV exportava 38,2 sob
- * um cabeÃ§alho "Valor (BRL)" e o Excel abria R$ 38,20.
+ * são em reais, as margens em percentual. Sem isso, o CSV exportava 38,2 sob
+ * um cabeçalho "Valor (BRL)" e o Excel abria R$ 38,20.
  */
 type Unidade = 'BRL' | '%';
 
 type LinhaDre = {
   id: string;
   rotulo: string;
-  /** Prefixo contÃ¡bil da linha: + entrada, âˆ’ deduÃ§Ã£o, = resultado. */
-  sinal: '+' | 'âˆ’' | '=' | '';
+  /** Prefixo contábil da linha: + entrada, − dedução, = resultado. */
+  sinal: '+' | '−' | '=' | '';
   /**
-   * `null` sÃ³ acontece nas linhas de margem quando o perÃ­odo nÃ£o tem receita:
-   * nÃ£o existe denominador, entÃ£o a conta Ã© IMPOSSÃVEL, nÃ£o zero. A cÃ©lula
-   * mostra "â€”". As linhas em reais nunca sÃ£o nulas.
+   * `null` só acontece nas linhas de margem quando o período não tem receita:
+   * não existe denominador, então a conta é IMPOSSÍVEL, não zero. A célula
+   * mostra "—". As linhas em reais nunca são nulas.
    */
   valor: number | null;
   unidade: Unidade;
   tipo: 'receita' | 'sub' | 'total' | 'resultado' | 'margem';
   tom: Tom;
   formula: string;
-  /** Linha calculada na tela (e nÃ£o pronta no backend) â€” recebe aviso visual. */
+  /** Linha calculada na tela (e não pronta no backend) — recebe aviso visual. */
   derivada?: boolean;
 };
 
 /**
- * Uma linha da ponte (waterfall) jÃ¡ resolvida para o eixo: `de` Ã© o saldo
+ * Uma linha da ponte (waterfall) já resolvida para o eixo: `de` é o saldo
  * antes da linha e `para` o saldo depois. Subtotal (`ehTotal`) ancora em zero.
  */
 type Segmento = Omit<LinhaDre, 'valor'> & { valor: number; de: number; para: number; ehTotal: boolean };
 
-/** RÃ©gua da ponte: mapeia qualquer valor para 0â€“100% dentro da faixa real. */
+/** Régua da ponte: mapeia qualquer valor para 0–100% dentro da faixa real. */
 type Escala = { min: number; max: number; amplitude: number; posZero: number };
 
 /**
- * `pct` = variaÃ§Ã£o relativa (%|Ã·|%|), usada nos indicadores em reais.
- * `pp`  = diferenÃ§a em pontos percentuais, a Ãºnica leitura honesta para
- *         margem: 38,2% -> 39,4% Ã© +1,2 p.p., e nÃ£o "+3,1%".
+ * `pct` = variação relativa (%|÷|%|), usada nos indicadores em reais.
+ * `pp`  = diferença em pontos percentuais, a única leitura honesta para
+ *         margem: 38,2% -> 39,4% é +1,2 p.p., e não "+3,1%".
  */
 type DeltaUnidade = 'pct' | 'pp';
 
@@ -267,12 +267,12 @@ type Indicador = {
 };
 
 const PERIODOS: Array<{ key: PeriodoDre; label: string }> = [
-  { key: '30d', label: 'Ãšltimos 30 dias' },
-  { key: 'mes', label: 'Este mÃªs' },
+  { key: '30d', label: 'Últimos 30 dias' },
+  { key: 'mes', label: 'Este mês' },
   { key: 'ano', label: 'Este ano' },
 ];
 
-/** Paleta da tela em um Ãºnico lugar â€” nenhuma cor escrita dentro do JSX. */
+/** Paleta da tela em um único lugar — nenhuma cor escrita dentro do JSX. */
 const COLORS = {
   acento: '#7C3AED',
   positivo: '#22C55E',
@@ -284,18 +284,18 @@ const COLORS = {
 } as const;
 
 /**
- * Tons semÃ¢nticos da tela: `cor` (barra/SVG), `chip` (selo) e `texto` (valor).
+ * Tons semânticos da tela: `cor` (barra/SVG), `chip` (selo) e `texto` (valor).
  *
- * RÃ©gua de contraste (WCAG AA) medida sobre o card efetivo (~#1F1C2F, do
- * gradiente de vidro sobre o fundo da pÃ¡gina):
+ * Régua de contraste (WCAG AA) medida sobre o card efetivo (~#1F1C2F, do
+ * gradiente de vidro sobre o fundo da página):
  *   white/90 -> ~8,9:1  texto em destaque
- *   white/70 -> ~7,1:1  rÃ³tulo de valor
- *   white/60 -> ~6,3:1  rÃ³tulo curto / cabeÃ§alho de coluna
- *   white/50 -> ~5,1:1  texto INFORMACIONAL â€” Ã© o piso da casa
- *   white/40 -> ~3,8:1  SÃ“ ornamento (borda, barra, ponto). NUNCA texto.
- * A versÃ£o anterior escrevia texto pequeno em white/25 e white/30 (~2,9:1),
- * reprovado em AA. A hierarquia agora vem de TAMANHO e PESO, nÃ£o sÃ³ de
- * opacidade â€” por isso a escala pode ser mais alta sem achatar o design.
+ *   white/70 -> ~7,1:1  rótulo de valor
+ *   white/60 -> ~6,3:1  rótulo curto / cabeçalho de coluna
+ *   white/50 -> ~5,1:1  texto INFORMACIONAL — é o piso da casa
+ *   white/40 -> ~3,8:1  SÓ ornamento (borda, barra, ponto). NUNCA texto.
+ * A versão anterior escrevia texto pequeno em white/25 e white/30 (~2,9:1),
+ * reprovado em AA. A hierarquia agora vem de TAMANHO e PESO, não só de
+ * opacidade — por isso a escala pode ser mais alta sem achatar o design.
  */
 const TONS: Record<Tom, { cor: string; chip: string; texto: string }> = {
   accent: {
@@ -326,7 +326,7 @@ const TONS: Record<Tom, { cor: string; chip: string; texto: string }> = {
 };
 
 /* ============================================================================
-   3. HELPERS PUROS (sem React â€” estÃ¡veis entre renders e fÃ¡ceis de revisar)
+   3. HELPERS PUROS (sem React — estáveis entre renders e fáceis de revisar)
    ========================================================================== */
 
 /** Decimal do Prisma pode chegar como string; `Number` + guarda de NaN. */
@@ -336,9 +336,9 @@ function num(v: unknown): number {
 }
 
 /**
- * Margem que o backend pode devolver como `null` (perÃ­odo sem receita, onde a
- * divisÃ£o nÃ£o existe). `num()` transformaria `null` em 0 e a tela mostraria
- * "0,0%" â€” que se lÃª como empate. Aqui o `null` Ã© preservado para virar "â€”".
+ * Margem que o backend pode devolver como `null` (período sem receita, onde a
+ * divisão não existe). `num()` transformaria `null` em 0 e a tela mostraria
+ * "0,0%" — que se lê como empate. Aqui o `null` é preservado para virar "—".
  */
 function numOuNulo(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
@@ -347,8 +347,8 @@ function numOuNulo(v: unknown): number | null {
 }
 
 /**
- * VariaÃ§Ã£o real vs. a janela anterior. `null` = nÃ£o existe base comparÃ¡vel;
- * nesse caso a tela diz "sem base comparativa" em vez de inventar nÃºmero.
+ * Variação real vs. a janela anterior. `null` = não existe base comparável;
+ * nesse caso a tela diz "sem base comparativa" em vez de inventar número.
  */
 function deltaPct(atual: number, anterior: number | null | undefined): number | null {
   if (anterior === null || anterior === undefined) return null;
@@ -357,10 +357,10 @@ function deltaPct(atual: number, anterior: number | null | undefined): number | 
 }
 
 /**
- * VariaÃ§Ã£o de um PERCENTUAL em pontos percentuais. Aplicar `deltaPct` numa
- * margem daria a variaÃ§Ã£o relativa do prÃ³prio percentual (38,2% -> 39,4%
- * viraria "+3,1%"), que Ã© um nÃºmero que o gestor nÃ£o consegue ler. O
- * movimento real Ã© "+1,2 p.p.".
+ * Variação de um PERCENTUAL em pontos percentuais. Aplicar `deltaPct` numa
+ * margem daria a variação relativa do próprio percentual (38,2% -> 39,4%
+ * viraria "+3,1%"), que é um número que o gestor não consegue ler. O
+ * movimento real é "+1,2 p.p.".
  */
 function deltaPp(atual: number, anterior: number | null | undefined): number | null {
   if (anterior === null || anterior === undefined) return null;
@@ -378,19 +378,19 @@ function brlCompacto(v: number): string {
   return formatBRL(v);
 }
 
-/** CSV: aspas quando o valor tem vÃ­rgula/ponto-e-vÃ­rgula/quebra de linha. */
+/** CSV: aspas quando o valor tem vírgula/ponto-e-vírgula/quebra de linha. */
 function campoCsv(valor: unknown): string {
   const s = valor == null ? '' : String(valor);
   return /[",;\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** BOM (ï»¿) para o Excel abrir os acentos (mesma tÃ©cnica de /vendas e /fluxo). */
+/** BOM () para o Excel abrir os acentos (mesma técnica de /vendas e /fluxo). */
 function baixarCsv(cabecalho: string[], linhas: string[][], nome: string): void {
   const conteudo = [cabecalho, ...linhas]
     .map((l) => l.map(campoCsv).join(';'))
     .join('\r\n');
   const url = URL.createObjectURL(
-    new Blob([`ï»¿${conteudo}`], { type: 'text/csv;charset=utf-8' }),
+    new Blob([`${conteudo}`], { type: 'text/csv;charset=utf-8' }),
   );
   const a = document.createElement('a');
   a.href = url;
@@ -401,18 +401,18 @@ function baixarCsv(cabecalho: string[], linhas: string[][], nome: string): void 
 
 /** `2026-09-19` -> `19/09/2026`, sem `new Date` (evita deslocar o dia por fuso). */
 function diaBruto(iso: string | null | undefined): string {
-  if (!iso) return 'â€”';
+  if (!iso) return '—';
   const partes = iso.slice(0, 10).split('-');
   if (partes.length !== 3) return iso;
   return `${partes[2]}/${partes[1]}/${partes[0]}`;
 }
 
 /**
- * Monta o demonstrativo na ordem da conta de resultado: receitas, deduÃ§Ãµes,
- * CMV, despesas, resultados e margens. Cada linha carrega a fÃ³rmula contÃ¡bil
- * exata usada pelo backend â€” Ã© isso que aparece no tooltip, nada de texto
- * genÃ©rico. Todas as linhas com barra sÃ£o comparÃ¡veis entre si; as margens
- * nÃ£o entram no fluxo porque tÃªm unidade diferente (%).
+ * Monta o demonstrativo na ordem da conta de resultado: receitas, deduções,
+ * CMV, despesas, resultados e margens. Cada linha carrega a fórmula contábil
+ * exata usada pelo backend — é isso que aparece no tooltip, nada de texto
+ * genérico. Todas as linhas com barra são comparáveis entre si; as margens
+ * não entram no fluxo porque têm unidade diferente (%).
  */
 function montarLinhas(d: DreDetalhes): LinhaDre[] {
   const receitaBruta = num(d.receitaBruta);
@@ -439,39 +439,39 @@ function montarLinhas(d: DreDetalhes): LinhaDre[] {
       tipo: 'receita',
       tom: 'accent',
       formula:
-        'Soma dos lanÃ§amentos de tipo RECEITA criados no perÃ­odo, antes de impostos, devoluÃ§Ãµes e abatimentos.',
+        'Soma dos lançamentos de tipo RECEITA criados no período, antes de impostos, devoluções e abatimentos.',
     },
     {
       id: 'deducoes',
-      rotulo: 'Impostos, devoluÃ§Ãµes e abatimentos',
-      sinal: 'âˆ’',
+      rotulo: 'Impostos, devoluções e abatimentos',
+      sinal: '−',
       valor: deducoes,
       unidade: 'BRL',
       tipo: 'sub',
       tom: 'red',
       formula:
-        'Receita Bruta âˆ’ Receita LÃ­quida. No NEXUS OS, impostos sobre venda e devoluÃ§Ãµes entram como deduÃ§Ã£o da receita, e nÃ£o como despesa operacional.',
+        'Receita Bruta − Receita Líquida. No NEXUS OS, impostos sobre venda e devoluções entram como dedução da receita, e não como despesa operacional.',
     },
     {
       id: 'receita-liquida',
-      rotulo: 'Receita lÃ­quida',
+      rotulo: 'Receita líquida',
       sinal: '=',
       valor: receitaLiquida,
       unidade: 'BRL',
       tipo: 'total',
       tom: 'neutral',
-      formula: 'Receita Bruta âˆ’ DeduÃ§Ãµes.',
+      formula: 'Receita Bruta − Deduções.',
     },
     {
       id: 'custos',
       rotulo: 'Custos (CMV)',
-      sinal: 'âˆ’',
+      sinal: '−',
       valor: custos,
       unidade: 'BRL',
       tipo: 'sub',
       tom: 'red',
       formula:
-        'Î£ (custo unitÃ¡rio Ã— quantidade) dos itens de cada venda FINALIZADA no perÃ­odo â€” o custo real dos produtos vendidos, nunca um percentual estimado.',
+        'Σ (custo unitário × quantidade) dos itens de cada venda FINALIZADA no período — o custo real dos produtos vendidos, nunca um percentual estimado.',
     },
     {
       id: 'lucro-bruto',
@@ -483,18 +483,18 @@ function montarLinhas(d: DreDetalhes): LinhaDre[] {
       tom: tomDoResultado(lucroBruto),
       derivada: true,
       formula:
-        'Receita LÃ­quida âˆ’ Custos (CMV). Derivada na tela com a mesma conta que o backend usa para a margem bruta.',
+        'Receita Líquida − Custos (CMV). Derivada na tela com a mesma conta que o backend usa para a margem bruta.',
     },
     {
       id: 'despesas',
       rotulo: 'Despesas operacionais',
-      sinal: 'âˆ’',
+      sinal: '−',
       valor: despesas,
       unidade: 'BRL',
       tipo: 'sub',
       tom: 'amber',
       formula:
-        'LanÃ§amentos de tipo DESPESA do perÃ­odo, exceto os de categoria "deducoes"/"impostos", que jÃ¡ foram descontados acima como deduÃ§Ã£o.',
+        'Lançamentos de tipo DESPESA do período, exceto os de categoria "deducoes"/"impostos", que já foram descontados acima como dedução.',
     },
     {
       id: 'resultado-operacional',
@@ -504,18 +504,18 @@ function montarLinhas(d: DreDetalhes): LinhaDre[] {
       unidade: 'BRL',
       tipo: 'total',
       tom: tomDoResultado(resultado),
-      formula: 'Receita LÃ­quida âˆ’ Custos (CMV) âˆ’ Despesas Operacionais.',
+      formula: 'Receita Líquida − Custos (CMV) − Despesas Operacionais.',
     },
     {
       id: 'lucro',
-      rotulo: 'Lucro / prejuÃ­zo do exercÃ­cio',
+      rotulo: 'Lucro / prejuízo do exercício',
       sinal: '=',
       valor: lucro,
       unidade: 'BRL',
       tipo: 'resultado',
       tom: tomDoResultado(lucro),
       formula:
-        'No regime de competÃªncia, o resultado do exercÃ­cio Ã© o resultado operacional ajustado por Receitas/Despesas nÃ£o operacionais. O NEXUS OS ainda nÃ£o captura esses ajustes, entÃ£o o backend publica o resultado operacional como lucro do exercÃ­cio â€” por isso esta linha e a de cima coincidem.',
+        'No regime de competência, o resultado do exercício é o resultado operacional ajustado por Receitas/Despesas não operacionais. O NEXUS OS ainda não captura esses ajustes, então o backend publica o resultado operacional como lucro do exercício — por isso esta linha e a de cima coincidem.',
     },
     {
       id: 'margem-bruta',
@@ -525,17 +525,17 @@ function montarLinhas(d: DreDetalhes): LinhaDre[] {
       unidade: '%',
       tipo: 'margem',
       tom: margemBruta === null ? 'neutral' : tomDoResultado(margemBruta),
-      formula: '(Lucro Bruto Ã· Receita LÃ­quida) Ã— 100. Sem receita no perÃ­odo, nÃ£o hÃ¡ denominador: a linha fica "â€”" em vez de 0,0%.',
+      formula: '(Lucro Bruto ÷ Receita Líquida) × 100. Sem receita no período, não há denominador: a linha fica "—" em vez de 0,0%.',
     },
     {
       id: 'margem-liquida',
-      rotulo: 'Margem lÃ­quida',
+      rotulo: 'Margem líquida',
       sinal: '',
       valor: margemLiquida,
       unidade: '%',
       tipo: 'margem',
       tom: margemLiquida === null ? 'neutral' : tomDoResultado(margemLiquida),
-      formula: '(Lucro/PrejuÃ­zo Ã· Receita Bruta) Ã— 100. Sem receita no perÃ­odo, nÃ£o hÃ¡ denominador: a linha fica "â€”" em vez de 0,0%.',
+      formula: '(Lucro/Prejuízo ÷ Receita Bruta) × 100. Sem receita no período, não há denominador: a linha fica "—" em vez de 0,0%.',
     },
   ];
 }
@@ -543,25 +543,25 @@ function montarLinhas(d: DreDetalhes): LinhaDre[] {
 /**
  * Resolve as linhas da TABELA em segmentos de PONTE (waterfall de verdade).
  *
- * A versÃ£o anterior desenhava todas as barras a partir do zero, entÃ£o a
- * "Receita bruta" ocupava a rÃ©gua inteira e a "DeduÃ§Ã£o" aparecia como um
- * retalho solto ao lado â€” nÃ£o dava para ler receita -> lucro. Aqui o saldo
- *corre de uma linha para a outra: uma receita/ deduÃ§Ã£o vira um segmento
+ * A versão anterior desenhava todas as barras a partir do zero, então a
+ * "Receita bruta" ocupava a régua inteira e a "Dedução" aparecia como um
+ * retalho solto ao lado — não dava para ler receita -> lucro. Aqui o saldo
+ *corre de uma linha para a outra: uma receita/ dedução vira um segmento
  * FLUTUANTE entre o saldo anterior e o novo, e um subtotal ancora em zero
- * (Ã© ele que reinicia a rÃ©gua). O sinal contÃ¡bil (`+`/`âˆ’`) define o sentido,
- * entÃ£o a ponte bate com a conta mesmo se o valor vier negativo do backend.
+ * (é ele que reinicia a régua). O sinal contábil (`+`/`−`) define o sentido,
+ * então a ponte bate com a conta mesmo se o valor vier negativo do backend.
  */
 function montarPonte(linhas: LinhaDre[]): Segmento[] {
   let saldo = 0;
   const segmentos: Segmento[] = [];
 
   for (const linha of linhas) {
-    if (linha.tipo === 'margem') continue; // unidade diferente: fora da rÃ©gua
+    if (linha.tipo === 'margem') continue; // unidade diferente: fora da régua
 
     if (linha.tipo === 'receita' || linha.tipo === 'sub') {
       const de = saldo;
       const valor = linha.valor ?? 0;
-      const passo = linha.sinal === 'âˆ’' ? -Math.abs(valor) : Math.abs(valor);
+      const passo = linha.sinal === '−' ? -Math.abs(valor) : Math.abs(valor);
       saldo = de + passo;
       segmentos.push({ ...linha, valor, de, para: saldo, ehTotal: false });
     } else {
@@ -575,9 +575,9 @@ function montarPonte(linhas: LinhaDre[]): Segmento[] {
 }
 
 /**
- * RÃ©gua da ponte. Inclui o zero dentro da faixa de propÃ³sito: com prejuÃ­zo, o
- * mÃ­nimo Ã© negativo e a rÃ©gua desce abaixo de zero, senÃ£o a barra "para cima"
- * do resultado nÃ£o teria para onde apontar.
+ * Régua da ponte. Inclui o zero dentro da faixa de propósito: com prejuízo, o
+ * mínimo é negativo e a régua desce abaixo de zero, senão a barra "para cima"
+ * do resultado não teria para onde apontar.
  */
 function montarEscala(segmentos: Segmento[]): Escala {
   const valores: number[] = [0];
@@ -590,18 +590,18 @@ function montarEscala(segmentos: Segmento[]): Escala {
   return { min, max, amplitude, posZero: ((0 - min) / amplitude) * 100 };
 }
 
-/** Converte um valor da ponte para 0â€“100% dentro da rÃ©gua. */
+/** Converte um valor da ponte para 0–100% dentro da régua. */
 function paraPorcento(v: number, escala: Escala): number {
   return ((v - escala.min) / escala.amplitude) * 100;
 }
 
 /**
- * Os quatro KPIs do topo. `dAnt` (janela anterior REAL) Ã© a Ãºnica base de
- * comparaÃ§Ã£o: sem ela o delta Ã© `null` e o card diz "sem base" em vez de
- * inventar nÃºmero. Margem mede em p.p., os demais em variaÃ§Ã£o relativa.
+ * Os quatro KPIs do topo. `dAnt` (janela anterior REAL) é a única base de
+ * comparação: sem ela o delta é `null` e o card diz "sem base" em vez de
+ * inventar número. Margem mede em p.p., os demais em variação relativa.
  *
- * FunÃ§Ã£o pura de mÃ³dulo: sai do corpo do componente, fica testÃ¡vel e para de
- * ser reconstruÃ­da a cada render do pai.
+ * Função pura de módulo: sai do corpo do componente, fica testável e para de
+ * ser reconstruída a cada render do pai.
  */
 function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
   const receitaBruta = num(d.receitaBruta);
@@ -609,8 +609,8 @@ function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
   const custos = num(d.custos);
   const lucro = num(d.lucroPrejuizo);
   const lucroBruto = receitaLiquida - custos;
-  // `null` = margem nÃ£o calculÃ¡vel (perÃ­odo sem receita). Vira "â€”" no card,
-  // sem delta e sem sparkline â€” comparar "sem denominador" nÃ£o tem sentido.
+  // `null` = margem não calculável (período sem receita). Vira "—" no card,
+  // sem delta e sem sparkline — comparar "sem denominador" não tem sentido.
   const margemBruta = numOuNulo(d.margemBruta);
 
   const base = dAnt
@@ -631,8 +631,8 @@ function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
       deltaUnidade: 'pct',
       serie: base ? [base.receitaBruta, receitaBruta] : null,
       tom: 'accent',
-      formula: 'Soma dos lanÃ§amentos de tipo RECEITA criados no perÃ­odo, antes de impostos e devoluÃ§Ãµes.',
-      sub: `${num(d.qtdVendas)} venda(s) finalizada(s) no perÃ­odo`,
+      formula: 'Soma dos lançamentos de tipo RECEITA criados no período, antes de impostos e devoluções.',
+      sub: `${num(d.qtdVendas)} venda(s) finalizada(s) no período`,
     },
     {
       id: 'lucro-bruto',
@@ -642,22 +642,22 @@ function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
       deltaUnidade: 'pct',
       serie: base ? [base.lucroBruto, lucroBruto] : null,
       tom: lucroBruto >= 0 ? 'emerald' : 'red',
-      formula: 'Receita LÃ­quida âˆ’ Custos (CMV).',
-      sub: 'O que sobra da receita lÃ­quida apÃ³s o custo real dos itens vendidos',
+      formula: 'Receita Líquida − Custos (CMV).',
+      sub: 'O que sobra da receita líquida após o custo real dos itens vendidos',
     },
     {
       id: 'margem-bruta',
       label: 'Margem bruta',
-      valor: margemBruta === null ? 'â€”' : formatPct(margemBruta, 1),
+      valor: margemBruta === null ? '—' : formatPct(margemBruta, 1),
       delta: base && base.margemBruta !== null && margemBruta !== null ? deltaPp(margemBruta, base.margemBruta) : null,
       deltaUnidade: 'pp',
       serie: base && base.margemBruta !== null && margemBruta !== null ? [base.margemBruta, margemBruta] : null,
       tom: margemBruta === null ? 'neutral' : margemBruta >= 0 ? 'emerald' : 'red',
-      formula: '(Lucro Bruto Ã· Receita LÃ­quida) Ã— 100.',
+      formula: '(Lucro Bruto ÷ Receita Líquida) × 100.',
       sub:
         margemBruta === null
-          ? 'Sem receita no perÃ­odo â€” margem nÃ£o calculÃ¡vel'
-          : 'Percentual da receita lÃ­quida que sobra antes das despesas',
+          ? 'Sem receita no período — margem não calculável'
+          : 'Percentual da receita líquida que sobra antes das despesas',
     },
     {
       id: 'resultado',
@@ -667,16 +667,16 @@ function montarKpis(d: DreDetalhes, dAnt: DreDetalhes | null): Kpi[] {
       deltaUnidade: 'pct',
       serie: base ? [base.lucro, lucro] : null,
       tom: lucro >= 0 ? 'emerald' : 'red',
-      formula: 'Receita LÃ­quida âˆ’ Custos (CMV) âˆ’ Despesas Operacionais.',
-      sub: lucro >= 0 ? 'Resultado positivo no perÃ­odo' : 'PrejuÃ­zo no perÃ­odo',
+      formula: 'Receita Líquida − Custos (CMV) − Despesas Operacionais.',
+      sub: lucro >= 0 ? 'Resultado positivo no período' : 'Prejuízo no período',
     },
   ];
 }
 
 /**
- * RazÃµes do perÃ­odo. Todas saem de divisÃ£o entre campos que o backend jÃ¡
- * devolve, com denominador protegido: sem denominador o valor Ã© "â€”", nunca
- * `Infinity` nem um nÃºmero estimado.
+ * Razões do período. Todas saem de divisão entre campos que o backend já
+ * devolve, com denominador protegido: sem denominador o valor é "—", nunca
+ * `Infinity` nem um número estimado.
  */
 function montarIndicadores(d: DreDetalhes): Indicador[] {
   const receitaBruta = num(d.receitaBruta);
@@ -693,39 +693,39 @@ function montarIndicadores(d: DreDetalhes): Indicador[] {
     const r = divisao(numerador, denominador);
     return r === null ? null : r * 100;
   };
-  const brl = (v: number | null): string => (v === null ? 'â€”' : formatBRL(v));
-  const pct = (v: number | null): string => (v === null ? 'â€”' : formatPct(v, 1));
+  const brl = (v: number | null): string => (v === null ? '—' : formatBRL(v));
+  const pct = (v: number | null): string => (v === null ? '—' : formatPct(v, 1));
 
   return [
     {
       id: 'ticket-medio',
-      label: 'Ticket mÃ©dio',
+      label: 'Ticket médio',
       valor: brl(divisao(receitaBruta, vendas)),
-      formula: 'Receita Bruta Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      formula: 'Receita Bruta ÷ número de vendas finalizadas no período.',
       tom: 'accent',
       icon: ShoppingCart,
     },
     {
       id: 'custo-medio',
-      label: 'Custo mÃ©dio por venda',
+      label: 'Custo médio por venda',
       valor: brl(divisao(custos, vendas)),
-      formula: 'Custos (CMV) Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      formula: 'Custos (CMV) ÷ número de vendas finalizadas no período.',
       tom: 'red',
       icon: Receipt,
     },
     {
       id: 'despesas-receita',
-      label: 'Despesas sobre receita lÃ­quida',
+      label: 'Despesas sobre receita líquida',
       valor: pct(percentual(despesas, receitaLiquida)),
-      formula: '(Despesas Operacionais Ã· Receita LÃ­quida) Ã— 100.',
+      formula: '(Despesas Operacionais ÷ Receita Líquida) × 100.',
       tom: 'amber',
       icon: Wallet,
     },
     {
       id: 'deducoes-receita',
-      label: 'DeduÃ§Ãµes sobre receita bruta',
+      label: 'Deduções sobre receita bruta',
       valor: pct(percentual(deducoes, receitaBruta)),
-      formula: '(Impostos, devoluÃ§Ãµes e abatimentos Ã· Receita Bruta) Ã— 100.',
+      formula: '(Impostos, devoluções e abatimentos ÷ Receita Bruta) × 100.',
       tom: 'amber',
       icon: Percent,
     },
@@ -733,15 +733,15 @@ function montarIndicadores(d: DreDetalhes): Indicador[] {
       id: 'lucro-venda',
       label: 'Lucro por venda',
       valor: brl(divisao(lucro, vendas)),
-      formula: 'Lucro/PrejuÃ­zo Ã· nÃºmero de vendas finalizadas no perÃ­odo.',
+      formula: 'Lucro/Prejuízo ÷ número de vendas finalizadas no período.',
       tom: lucro >= 0 ? 'emerald' : 'red',
       icon: TrendingUp,
     },
     {
       id: 'vendas',
-      label: 'Vendas no perÃ­odo',
+      label: 'Vendas no período',
       valor: vendas.toLocaleString('pt-BR'),
-      formula: 'Contagem de vendas com status FINALIZADA criadas no perÃ­odo.',
+      formula: 'Contagem de vendas com status FINALIZADA criadas no período.',
       tom: 'neutral',
       icon: CircleAlert,
     },
@@ -749,15 +749,15 @@ function montarIndicadores(d: DreDetalhes): Indicador[] {
 }
 
 /* ============================================================================
-   4. COMPONENTES DE APRESENTAÃ‡ÃƒO
-   Todos `memo`: a pÃ¡gina re-renderiza a cada troca de perÃ­odo, de comparaÃ§Ã£o
-   ou de toast, mas os cartÃµes nÃ£o precisam refazer conta nem SVG.
+   4. COMPONENTES DE APRESENTAÇÃO
+   Todos `memo`: a página re-renderiza a cada troca de período, de comparação
+   ou de toast, mas os cartões não precisam refazer conta nem SVG.
    ========================================================================== */
 
 /**
- * Sparkline em SVG puro (mesmo caminho do /fluxo). Por que nÃ£o Recharts aqui:
- * sÃ£o microgrÃ¡ficos de ~28px; instÃ¢ncias de ResponsiveContainer custariam mais
- * que o grÃ¡fico principal. O path Ã© memoizado por `valores`.
+ * Sparkline em SVG puro (mesmo caminho do /fluxo). Por que não Recharts aqui:
+ * são micrográficos de ~28px; instâncias de ResponsiveContainer custariam mais
+ * que o gráfico principal. O path é memoizado por `valores`.
  */
 const Sparkline = memo(function Sparkline({
   id,
@@ -817,23 +817,23 @@ const TIP_GAP = 8;
 const TIP_MARGEM = 12;
 
 /**
- * Tooltip de fÃ³rmula contÃ¡bil.
+ * Tooltip de fórmula contábil.
  *
- * Por que portal em <body> (e nÃ£o um span absoluto dentro da Ã¡rvore):
- *  - a tabela estÃ¡ dentro de `overflow-x:auto`, que por CSS transforma o
- *    `overflow-y` em `auto` â€” a bolha simples era CORTADA pelas linhas;
+ * Por que portal em <body> (e não um span absoluto dentro da árvore):
+ *  - a tabela está dentro de `overflow-x:auto`, que por CSS transforma o
+ *    `overflow-y` em `auto` — a bolha simples era CORTADA pelas linhas;
  *  - os cards usam `backdrop-filter` e `transform:translateY` no hover, e
- *    qualquer um dos dois cria bloco de contenÃ§Ã£o para `position:fixed`.
- * Ancoramos por `getBoundingClientRect`, com flip para cima quando nÃ£o hÃ¡
- * espaÃ§o embaixo e clamp horizontal dentro da viewport.
+ *    qualquer um dos dois cria bloco de contenção para `position:fixed`.
+ * Ancoramos por `getBoundingClientRect`, com flip para cima quando não há
+ * espaço embaixo e clamp horizontal dentro da viewport.
  *
- * Acessibilidade: o gatilho Ã© um <button> (o teclado chega nele) e se
- * anuncia por `aria-describedby` â€” a fÃ³rmula Ã© lida UMA vez, como
- * descriÃ§Ã£o, e nÃ£o repetida no nome acessÃ­vel.
+ * Acessibilidade: o gatilho é um <button> (o teclado chega nele) e se
+ * anuncia por `aria-describedby` — a fórmula é lida UMA vez, como
+ * descrição, e não repetida no nome acessível.
  */
 const Tooltip = memo(function Tooltip({
   texto,
-  rotulo = 'FÃ³rmula contÃ¡bil desta linha',
+  rotulo = 'Fórmula contábil desta linha',
   children,
 }: {
   texto: string;
@@ -859,7 +859,7 @@ const Tooltip = memo(function Tooltip({
     const vh = window.innerHeight;
     const vw = window.innerWidth;
 
-    // Flip: prefere abaixo; sobe quando nÃ£o cabe (e hÃ¡ espaÃ§o acima).
+    // Flip: prefere abaixo; sobe quando não cabe (e há espaço acima).
     const cabeAbaixo = r.bottom + TIP_ALTURA + TIP_MARGEM <= vh;
     const cabeAcima = r.top - TIP_ALTURA - TIP_MARGEM > 0;
     const lado: 'topo' | 'baixo' = !cabeAbaixo && cabeAcima ? 'topo' : 'baixo';
@@ -884,8 +884,8 @@ const Tooltip = memo(function Tooltip({
     );
   }, []);
 
-  /* Rolagem/redimensionamento reposicionam em vez de fechar: a bolha Ã©
-     `fixed`, entÃ£o sem isso ela ficaria pendurada no ponto antigo. */
+  /* Rolagem/redimensionamento reposicionam em vez de fechar: a bolha é
+     `fixed`, então sem isso ela ficaria pendurada no ponto antigo. */
   const aberto = ancora !== null;
   useEffect(() => {
     if (!aberto) return;
@@ -944,11 +944,11 @@ const Tooltip = memo(function Tooltip({
 });
 
 /**
- * Card de KPI. Mostra o valor em nÃºmero tabular, a variaÃ§Ã£o contra a janela
- * anterior REAL (ou "sem base" â€” nunca um delta inventado) e o sparkline com
- * os dois pontos reais (anterior -> atual) quando hÃ¡ comparaÃ§Ã£o.
+ * Card de KPI. Mostra o valor em número tabular, a variação contra a janela
+ * anterior REAL (ou "sem base" — nunca um delta inventado) e o sparkline com
+ * os dois pontos reais (anterior -> atual) quando há comparação.
  *
- * O chip de variaÃ§Ã£o tem TRÃŠS estados (alta / queda / estÃ¡vel) e respeita a
+ * O chip de variação tem TRÊS estados (alta / queda / estável) e respeita a
  * unidade do delta: `p.p.` em margem, `%` relativo nos indicadores em reais.
  */
 const KpiCard = memo(function KpiCard({
@@ -960,14 +960,14 @@ const KpiCard = memo(function KpiCard({
   kpi: Kpi;
   indice: number;
   comparando: boolean;
-  /** RÃ³tulo da janela real de comparaÃ§Ã£o (ex.: "01/08 a 30/08"). */
+  /** Rótulo da janela real de comparação (ex.: "01/08 a 30/08"). */
   janelaComparacao: string;
 }) {
   const janela = janelaComparacao.trim();
 
-  // TrÃªs estados, nÃ£o dois. Com `delta === 0` a versÃ£o anterior caÃ­a no ramo
-  // "caiu" e pintava uma seta vermelha de descida com "âˆ’0,0%": nÃºmero certo,
-  // sinal errado. `0.05` absorve ruÃ­do de ponto flutuante.
+  // Três estados, não dois. Com `delta === 0` a versão anterior caía no ramo
+  // "caiu" e pintava uma seta vermelha de descida com "−0,0%": número certo,
+  // sinal errado. `0.05` absorve ruído de ponto flutuante.
   const magnitude = kpi.delta === null ? null : Math.abs(kpi.delta);
   const estavel = magnitude !== null && magnitude < 0.05;
   const subiu = magnitude !== null && !estavel && kpi.delta !== null && kpi.delta > 0;
@@ -994,18 +994,18 @@ const KpiCard = memo(function KpiCard({
       <div className="flex items-start justify-between gap-3">
         <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/60">
           <span className="truncate">{kpi.label}</span>
-          <Tooltip texto={kpi.formula} rotulo={`FÃ³rmula de ${kpi.label}`} />
+          <Tooltip texto={kpi.formula} rotulo={`Fórmula de ${kpi.label}`} />
         </span>
 
         {magnitude !== null ? (
           <span
             className={`dre-num inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10.5px] font-semibold ${corDelta}`}
-            title={janela ? `VariaÃ§Ã£o vs. ${janela}` : undefined}
+            title={janela ? `Variação vs. ${janela}` : undefined}
           >
             <DeltaIcon className="h-3 w-3" aria-hidden="true" />
             <span className="sr-only">{`${leitura} de `}</span>
             <span aria-hidden="true">
-              {estavel ? '' : subiu ? '+' : 'âˆ’'}
+              {estavel ? '' : subiu ? '+' : '−'}
               {formatPct(magnitude, 1)}
               {unidadeDelta}
             </span>
@@ -1033,12 +1033,12 @@ const KpiCard = memo(function KpiCard({
 
 /**
  * Uma barra da PONTE (waterfall). O segmento ocupa a faixa entre o saldo
- * ANTES da linha e o saldo DEPOIS â€” receita e deduÃ§Ã£o "flutuam"; subtotais
- * (receita lÃ­quida, lucro bruto, resultado, lucro) ancoram no zero. Ã‰ o que
+ * ANTES da linha e o saldo DEPOIS — receita e dedução "flutuam"; subtotais
+ * (receita líquida, lucro bruto, resultado, lucro) ancoram no zero. É o que
  * finalmente permite ler receita -> lucro de cima para baixo.
  *
- * Mobile: rÃ³tulo e valor na primeira linha, barra na segunda (a faixa de
- * 150px + 104px deixava ~90px de rÃ©gua num telefone de 375px).
+ * Mobile: rótulo e valor na primeira linha, barra na segunda (a faixa de
+ * 150px + 104px deixava ~90px de régua num telefone de 375px).
  */
 const WaterfallBar = memo(function WaterfallBar({
   segmento,
@@ -1060,18 +1060,18 @@ const WaterfallBar = memo(function WaterfallBar({
           ) : null}
           {segmento.rotulo}
         </span>
-        <Tooltip texto={segmento.formula} rotulo={`FÃ³rmula de ${segmento.rotulo}`} />
+        <Tooltip texto={segmento.formula} rotulo={`Fórmula de ${segmento.rotulo}`} />
       </span>
 
       <span className="order-3 w-full sm:order-2 sm:w-auto sm:flex-1">
         <span className="dre-track block" aria-hidden="true">
-          {/* RÃ©gua do zero: sem ela, com prejuÃ­zo, "barra para cima" fica ambÃ­gua. */}
+          {/* Régua do zero: sem ela, com prejuízo, "barra para cima" fica ambígua. */}
           <span className="dre-zero" style={{ left: `${escala.posZero}%` }} />
           <span
             className="dre-hl absolute inset-y-0 rounded-full"
             style={{
               left: `${inicio.toFixed(2)}%`,
-              // Piso de 1,2%: uma deduÃ§Ã£o de R$ 0,01 precisa continuar visÃ­vel.
+              // Piso de 1,2%: uma dedução de R$ 0,01 precisa continuar visível.
               width: `${Math.max(fim - inicio, 1.2).toFixed(2)}%`,
               background: segmento.ehTotal
                 ? `linear-gradient(90deg, ${tom.cor}, ${tom.cor}66)`
@@ -1117,7 +1117,7 @@ const DreRow = memo(function DreRow({ linha }: { linha: LinhaDre }) {
           </span>
           {linha.derivada ? (
             <Tooltip
-              texto="Linha calculada na tela com a mesma conta que o backend usa; nÃ£o vem pronta do endpoint."
+              texto="Linha calculada na tela com a mesma conta que o backend usa; não vem pronta do endpoint."
               rotulo="Origem do valor"
             >
               <span className="shrink-0 rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[9.5px] uppercase tracking-wide text-white/60">
@@ -1125,15 +1125,15 @@ const DreRow = memo(function DreRow({ linha }: { linha: LinhaDre }) {
               </span>
             </Tooltip>
           ) : null}
-          <Tooltip texto={linha.formula} rotulo={`FÃ³rmula de ${linha.rotulo}`} />
+          <Tooltip texto={linha.formula} rotulo={`Fórmula de ${linha.rotulo}`} />
         </span>
       </th>
       <td className="dre-num whitespace-nowrap px-4 py-3 text-right text-[12.5px] md:px-5">
-        {/* `valor === null` sÃ³ ocorre nas margens de um perÃ­odo sem receita:
-            nÃ£o hÃ¡ denominador, entÃ£o a cÃ©lula mostra "â€”" em vez de "0,0%". */}
+        {/* `valor === null` só ocorre nas margens de um período sem receita:
+            não há denominador, então a célula mostra "—" em vez de "0,0%". */}
         <span className={destaque ? `font-bold ${tom.texto}` : `font-medium ${tom.texto}`}>
           {linha.valor === null
-            ? 'â€”'
+            ? '—'
             : ehMargem
               ? formatPct(linha.valor, 1)
               : formatBRL(linha.valor)}
@@ -1144,9 +1144,9 @@ const DreRow = memo(function DreRow({ linha }: { linha: LinhaDre }) {
 });
 
 /**
- * Card de indicador derivado. Todos os valores saem de divisÃ£o real entre
- * campos que o backend jÃ¡ devolve (com guarda contra divisÃ£o por zero) â€”
- * nada de benchmark de mercado ou meta genÃ©rica.
+ * Card de indicador derivado. Todos os valores saem de divisão real entre
+ * campos que o backend já devolve (com guarda contra divisão por zero) —
+ * nada de benchmark de mercado ou meta genérica.
  */
 const IndicadorCard = memo(function IndicadorCard({
   indicador,
@@ -1166,7 +1166,7 @@ const IndicadorCard = memo(function IndicadorCard({
           <span className="truncate text-[11px] uppercase tracking-[0.1em] text-white/60">
             {indicador.label}
           </span>
-          <Tooltip texto={indicador.formula} rotulo={`FÃ³rmula de ${indicador.label}`} />
+          <Tooltip texto={indicador.formula} rotulo={`Fórmula de ${indicador.label}`} />
         </div>
         <div className={`dre-num mt-1.5 text-[15px] font-bold ${tom.texto}`}>
           {indicador.valor}
@@ -1177,9 +1177,9 @@ const IndicadorCard = memo(function IndicadorCard({
 });
 
 /**
- * CartÃ£o de "o que a tela se recusa a mostrar", com o motivo. Existe para a
- * ausÃªncia ser EXPLICADA: esconder o EBITDA em silÃªncio deixa o gestor
- * ACHER que o cÃ¡lculo existe e sÃ³ nÃ£o foi mostrado.
+ * Cartão de "o que a tela se recusa a mostrar", com o motivo. Existe para a
+ * ausência ser EXPLICADA: esconder o EBITDA em silêncio deixa o gestor
+ * ACHER que o cálculo existe e só não foi mostrado.
  */
 const AvisoContabil = memo(function AvisoContabil() {
   return (
@@ -1189,12 +1189,12 @@ const AvisoContabil = memo(function AvisoContabil() {
       </span>
       <div className="min-w-0">
         <div className="text-[12.5px] font-semibold text-white/90">
-          EBITDA, EBITDAR e laudo gerencial nÃ£o sÃ£o publicados aqui
+          EBITDA, EBITDAR e laudo gerencial não são publicados aqui
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-white/50">
-          O NEXUS OS ainda nÃ£o separa depreciaÃ§Ã£o, amortizaÃ§Ã£o, resultado
-          financeiro, ajustes nÃ£o operacionais e IR/CSLL. Publicar esses nÃºmeros
-          hoje seria inventar informaÃ§Ã£o contÃ¡bil â€” por isso o card existe em
+          O NEXUS OS ainda não separa depreciação, amortização, resultado
+          financeiro, ajustes não operacionais e IR/CSLL. Publicar esses números
+          hoje seria inventar informação contábil — por isso o card existe em
           vez de sumir. Quando o backend passar a devolver essas contas, ele
           entra na tela junto com as demais.
         </p>
@@ -1203,7 +1203,7 @@ const AvisoContabil = memo(function AvisoContabil() {
   );
 });
 
-/** Skeleton espelhando o layout real â€” evita o salto de altura ao carregar. */
+/** Skeleton espelhando o layout real — evita o salto de altura ao carregar. */
 function EsqueletoDre() {
   return (
     <div className="space-y-5" aria-busy="true" role="status">
@@ -1243,7 +1243,7 @@ function EsqueletoDre() {
 }
 
 /* ============================================================================
-   5. PÃGINA
+   5. PÁGINA
    ========================================================================== */
 export default function DrePage() {
   const router = useRouter();
@@ -1257,12 +1257,12 @@ export default function DrePage() {
   const [toast, setToast] = useState<string | null>(null);
 
   /*
-   * `vivo` protege o unmount e `reqId` protege a CORRIDA entre requisiÃ§Ãµes.
-   * O guard antigo era sÃ³ o primeiro: trocando de perÃ­odo (ou ligando
-   * "Comparar") duas vezes rÃ¡pido, a resposta mais lenta da janela
-   * abandonada chegava por Ãºltimo e sobrescrevia a tela com nÃºmero velho â€”
-   * o pior tipo de bug, porque o nÃºmero parece plausÃ­vel. Agora cada
-   * disparo carimba um token e sÃ³ a resposta do token atual grava estado.
+   * `vivo` protege o unmount e `reqId` protege a CORRIDA entre requisições.
+   * O guard antigo era só o primeiro: trocando de período (ou ligando
+   * "Comparar") duas vezes rápido, a resposta mais lenta da janela
+   * abandonada chegava por último e sobrescrevia a tela com número velho —
+   * o pior tipo de bug, porque o número parece plausível. Agora cada
+   * disparo carimba um token e só a resposta do token atual grava estado.
    */
   const vivo = useRef(true);
   const reqId = useRef(0);
@@ -1305,8 +1305,8 @@ export default function DrePage() {
     try {
       const [atual, prev] = await Promise.all([
         api.get<DreResposta>('/dre', { params }),
-        // A janela anterior Ã© a base da comparaÃ§Ã£o. Se ela falhar, a tela
-        // continua funcionando e mostra "sem base" â€” nunca um delta inventado.
+        // A janela anterior é a base da comparação. Se ela falhar, a tela
+        // continua funcionando e mostra "sem base" — nunca um delta inventado.
         comparar
           ? api
               .get<DreResposta>('/dre', { params: paramsAnterior })
@@ -1323,7 +1323,7 @@ export default function DrePage() {
       setError(
         err instanceof Error
           ? err.message
-          : 'NÃ£o foi possÃ­vel carregar o demonstrativo de resultado.',
+          : 'Não foi possível carregar o demonstrativo de resultado.',
       );
     } finally {
       if (vivo.current && id === reqId.current) setLoading(false);
@@ -1338,7 +1338,7 @@ export default function DrePage() {
     void carregar();
   }, [router, carregar]);
 
-  /* --- Derivados: tudo em useMemo, para nÃ£o recalcular a cada render --- */
+  /* --- Derivados: tudo em useMemo, para não recalcular a cada render --- */
   const d = dados?.detalhes ?? null;
   const dAnt = comparar ? (anterior?.detalhes ?? null) : null;
 
@@ -1346,10 +1346,10 @@ export default function DrePage() {
 
   /** Ponte (waterfall): as MESMAS linhas da tabela, resolvidas em segmentos. */
   const ponte = useMemo(() => montarPonte(linhas), [linhas]);
-  /** RÃ©gua da ponte, com o zero dentro da faixa (para o prejuÃ­zo ter rÃ©gua). */
+  /** Régua da ponte, com o zero dentro da faixa (para o prejuízo ter régua). */
   const escala = useMemo(() => montarEscala(ponte), [ponte]);
 
-  /** Houve movimento no perÃ­odo? Decide entre dados e estado vazio honesto. */
+  /** Houve movimento no período? Decide entre dados e estado vazio honesto. */
   const temMovimento = useMemo(() => {
     if (!d) return false;
     return (
@@ -1362,14 +1362,14 @@ export default function DrePage() {
   }, [d]);
 
   const rotuloPeriodo = useMemo(
-    () => PERIODOS.find((p) => p.key === periodo)?.label ?? 'PerÃ­odo',
+    () => PERIODOS.find((p) => p.key === periodo)?.label ?? 'Período',
     [periodo],
   );
 
   /**
-   * RÃ³tulo da janela de comparaÃ§Ã£o, usado no `title` do chip de variaÃ§Ã£o.
-   * Antes o `title` recebia a DESCRIÃ‡ÃƒO do KPI e virava "VariaÃ§Ã£o vs. 12
-   * venda(s) finalizada(s) no perÃ­odo"; agora nomeia a janela real.
+   * Rótulo da janela de comparação, usado no `title` do chip de variação.
+   * Antes o `title` recebia a DESCRIÇÃO do KPI e virava "Variação vs. 12
+   * venda(s) finalizada(s) no período"; agora nomeia a janela real.
    */
   const janelaComparacao = useMemo(
     () =>
@@ -1383,7 +1383,7 @@ export default function DrePage() {
 
   const indicadores = useMemo<Indicador[]>(() => (d ? montarIndicadores(d) : []), [d]);
 
-  /* --- Handlers em useCallback: as props dos cards memoizados nÃ£o mudam --- */
+  /* --- Handlers em useCallback: as props dos cards memoizados não mudam --- */
   const mostrarToast = useCallback((mensagem: string) => {
     setToast(mensagem);
     if (timerToast.current) clearTimeout(timerToast.current);
@@ -1412,11 +1412,11 @@ export default function DrePage() {
         diaBruto(intervalo.fim),
         `${l.sinal} ${l.rotulo}`.trim(),
         l.formula,
-        // Margem sem receita Ã© `null` (sem denominador). Escrever `0,00` aqui
-        // publicaria no CSV uma margem de 0% que o prÃ³prio demonstrativo se
-        // recusa a mostrar â€” cÃ©lula vazia Ã© a informaÃ§Ã£o correta no Excel.
+        // Margem sem receita é `null` (sem denominador). Escrever `0,00` aqui
+        // publicaria no CSV uma margem de 0% que o próprio demonstrativo se
+        // recusa a mostrar — célula vazia é a informação correta no Excel.
         l.valor === null ? '' : l.valor.toFixed(2),
-        // Coluna nova: sem ela, a margem (38,2 %) saÃ­a sob o cabeÃ§alho
+        // Coluna nova: sem ela, a margem (38,2 %) saía sob o cabeçalho
         // "Valor (BRL)" e o Excel mostrava R$ 38,20 como se fosse dinheiro.
         l.unidade,
       ]),
@@ -1434,7 +1434,7 @@ export default function DrePage() {
   /* ========================================================================
      6. RENDER
      Hierarquia preservada: header + 4 KPIs + fluxo (waterfall) + tabela do
-     demonstrativo + indicadores derivados + rodapÃ© de procedÃªncia.
+     demonstrativo + indicadores derivados + rodapé de procedência.
      ====================================================================== */
   return (
     <div className="dre-root">
@@ -1442,9 +1442,9 @@ export default function DrePage() {
 
       <main className="mx-auto w-full max-w-[1440px] px-4 py-6 md:px-8 md:py-8">
         <ModuleHeader
-          kicker="GestÃ£o Â· regime de competÃªncia"
+          kicker="Gestão · regime de competência"
           title="DRE"
-          subtitle="Demonstrativo de resultado calculado a partir dos dados reais de vendas, custo e despesas â€” sem nÃºmeros fictÃ­cios."
+          subtitle="Demonstrativo de resultado calculado a partir dos dados reais de vendas, custo e despesas — sem números fictícios."
           action={
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
@@ -1452,7 +1452,7 @@ export default function DrePage() {
                   className="dre-field"
                   value={periodo}
                   onChange={mudarPeriodo}
-                  aria-label="PerÃ­odo do demonstrativo"
+                  aria-label="Período do demonstrativo"
                 >
                   {PERIODOS.map((p) => (
                     <option key={p.key} value={p.key}>
@@ -1467,10 +1467,10 @@ export default function DrePage() {
               </div>
 
               {/*
-                Os filtros NÃƒO sÃ£o desabilitados durante o loading. Antes eles
-                eram, e isso roubava o teclado no meio da navegaÃ§Ã£o e brigava
-                com o usuÃ¡rio: quem jÃ¡ escolheu "Este ano" nÃ£o conseguia
-                corrigir atÃ© a requisiÃ§Ã£o terminar. Trocar de perÃ­odo agora
+                Os filtros NÃO são desabilitados durante o loading. Antes eles
+                eram, e isso roubava o teclado no meio da navegação e brigava
+                com o usuário: quem já escolheu "Este ano" não conseguia
+                corrigir até a requisição terminar. Trocar de período agora
                 dispara outra busca e o token invalida a anterior.
               */}
               <button
@@ -1478,7 +1478,7 @@ export default function DrePage() {
                 className="dre-chip"
                 aria-pressed={comparar}
                 onClick={alternarComparar}
-                title="Compara com o perÃ­odo imediatamente anterior, de mesmo tamanho"
+                title="Compara com o período imediatamente anterior, de mesmo tamanho"
               >
                 Comparar
               </button>
@@ -1512,18 +1512,18 @@ export default function DrePage() {
         ) : !d ? (
           <EmptyState
             icon={BarChart3}
-            title="Demonstrativo indisponÃ­vel."
-            description="O endpoint /dre nÃ£o devolveu os detalhes do perÃ­odo. Verifique a permissÃ£o financeiro.visualizar e carregue a tela novamente."
+            title="Demonstrativo indisponível."
+            description="O endpoint /dre não devolveu os detalhes do período. Verifique a permissão financeiro.visualizar e carregue a tela novamente."
           />
         ) : !temMovimento ? (
           <EmptyState
             icon={BarChart3}
             title={`Sem movimento em ${rotuloPeriodo.toLowerCase()}.`}
-            description="Nenhuma venda finalizada, receita, custo ou despesa foi registrada no perÃ­odo. O NEXUS OS nÃ£o substitui dado ausente por nÃºmero estimado."
+            description="Nenhuma venda finalizada, receita, custo ou despesa foi registrada no período. O NEXUS OS não substitui dado ausente por número estimado."
           />
         ) : (
           <>
-            {/* Grade de KPIs â€” 1 / 2 / 4 colunas conforme a largura */}
+            {/* Grade de KPIs — 1 / 2 / 4 colunas conforme a largura */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               {kpis.map((kpi, i) => (
                 <KpiCard
@@ -1536,16 +1536,16 @@ export default function DrePage() {
               ))}
             </div>
 
-            {/* Ponte da DRE â€” cada barra flutua entre o saldo antes e depois */}
+            {/* Ponte da DRE — cada barra flutua entre o saldo antes e depois */}
             <section
               className="dre-card dre-in mt-5 p-5"
               style={{ animationDelay: '180ms' }}
             >
               <SectionTitle
-                kicker="ComposiÃ§Ã£o do resultado"
+                kicker="Composição do resultado"
                 right={
                   <span className="text-[11px] text-white/50">
-                    rÃ©gua: {brlCompacto(escala.min)} a {brlCompacto(escala.max)}
+                    régua: {brlCompacto(escala.min)} a {brlCompacto(escala.max)}
                   </span>
                 }
               >
@@ -1561,12 +1561,12 @@ export default function DrePage() {
               <p className="mt-3 text-[11px] leading-relaxed text-white/50">
                 Ponte cumulativa: cada barra ocupa a faixa entre o saldo anterior e
                 o novo, e os subtotais reiniciam no zero. A linha vertical marca o
-                zero da rÃ©gua. Passe o mouse ou use Tab para ler a fÃ³rmula contÃ¡bil
+                zero da régua. Passe o mouse ou use Tab para ler a fórmula contábil
                 de cada linha.
               </p>
             </section>
 
-            {/* Tabela do demonstrativo â€” <table> semÃ¢ntica (caption/scope) */}
+            {/* Tabela do demonstrativo — <table> semântica (caption/scope) */}
             <section
               className="dre-card dre-in mt-5 overflow-hidden"
               style={{ animationDelay: '240ms' }}
@@ -1576,20 +1576,20 @@ export default function DrePage() {
                   kicker="Conta de resultado"
                   right={
                     <span className="text-[11px] text-white/50">
-                      {diaBruto(intervalo.inicio)} â€” {diaBruto(intervalo.fim)}
+                      {diaBruto(intervalo.inicio)} — {diaBruto(intervalo.fim)}
                     </span>
                   }
                 >
-                  Demonstrativo de resultado do exercÃ­cio
+                  Demonstrativo de resultado do exercício
                 </SectionTitle>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[420px] border-collapse">
                   <caption className="sr-only">
-                    Linhas do demonstrativo de resultado do exercÃ­cio, da receita
-                    bruta ao lucro do perÃ­odo. As contas sÃ£o em reais; as duas
-                    Ãºltimas linhas, em percentual.
+                    Linhas do demonstrativo de resultado do exercício, da receita
+                    bruta ao lucro do período. As contas são em reais; as duas
+                    últimas linhas, em percentual.
                   </caption>
                   <thead>
                     <tr className="border-y border-white/[0.08] bg-white/[0.02]">
@@ -1615,22 +1615,22 @@ export default function DrePage() {
 
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] bg-white/[0.015] px-4 py-3 text-[11px] text-white/50 md:px-5">
                 <span>
-                  {linhas.length} linhas Â· {num(d.qtdVendas)} venda(s) finalizada(s)
+                  {linhas.length} linhas · {num(d.qtdVendas)} venda(s) finalizada(s)
                 </span>
                 <span>
                   {comparar
-                    ? `Comparando com ${diaBruto(janelaAnterior.inicio)} â€” ${diaBruto(janelaAnterior.fim)}`
-                    : 'Ative "Comparar" para ver a variaÃ§Ã£o do perÃ­odo anterior'}
+                    ? `Comparando com ${diaBruto(janelaAnterior.inicio)} — ${diaBruto(janelaAnterior.fim)}`
+                    : 'Ative "Comparar" para ver a variação do período anterior'}
                 </span>
               </div>
             </section>
 
-            {/* Indicadores derivados â€” sÃ³ divisÃµes entre campos reais */}
+            {/* Indicadores derivados — só divisões entre campos reais */}
             <section
               className="dre-card dre-in mt-5 p-5"
               style={{ animationDelay: '300ms' }}
             >
-              <SectionTitle kicker="RazÃµes do perÃ­odo">
+              <SectionTitle kicker="Razões do período">
                 Indicadores derivados
               </SectionTitle>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -1639,18 +1639,18 @@ export default function DrePage() {
                 ))}
               </div>
               <p className="mt-3 text-[11px] leading-relaxed text-white/50">
-                Indicadores calculados a partir dos mesmos dados do perÃ­odo, com o
-                denominador protegido â€” sem vendas no perÃ­odo, a divisÃ£o vira "â€”"
-                em vez de um nÃºmero inventado.
+                Indicadores calculados a partir dos mesmos dados do período, com o
+                denominador protegido — sem vendas no período, a divisão vira "—"
+                em vez de um número inventado.
               </p>
               <AvisoContabil />
             </section>
 
-            {/* RodapÃ© de procedÃªncia: perÃ­odo e origem vÃªm do registro do backend */}
+            {/* Rodapé de procedência: período e origem vêm do registro do backend */}
             <p className="mt-5 text-[11px] leading-relaxed text-white/50">
-              DRE calculada pelo servidor a partir de lanÃ§amentos e vendas reais Â·
-              origem {dados?.dre?.origem?.toLowerCase() ?? 'automÃ¡tica'} Â· regime de
-              competÃªncia Â· valores em BRL Â· perÃ­odo {diaBruto(intervalo.inicio)} a{' '}
+              DRE calculada pelo servidor a partir de lançamentos e vendas reais ·
+              origem {dados?.dre?.origem?.toLowerCase() ?? 'automática'} · regime de
+              competência · valores em BRL · período {diaBruto(intervalo.inicio)} a{' '}
               {diaBruto(intervalo.fim)} (fuso do navegador, {params.periodoInicio.slice(-6)})
             </p>
           </>

@@ -25,7 +25,7 @@ import {
 } from '@/lib/dashboard';
 
 /* REGRA DE OURO: melhoria V2 aplicada EM CIMA do page.tsx existente.
-   Shell (sidebar/topbar) vem do (dashboard)/layout.tsx â€” nÃ£o duplicado aqui.
+   Shell (sidebar/topbar) vem do (dashboard)/layout.tsx — não duplicado aqui.
    100% dados reais: GET /financeiro, GET /fluxo-caixa, GET /dre, POST /financeiro.
    Sem mocks: sem R$84k, sem Inter/Stone, sem deltas inventados. */
 
@@ -33,7 +33,7 @@ type Lanc = {
   id: string; tipo: 'RECEITA' | 'DESPESA'; categoria: string; descricao: string;
   valor: number | string; vencimento?: string | null; status: string;
   centroCusto?: string | null; createdAt: string;
-  /** Campos reais do model Prisma Financeiro usados no detalhe/exportaÃ§Ã£o. */
+  /** Campos reais do model Prisma Financeiro usados no detalhe/exportação. */
   origem?: string | null; filialId?: string | null;
   vendaId?: string | null; compraId?: string | null;
 };
@@ -74,7 +74,7 @@ select.fin-input option{background:var(--nx-surface-3);color:var(--nexus-text)}
 @keyframes finPop{from{opacity:0;transform:scale(.97) translateY(10px)}to{opacity:1;transform:none}}
 `;
 
-/* V2 â€” complements finCss (nothing removed). Tokens de borda/INFO, animaÃ§Ãµes
+/* V2 — complements finCss (nothing removed). Tokens de borda/INFO, animações
    nomeadas do layout mestre, scrollbar, grids responsivos e estados de foco. */
 const finCssExtra = `
 .fin-root{--successBorder:color-mix(in srgb,var(--nexus-green) 35%,var(--nexus-border));--warningBorder:color-mix(in srgb,var(--nexus-amber) 35%,var(--nexus-border));--dangerBorder:color-mix(in srgb,var(--nexus-red) 35%,var(--nexus-border));--info:#3b82f6;--infoBg:color-mix(in srgb,var(--info) 12%,var(--nexus-panel));--infoBorder:color-mix(in srgb,var(--info) 35%,var(--nexus-border))}
@@ -128,20 +128,20 @@ const PRESETS_FULL: Array<{ key: PresetKey; label: string }> = [
   { key: 'hoje', label: 'Hoje' },
   { key: '7d', label: '7d' },
   { key: '30d', label: '30d' },
-  { key: 'mes', label: 'MÃªs' },
-  { key: 'mesAnterior', label: 'MÃªs ant.' },
+  { key: 'mes', label: 'Mês' },
+  { key: 'mesAnterior', label: 'Mês ant.' },
 ];
 const TIPOS = ['Todos', 'RECEITA', 'DESPESA'] as const;
 /**
- * `VENCIDO` nÃ£o Ã© um estado que o usuÃ¡rio escolha: o servidor o DERIVA na
- * leitura (um PENDENTE com vencimento no passado responde como VENCIDO â€”
+ * `VENCIDO` não é um estado que o usuário escolha: o servidor o DERIVA na
+ * leitura (um PENDENTE com vencimento no passado responde como VENCIDO —
  * ver `gestao.routes.ts`). Por isso o filtro "Vencido" funciona: o status
- * chega VENCIDO e a comparaÃ§Ã£o abaixo bate. O valor gravado no PostgreSQL
- * continua PENDENTE, que Ã© o que o fluxo de caixa usa para projetar.
+ * chega VENCIDO e a comparação abaixo bate. O valor gravado no PostgreSQL
+ * continua PENDENTE, que é o que o fluxo de caixa usa para projetar.
  */
 const STATUSF = ['Todos', 'PENDENTE', 'PAGO', 'VENCIDO', 'CANCELADO'] as const;
 
-/** Atraso: true para o que estÃ¡ em aberto (PENDENTE ou VENCIDO) e jÃ¡ venceu. */
+/** Atraso: true para o que está em aberto (PENDENTE ou VENCIDO) e já venceu. */
 function isAtrasado(l: Lanc, hoje: string): boolean {
   const st = (l.status || '').toUpperCase();
   if (st !== 'PENDENTE' && st !== 'VENCIDO') return false;
@@ -173,7 +173,7 @@ function fmtK(n: number | null | undefined): string {
   return `${s}R$ ${a.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
 }
 
-/** Dias de atraso em relaÃ§Ã£o a hoje (0 = nÃ£o atrasado). */
+/** Dias de atraso em relação a hoje (0 = não atrasado). */
 function diasAtraso(l: Lanc, hoje: string): number {
   if (!l.vencimento) return 0;
   const d = diaLocal(new Date(l.vencimento));
@@ -183,13 +183,13 @@ function diasAtraso(l: Lanc, hoje: string): number {
   );
 }
 
-/** VariaÃ§Ã£o real vs. perÃ­odo anterior; null quando nÃ£o hÃ¡ base comparÃ¡vel. */
+/** Variação real vs. período anterior; null quando não há base comparável. */
 function deltaPct(atual: number, anterior: number | null): number | null {
   if (anterior === null || !Number.isFinite(anterior) || anterior === 0) return null;
   return ((atual - anterior) / Math.abs(anterior)) * 100;
 }
 
-/* ===== Componentes reutilizÃ¡veis (V2) ================================== */
+/* ===== Componentes reutilizáveis (V2) ================================== */
 const box: React.CSSProperties = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: 16 };
 const btnG: React.CSSProperties = { background: 'var(--nexus-panel-2)', border: '1px solid var(--border)', borderRadius: 8, height: 32, padding: '0 12px', fontSize: 11, color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 };
 const btnP: React.CSSProperties = { background: 'linear-gradient(135deg,var(--primary),var(--primary2))', boxShadow: 'var(--shadowPrimary)', borderRadius: 12, height: 44, padding: '0 20px', fontSize: 12, fontWeight: 700, color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 };
@@ -211,7 +211,7 @@ function StatusChip({ st, atraso }: { st: string; atraso?: number }) {
   );
 }
 
-/** Linha rÃ³tulo â†’ valor do DRE, com recuo e margem opcional. */
+/** Linha rótulo → valor do DRE, com recuo e margem opcional. */
 function LinhaDre({ rotulo, valor, margem, ind }: { rotulo: string; valor: number; margem?: number; ind?: boolean }) {
   return (
     <div className="fin-row-h" style={ind ? { paddingLeft: 14 } : undefined}>
@@ -226,7 +226,7 @@ function LinhaDre({ rotulo, valor, margem, ind }: { rotulo: string; valor: numbe
   );
 }
 
-/** RÃ³tulo â†’ valor dos 4 totalizadores. */
+/** Rótulo → valor dos 4 totalizadores. */
 function Totalizador({ rotulo, valor, cor }: { rotulo: string; valor: number; cor?: string }) {
   return (
     <div style={{ background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 10 }}>
@@ -244,13 +244,13 @@ export default function Financeiro() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
-   * Aviso de resultado cortado pelo limite de 200 lanÃ§amentos do endpoint
-   * (mesmo contrato de `X-Truncated` jÃ¡ usado em /ponto). NÃ£o Ã© erro: Ã©
-   * informaÃ§Ã£o â€” sem ela, o gestor lia "20 lanÃ§amentos" e nenhuma
-   * indicaÃ§Ã£o de que o perÃ­odo tinha mais.
+   * Aviso de resultado cortado pelo limite de 200 lançamentos do endpoint
+   * (mesmo contrato de `X-Truncated` já usado em /ponto). Não é erro: é
+   * informação — sem ela, o gestor lia "20 lançamentos" e nenhuma
+   * indicação de que o período tinha mais.
    */
   const [avisoCorte, setAvisoCorte] = useState<string | null>(null);
-  /** Total real de lanÃ§amentos do perÃ­odo (vem em `X-Total-Count`). */
+  /** Total real de lançamentos do período (vem em `X-Total-Count`). */
   const [totalPeriodo, setTotalPeriodo] = useState<number | null>(null);
   const [periodo, setPeriodo] = useState<PresetKey>('mes');
   const [tipoF, setTipoF] = useState<string>('Todos');
@@ -270,11 +270,11 @@ export default function Financeiro() {
   const [fCentro, setFCentro] = useState('');
   const [saving, setSaving] = useState(false);
   /**
-   * LanÃ§amento cuja duplicaÃ§Ã£o estÃ¡ em andamento. Sem este estado, dois
-   * cliques rÃ¡pidos no Ã­cone de cÃ³pia gravavam DOIS lanÃ§amentos idÃªnticos.
+   * Lançamento cuja duplicação está em andamento. Sem este estado, dois
+   * cliques rápidos no ícone de cópia gravavam DOIS lançamentos idênticos.
    */
   const [duplicandoId, setDuplicandoId] = useState<string | null>(null);
-  // V2 â€” estados de modal/exportaÃ§Ã£o/planejamento.
+  // V2 — estados de modal/exportação/planejamento.
   const [showDre, setShowDre] = useState(false);
   const [showFluxo, setShowFluxo] = useState(false);
   const [anterior, setAnterior] = useState<{ receitas: number; despesas: number } | null>(null);
@@ -290,9 +290,9 @@ export default function Financeiro() {
     setLoading(true); setError(null);
     try {
       // `getComHeaders` traz os headers junto do corpo. O servidor sinaliza
-      // `X-Truncated` quando o perÃ­odo tem mais de 200 lanÃ§amentos (o limite
+      // `X-Truncated` quando o período tem mais de 200 lançamentos (o limite
       // da consulta): antes disso, a tela mostrava 200 linhas sem avisar que
-      // existiam mais, e os KPIs pareciam completos quando nÃ£o eram.
+      // existiam mais, e os KPIs pareciam completos quando não eram.
       const [fin, flx, d] = await Promise.all([
         api.getComHeaders<FinResp>('/financeiro', { params }),
         api.get<FluxoResp>('/fluxo-caixa', { params }).catch(() => ({ data: null as unknown as FluxoResp })),
@@ -306,10 +306,10 @@ export default function Financeiro() {
       setTotalPeriodo(total ? Number(total) : null);
       setAvisoCorte(
         truncado
-          ? `Exibindo os ${Array.isArray(fin.data?.lancamentos) ? fin.data.lancamentos.length : 0} lanÃ§amentos mais recentes de ${total ?? 'mais'} no perÃ­odo. Os totais do topo (Receitas, Despesas e Resultado) jÃ¡ consideram TODOS os ${total ?? ''} â€” apenas a lista e os grÃ¡ficos por linha estÃ£o limitados. Reduza o perÃ­odo para ver o restante.`
+          ? `Exibindo os ${Array.isArray(fin.data?.lancamentos) ? fin.data.lancamentos.length : 0} lançamentos mais recentes de ${total ?? 'mais'} no período. Os totais do topo (Receitas, Despesas e Resultado) já consideram TODOS os ${total ?? ''} — apenas a lista e os gráficos por linha estão limitados. Reduza o período para ver o restante.`
           : null,
       );
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'NÃ£o foi possÃ­vel carregar o financeiro.'); }
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Não foi possível carregar o financeiro.'); }
     finally { setLoading(false); }
   }, [params]);
 
@@ -319,13 +319,13 @@ export default function Financeiro() {
     void load();
   }, [router, load]);
 
-  // Debounce 300ms da busca (nÃ£o refaz requisiÃ§Ã£o a cada tecla).
+  // Debounce 300ms da busca (não refaz requisição a cada tecla).
   useEffect(() => {
     const t = window.setTimeout(() => setQueryDeb(query), 300);
     return () => window.clearTimeout(t);
   }, [query]);
 
-  // PerÃ­odo anterior real â€” base dos deltas dos KPIs (nunca inventados).
+  // Período anterior real — base dos deltas dos KPIs (nunca inventados).
   const paramsAnterior = useMemo(() => {
     const p = periodoAnterior(intervalo.inicio, intervalo.fim);
     return { periodoInicio: comFuso(p.inicio, '00:00'), periodoFim: comFuso(p.fim, '23:59') };
@@ -349,7 +349,7 @@ export default function Financeiro() {
     setShowNew(true);
   }, []);
 
-  // Atalhos: / busca Â· n novo Â· d DRE completo Â· g planejar fluxo Â· Esc fecha.
+  // Atalhos: / busca · n novo · d DRE completo · g planejar fluxo · Esc fecha.
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setShowNew(false); setDetail(null); setShowDre(false); setShowFluxo(false); return; }
@@ -422,7 +422,7 @@ export default function Financeiro() {
     };
   }, [dados, lancamentos, anterior, hoje]);
 
-  // SÃ©rie diÃ¡ria vinda de GET /fluxo-caixa (entradas, saÃ­das e saldo real).
+  // Série diária vinda de GET /fluxo-caixa (entradas, saídas e saldo real).
   const serieFluxo = useMemo(
     () => (fluxoDados?.serie ?? []).map((s) => ({
       dia: s.dia,
@@ -434,7 +434,7 @@ export default function Financeiro() {
     [fluxoDados],
   );
 
-  // Mini-cards: hoje / Ãºltimos 7 dias / perÃ­odo / projeÃ§Ã£o real de 30 dias.
+  // Mini-cards: hoje / últimos 7 dias / período / projeção real de 30 dias.
   const resumos = useMemo(() => {
     const soma = (ls: typeof serieFluxo) => ({
       entrada: ls.reduce((s, d) => s + d.entradas, 0),
@@ -457,7 +457,7 @@ export default function Financeiro() {
     };
   }, [serieFluxo, fluxoDados, hoje]);
 
-  // Despesas agrupadas por categoria (dados reais do perÃ­odo) â€” pizza + barras.
+  // Despesas agrupadas por categoria (dados reais do período) — pizza + barras.
   const porCategoria = useMemo(() => {
     const m = new Map<string, number>();
     lancamentos
@@ -482,7 +482,7 @@ export default function Financeiro() {
     }));
   }, [lancamentos]);
 
-  // Insights da IA: todos derivados dos nÃºmeros reais acima.
+  // Insights da IA: todos derivados dos números reais acima.
   const insights = useMemo(() => {
     const d = dre?.detalhes;
     const atrasoTotal = lancamentos
@@ -493,50 +493,50 @@ export default function Financeiro() {
     const maiorCat = porCategoria[0];
     return [
       atrasoTotal > 0 && {
-        icone: 'ðŸš¨', tom: 'danger' as const,
+        icone: '🚨', tom: 'danger' as const,
         titulo: `${kpis.atrasadas} conta(s) a pagar atrasada(s)`,
-        texto: `${formatBRL(atrasoTotal)} em atraso. Regularize para nÃ£o comprar multa e perda de desconto.`,
+        texto: `${formatBRL(atrasoTotal)} em atraso. Regularize para não comprar multa e perda de desconto.`,
       },
       {
-        icone: 'ðŸ’°', tom: (kpis.resultado >= 0 ? 'success' : 'danger') as 'success' | 'danger',
-        titulo: kpis.resultado >= 0 ? 'Fluxo positivo no perÃ­odo' : 'Fluxo negativo no perÃ­odo',
-        texto: `${formatBRL(kpis.resultado)} de resultado${kpis.margem !== null ? ` Â· margem ${kpis.margem.toFixed(1)}%` : ''}.`,
+        icone: '💰', tom: (kpis.resultado >= 0 ? 'success' : 'danger') as 'success' | 'danger',
+        titulo: kpis.resultado >= 0 ? 'Fluxo positivo no período' : 'Fluxo negativo no período',
+        texto: `${formatBRL(kpis.resultado)} de resultado${kpis.margem !== null ? ` · margem ${kpis.margem.toFixed(1)}%` : ''}.`,
       },
       maiorCat ? {
-        icone: 'ðŸ“ˆ', tom: 'warning' as const,
+        icone: '📈', tom: 'warning' as const,
         titulo: `Maior despesa: ${maiorCat.categoria}`,
-        texto: `${formatBRL(maiorCat.valor)} no perÃ­odo â€” valide se o valor estÃ¡ no orÃ§amento.`,
+        texto: `${formatBRL(maiorCat.valor)} no período — valide se o valor está no orçamento.`,
       } : null,
       projecao ? {
-        icone: 'ðŸ’¡', tom: 'info' as const,
-        titulo: 'ProjeÃ§Ã£o real dos prÃ³ximos 30 dias',
-        texto: `${formatBRL(Number(projecao.entradas) || 0)} a receber e ${formatBRL(Number(projecao.saidas) || 0)} a pagar, saldo projetado ${formatBRL(saldoProj)}. O horizonte inclui as contas jÃ¡ vencidas â€” o dinheiro que nÃ£o vai cair.`,
+        icone: '💡', tom: 'info' as const,
+        titulo: 'Projeção real dos próximos 30 dias',
+        texto: `${formatBRL(Number(projecao.entradas) || 0)} a receber e ${formatBRL(Number(projecao.saidas) || 0)} a pagar, saldo projetado ${formatBRL(saldoProj)}. O horizonte inclui as contas já vencidas — o dinheiro que não vai cair.`,
       } : null,
       d ? {
-        icone: 'ðŸ¦', tom: d.lucroPrejuizo >= 0 ? ('success' as const) : ('danger' as const),
-        titulo: 'DRE do perÃ­odo',
-        // `|| 0` aqui transformava margem nÃ£o calculÃ¡vel (perÃ­odo sem receita, em que
-        // o backend devolve `null`) em "0,0%" â€” que se lÃª como margem zero. O
-        // texto passa a dizer "â€”" nesse caso, como o resto da tela.
-        texto: `Margem bruta ${d.margemBruta === null ? 'â€”' : `${Number(d.margemBruta).toFixed(1)}%`} e margem lÃ­quida ${d.margemLiquida === null ? 'â€”' : `${Number(d.margemLiquida).toFixed(1)}%`} em ${Number(d.qtdVendas) || 0} venda(s).`,
+        icone: '🏦', tom: d.lucroPrejuizo >= 0 ? ('success' as const) : ('danger' as const),
+        titulo: 'DRE do período',
+        // `|| 0` aqui transformava margem não calculável (período sem receita, em que
+        // o backend devolve `null`) em "0,0%" — que se lê como margem zero. O
+        // texto passa a dizer "—" nesse caso, como o resto da tela.
+        texto: `Margem bruta ${d.margemBruta === null ? '—' : `${Number(d.margemBruta).toFixed(1)}%`} e margem líquida ${d.margemLiquida === null ? '—' : `${Number(d.margemLiquida).toFixed(1)}%`} em ${Number(d.qtdVendas) || 0} venda(s).`,
       } : null,
     ].filter(Boolean) as Array<{ icone: string; tom: 'success' | 'warning' | 'danger' | 'info'; titulo: string; texto: string }>;
   }, [dre, lancamentos, porCategoria, fluxoDados, kpis, hoje]);
 
-  /* ===== AÃ§Ãµes ======================================================== */
+  /* ===== Ações ======================================================== */
   const salvarLancamento = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    // Trava contra duplo envio: o botÃ£o fica desabilitado por `saving`, mas o
-    // Enter repetido no campo de descriÃ§Ã£o tambÃ©m disparava o `onSubmit` e
-    // gravava dois lanÃ§amentos iguais.
+    // Trava contra duplo envio: o botão fica desabilitado por `saving`, mas o
+    // Enter repetido no campo de descrição também disparava o `onSubmit` e
+    // gravava dois lançamentos iguais.
     if (saving) return;
     const descricao = fDesc.trim();
-    if (descricao.length < 2) { addToast('Informe a descriÃ§Ã£o (mÃ­nimo 2 letras).', 'warn'); return; }
+    if (descricao.length < 2) { addToast('Informe a descrição (mínimo 2 letras).', 'warn'); return; }
     const valor = Number(fValor);
     if (!Number.isFinite(valor) || valor <= 0) { addToast('Informe um valor maior que zero.', 'warn'); return; }
     // Espelha o limite do `Decimal(12,2)` do PostgreSQL para dar a mensagem
     // certa aqui, em vez de deixar o servidor recusar com erro interno.
-    if (valor > 9_999_999_999.99) { addToast('Valor acima do mÃ¡ximo aceito (R$ 9.999.999.999,99).', 'warn'); return; }
+    if (valor > 9_999_999_999.99) { addToast('Valor acima do máximo aceito (R$ 9.999.999.999,99).', 'warn'); return; }
     setSaving(true);
     try {
       await api.post('/financeiro', {
@@ -552,67 +552,67 @@ export default function Financeiro() {
       });
       setShowNew(false);
       setFDesc(''); setFValor(100);
-      addToast(`${fTipo === 'RECEITA' ? 'Receita' : 'Despesa'} de ${formatBRL(valor)} lanÃ§ada.`);
+      addToast(`${fTipo === 'RECEITA' ? 'Receita' : 'Despesa'} de ${formatBRL(valor)} lançada.`);
       await load();
     } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : 'NÃ£o foi possÃ­vel lanÃ§ar.', 'err');
+      addToast(err instanceof Error ? err.message : 'Não foi possível lançar.', 'err');
     } finally { setSaving(false); }
   }, [fTipo, fCat, fCentro, fDesc, fValor, fVenc, addToast, load, saving]);
 
-  // â”€â”€ Duplicar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// A duplicaÃ§Ã£o Ã© a Ãºnica forma de repetir um lanÃ§amento jÃ¡ existente sem
-// digitar tudo de novo (a API nÃ£o tem PATCH /financeiro â€” ver o aviso no modal
-// de detalhe). Ela grava um NOVO registro via POST /financeiro, que Ã© a
-// escrita real disponÃ­vel.
+  // ── Duplicar ────────────────────────────────────────────────────────────
+// A duplicação é a única forma de repetir um lançamento já existente sem
+// digitar tudo de novo (a API não tem PATCH /financeiro — ver o aviso no modal
+// de detalhe). Ela grava um NOVO registro via POST /financeiro, que é a
+// escrita real disponível.
 //
-// TRÃŠS CUIDADOS QUE O CÃ“DIGO ORIGINAL NÃƒO TINHA:
+// TRÊS CUIDADOS QUE O CÓDIGO ORIGINAL NÃO TINHA:
 //  1. `vencimento` do Prisma volta como ISO COMPLETO (ex.: "2026-09-15T12:00:00.000Z").
 //     Reenviar essa string como `vencimento` funcionava por acaso, mas o
 //     `new Date()` do servidor reinterpretava no fuso do servidor; agora
-//     normalizamos para o mesmo formato de meio-dia usado no formulÃ¡rio,
+//     normalizamos para o mesmo formato de meio-dia usado no formulário,
 //     garantindo que o dia exibido seja o mesmo em qualquer fuso.
-//  2. A descriÃ§Ã£o NÃƒO pode acumular "(cÃ³pia)" a cada duplicata â€” duplicar trÃªs
-//     vezes produzia "X (cÃ³pia) (cÃ³pia) (cÃ³pia)". Removemos o sufixo existente
+//  2. A descrição NÃO pode acumular "(cópia)" a cada duplicata — duplicar três
+//     vezes produzia "X (cópia) (cópia) (cópia)". Removemos o sufixo existente
 //     antes de reaplicar.
-//  3. Guarda de "duplicando": sem ela, dois cliques rÃ¡pidos no Ã­cone de cÃ³pia
-//     gravavam DOIS lanÃ§amentos idÃªnticos sem o usuÃ¡rio perceber.
+//  3. Guarda de "duplicando": sem ela, dois cliques rápidos no ícone de cópia
+//     gravavam DOIS lançamentos idênticos sem o usuário perceber.
 const duplicar = useCallback(async (l: LancView) => {
   if (duplicandoId === l.id) return;
   setDuplicandoId(l.id);
   try {
-    // Remove um "(cÃ³pia)" jÃ¡ existente para nÃ£o empilhar o sufixo.
-    const descricaoLimpa = l.descricao.replace(/\s*\(cÃ³pia\)\s*$/i, '').trim();
+    // Remove um "(cópia)" já existente para não empilhar o sufixo.
+    const descricaoLimpa = l.descricao.replace(/\s*\(cópia\)\s*$/i, '').trim();
     await api.post('/financeiro', {
       tipo: l.tipo,
       categoria: l.categoria,
       centroCusto: l.centroCusto ?? undefined,
-      descricao: `${descricaoLimpa} (cÃ³pia)`,
+      descricao: `${descricaoLimpa} (cópia)`,
       valor: l.valorNum,
-      // `YYYY-MM-DD` -> meio-dia local -> ISO. Mesmo caminho do formulÃ¡rio,
-      // para o dia do vencimento nÃ£o mudar por fuso.
+      // `YYYY-MM-DD` -> meio-dia local -> ISO. Mesmo caminho do formulário,
+      // para o dia do vencimento não mudar por fuso.
       vencimento: l.vencimento
         ? new Date(`${diaLocal(new Date(l.vencimento))}T12:00:00`).toISOString()
         : undefined,
       status: 'PENDENTE',
       origem: 'MANUAL',
     });
-    addToast(`CÃ³pia de "${descricaoLimpa}" lanÃ§ada como pendente.`);
+    addToast(`Cópia de "${descricaoLimpa}" lançada como pendente.`);
     await load();
   } catch (err: unknown) {
-    addToast(err instanceof Error ? err.message : 'NÃ£o foi possÃ­vel duplicar.', 'err');
+    addToast(err instanceof Error ? err.message : 'Não foi possível duplicar.', 'err');
   } finally {
     setDuplicandoId(null);
   }
 }, [addToast, load, duplicandoId]);
 
   /**
-   * Exporta o que estÃ¡ NA TELHA (filtros aplicados) em CSV.
+   * Exporta o que está NA TELHA (filtros aplicados) em CSV.
    *
-   * O endpoint devolve no mÃ¡ximo 200 lanÃ§amentos por consulta. Exportar sem
-   * dizer isso produzia um arquivo que PARECIA completo e nÃ£o era â€” o gestor
-   * abria a planilha, comparava com o total do topo (que cobre o perÃ­odo
-   * inteiro) e nÃ£o encontrava a diferenÃ§a. Quando o servidor sinaliza o corte,
-   * o prÃ³prio CSV registra a quantidade total e o perÃ­odo.
+   * O endpoint devolve no máximo 200 lançamentos por consulta. Exportar sem
+   * dizer isso produzia um arquivo que PARECIA completo e não era — o gestor
+   * abria a planilha, comparava com o total do topo (que cobre o período
+   * inteiro) e não encontrava a diferença. Quando o servidor sinaliza o corte,
+   * o próprio CSV registra a quantidade total e o período.
    */
   const exportarCSV = useCallback(() => {
     const cab = ['id', 'tipo', 'categoria', 'descricao', 'valor', 'vencimento', 'status', 'centroCusto', 'origem'];
@@ -622,9 +622,9 @@ const duplicar = useCallback(async (l: LancView) => {
     ].map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';'));
     const cabecalho = ['\ufeff' + cab.join(';')];
     if (avisoCorte) {
-      // Uma linha de metadado, no padrÃ£o comentÃ¡rio, antes do cabeÃ§alho real.
+      // Uma linha de metadado, no padrão comentário, antes do cabeçalho real.
       cabecalho.unshift(
-        `\ufeff# ATENÃ‡ÃƒO: este arquivo contÃ©m apenas os ${linhas.length} lanÃ§amento(s) mais recentes do perÃ­odo. Reduza o perÃ­odo para exportar o restante.`
+        `\ufeff# ATENÇÃO: este arquivo contém apenas os ${linhas.length} lançamento(s) mais recentes do período. Reduza o período para exportar o restante.`
           .replace(/"/g, '""'),
       );
     }
@@ -636,11 +636,11 @@ const duplicar = useCallback(async (l: LancView) => {
     a.click();
     URL.revokeObjectURL(url);
     addToast(avisoCorte
-      ? `${linhas.length} de ${totalPeriodo ?? linhas.length} lanÃ§amento(s) exportado(s) â€” o CSV avisa sobre o corte.`
-      : `${linhas.length} lanÃ§amento(s) exportado(s).`);
+      ? `${linhas.length} de ${totalPeriodo ?? linhas.length} lançamento(s) exportado(s) — o CSV avisa sobre o corte.`
+      : `${linhas.length} lançamento(s) exportado(s).`);
   }, [filtrados, hoje, addToast, avisoCorte, totalPeriodo]);
 
-  // Planejamento: agenda real dos lanÃ§amentos em aberto (prÃ³ximos 60 dias).
+  // Planejamento: agenda real dos lançamentos em aberto (próximos 60 dias).
   const agenda = useMemo(() => {
     const limite = new Date(); limite.setDate(limite.getDate() + 60);
     const ate = diaLocal(limite);
@@ -655,8 +655,8 @@ const duplicar = useCallback(async (l: LancView) => {
     return agenda.reduce((s, a) => s + (Number(a.entrada) || 0) - (Number(a.saida) || 0), base);
   }, [agenda, fluxoDados]);
 
-  // `padrao` semeia o par a partir do lanÃ§amento real, para editar um campo
-  // nÃ£o zerar o outro (o plano comeÃ§a vazio).
+  // `padrao` semeia o par a partir do lançamento real, para editar um campo
+  // não zerar o outro (o plano começa vazio).
   const setPlanoValor = useCallback((
     id: string, campo: 'entrada' | 'saida', v: string, padrao: { entrada: number; saida: number },
   ) => {
@@ -690,7 +690,7 @@ const duplicar = useCallback(async (l: LancView) => {
     </div>
   );
 
-  /** Tabela de contas a pagar / a receber â€” mesma anatomia, cor de destaque diferente. */
+  /** Tabela de contas a pagar / a receber — mesma anatomia, cor de destaque diferente. */
   const TabelaContas = ({
     titulo, icone: Icone, linhas, variante, totalRotulo, vazio,
   }: {
@@ -722,18 +722,18 @@ const duplicar = useCallback(async (l: LancView) => {
         </div>
 
         {linhas.length === 0 ? (
-          <EmptyState title={vazio} description="Ajuste o perÃ­odo, os filtros ou a busca para ver os lanÃ§amentos." icon={Icone} />
+          <EmptyState title={vazio} description="Ajuste o período, os filtros ou a busca para ver os lançamentos." icon={Icone} />
         ) : (
           <div className="fin-x">
             <table role="table" aria-label={titulo} style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
               <thead className="fin-thead">
                 <tr>
-                  <th scope="col">{traduzir('descricao', "DescriÃ§Ã£o")}</th>
+                  <th scope="col">{traduzir('descricao', "Descrição")}</th>
                   <th scope="col">{traduzir('categoria', "Categoria")}</th>
                   <th scope="col">{traduzir('vencimento', "Vencimento")}</th>
                   <th scope="col" style={{ textAlign: 'right' }}>{traduzir('valor', "Valor")}</th>
                   <th scope="col">{traduzir('status', "Status")}</th>
-                  <th scope="col" style={{ textAlign: 'right' }}>{traduzir('acoes', "AÃ§Ãµes")}</th>
+                  <th scope="col" style={{ textAlign: 'right' }}>{traduzir('acoes', "Ações")}</th>
                 </tr>
               </thead>
               <tbody className={`fin-tbody ${variante === 'pagar' ? 'fin-pagar' : 'fin-receber'}`}>
@@ -744,7 +744,7 @@ const duplicar = useCallback(async (l: LancView) => {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.centroCusto || 'Sem centro de custo'}</div>
                     </td>
                     <td className="fin-cell" style={{ color: 'var(--label)' }}>{l.categoria}</td>
-                    <td className="fin-cell" style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{l.vencimento ? formatDate(l.vencimento) : 'â€”'}</td>
+                    <td className="fin-cell" style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{l.vencimento ? formatDate(l.vencimento) : '—'}</td>
                     <td className="fin-cell" style={{ textAlign: 'right', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{formatBRL(l.valorNum)}</td>
                     <td className="fin-cell">
                       <StatusChip st={l.statusUp} atraso={isAtrasado(l, hoje) ? diasAtraso(l, hoje) : undefined} />
@@ -765,7 +765,7 @@ const duplicar = useCallback(async (l: LancView) => {
                         onClick={(e) => { e.stopPropagation(); void duplicar(l); }}
                         style={{ background: 'none', border: 'none', color: duplicandoId === l.id ? 'var(--label)' : 'var(--muted)', cursor: duplicandoId === l.id ? 'progress' : 'pointer', fontSize: 10, padding: 4 }}
                       >
-                        {duplicandoId === l.id ? 'â€¦' : <Copy size={13} />}
+                        {duplicandoId === l.id ? '…' : <Copy size={13} />}
                       </button>
                     </td>
                   </tr>
@@ -779,7 +779,7 @@ const duplicar = useCallback(async (l: LancView) => {
           <Totalizador rotulo={traduzir('em_aberto', "Em aberto")} valor={totalAberto} />
           <Totalizador rotulo={traduzir('atrasadas', "Atrasadas")} valor={atrasadas.reduce((s, l) => s + l.valorNum, 0)} cor="var(--danger)" />
           <Totalizador rotulo={traduzir('vencem_hoje', "Vencem hoje")} valor={vencemHoje.reduce((s, l) => s + l.valorNum, 0)} cor="var(--warning)" />
-          <Totalizador rotulo={variante === 'pagar' ? 'Pagas no perÃ­odo' : 'Recebidas no perÃ­odo'} valor={pagas.reduce((s, l) => s + l.valorNum, 0)} cor="var(--success)" />
+          <Totalizador rotulo={variante === 'pagar' ? 'Pagas no período' : 'Recebidas no período'} valor={pagas.reduce((s, l) => s + l.valorNum, 0)} cor="var(--success)" />
         </div>
       </section>
     );
@@ -789,7 +789,7 @@ const duplicar = useCallback(async (l: LancView) => {
     return (
       <div className="fin-root" style={{ background: 'var(--bg)', minHeight: '100vh', padding: '24px 28px', color: '#fff' }}>
         <style>{finCss + finCssExtra}</style>
-        <p style={{ color: 'var(--muted)', fontSize: 12 }}>Carregando financeiroâ€¦</p>
+        <p style={{ color: 'var(--muted)', fontSize: 12 }}>Carregando financeiro…</p>
       </div>
     );
   }
@@ -802,11 +802,11 @@ const duplicar = useCallback(async (l: LancView) => {
         subtitle="Receitas, despesas, contas a pagar/receber e fluxo de caixa a partir de dados reais da empresa."
         action={
           <div className="fin-wrap">
-            <button type="button" onClick={exportarCSV} style={btnG} title="Exportar os lanÃ§amentos filtrados (CSV)">
+            <button type="button" onClick={exportarCSV} style={btnG} title="Exportar os lançamentos filtrados (CSV)">
               <Download size={13} /> Exportar
             </button>
             <button type="button" onClick={() => abrirNovo()} style={btnP}>
-              <Plus size={14} />{traduzir('novo_lancamento', "Novo lanÃ§amento")}</button>
+              <Plus size={14} />{traduzir('novo_lancamento', "Novo lançamento")}</button>
           </div>
         }
       />
@@ -817,11 +817,11 @@ const duplicar = useCallback(async (l: LancView) => {
         </div>
       )}
 
-      {/* Aviso de corte: a consulta ao banco tem limite de 200 lanÃ§amentos. Os
-          totais do topo jÃ¡ vÃªm somados sobre o perÃ­odo inteiro (aggregate no
-          servidor); o que fica limitado Ã© a lista linha a linha e os grÃ¡ficos
-          derivados dela. Informar isso Ã© melhor que deixar o gestor achar que
-          os lanÃ§amentos visÃ­veis sÃ£o todos. */}
+      {/* Aviso de corte: a consulta ao banco tem limite de 200 lançamentos. Os
+          totais do topo já vêm somados sobre o período inteiro (aggregate no
+          servidor); o que fica limitado é a lista linha a linha e os gráficos
+          derivados dela. Informar isso é melhor que deixar o gestor achar que
+          os lançamentos visíveis são todos. */}
       {avisoCorte && (
         <div
           role="status"
@@ -831,7 +831,7 @@ const duplicar = useCallback(async (l: LancView) => {
         </div>
       )}
 
-      {/* PerÃ­odo + busca + filtros */}
+      {/* Período + busca + filtros */}
       <div className="fin-wrap" style={{ marginBottom: 16, justifyContent: 'space-between' }}>
         <TabsPill items={PRESETS_FULL} value={periodo} onChange={(k) => setPeriodo(k)} variant="loose" />
         <div className="fin-wrap">
@@ -841,8 +841,8 @@ const duplicar = useCallback(async (l: LancView) => {
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar por descriÃ§Ã£o, categoria ou centroâ€¦"
-              aria-label={traduzir('buscar_lancamentos', "Buscar lanÃ§amentos")}
+              placeholder="Buscar por descrição, categoria ou centro…"
+              aria-label={traduzir('buscar_lancamentos', "Buscar lançamentos")}
               style={{ ...inp, width: 300, paddingLeft: 34, height: 40 }}
             />
           </div>
@@ -855,7 +855,7 @@ const duplicar = useCallback(async (l: LancView) => {
         </div>
       </div>
 
-      {/* KPIs â€” todos os valores e deltas vÃªm da API real */}
+      {/* KPIs — todos os valores e deltas vêm da API real */}
       <div className="fin-grid-kpi" style={{ marginBottom: 20 }}>
         <Kpi rotulo={traduzir('receitas', "Receitas")} valor={formatBRL(kpis.receitas)} delta={kpis.dReceitas} deltaBom cor="var(--success)" Icon={TrendingUp} />
         <Kpi rotulo={traduzir('despesas', "Despesas")} valor={formatBRL(kpis.despesas)} delta={kpis.dDespesas} cor="var(--warning)" Icon={TrendingDown} />
@@ -863,22 +863,22 @@ const duplicar = useCallback(async (l: LancView) => {
           rotulo={traduzir('resultado', "Resultado")} valor={formatBRL(kpis.resultado)} delta={kpis.dResultado} deltaBom={kpis.resultado >= 0}
           cor={kpis.resultado >= 0 ? 'var(--success)' : 'var(--danger)'}
           Icon={kpis.resultado >= 0 ? TrendingUp : TrendingDown}
-          sub={kpis.margem !== null ? `Margem de ${kpis.margem.toFixed(1)}%` : 'Sem receita no perÃ­odo'}
+          sub={kpis.margem !== null ? `Margem de ${kpis.margem.toFixed(1)}%` : 'Sem receita no período'}
         />
         <Kpi
-          rotulo={`A pagar Â· ${kpis.qtdPagar} conta(s)`} valor={formatBRL(kpis.totalPagar)} cor="var(--danger)" Icon={AlertTriangle}
-          sub={kpis.atrasadas > 0 ? `${kpis.atrasadas} atrasada(s) Â· ${kpis.vencemHoje} vencem hoje` : `${kpis.vencemHoje} vencem hoje`}
+          rotulo={`A pagar · ${kpis.qtdPagar} conta(s)`} valor={formatBRL(kpis.totalPagar)} cor="var(--danger)" Icon={AlertTriangle}
+          sub={kpis.atrasadas > 0 ? `${kpis.atrasadas} atrasada(s) · ${kpis.vencemHoje} vencem hoje` : `${kpis.vencemHoje} vencem hoje`}
         />
         <Kpi
-          rotulo={`A receber Â· ${kpis.qtdReceber} conta(s)`} valor={formatBRL(kpis.totalReceber)} cor="var(--success)" Icon={Clock}
+          rotulo={`A receber · ${kpis.qtdReceber} conta(s)`} valor={formatBRL(kpis.totalReceber)} cor="var(--success)" Icon={Clock}
           sub={`${kpis.vencemHoje} vencem hoje`}
         />
       </div>
-      {/* ===== Linha 2: Fluxo de caixa (1.8fr) + Novo lanÃ§amento / IA (1fr) ===== */}
+      {/* ===== Linha 2: Fluxo de caixa (1.8fr) + Novo lançamento / IA (1fr) ===== */}
       <div className="fin-grid-main" style={{ marginBottom: 16 }}>
-        <section className="fin-card" aria-label="Fluxo de caixa do perÃ­odo">
+        <section className="fin-card" aria-label="Fluxo de caixa do período">
           <SectionTitle
-            kicker={`Fluxo de caixa Â· ${serieFluxo.length} dia(s) com movimento`}
+            kicker={`Fluxo de caixa · ${serieFluxo.length} dia(s) com movimento`}
             right={
               <div className="fin-wrap">
                 <button type="button" onClick={() => setShowDre(true)} style={btnG}><FileText size={13} />{traduzir('ver_dre', "Ver DRE")}</button>
@@ -886,18 +886,18 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
             }
           >
-            Entradas e saÃ­das realizadas
+            Entradas e saídas realizadas
           </SectionTitle>
           <p className="fin-sub" style={{ marginTop: 6 }}>
-            Saldo do perÃ­odo {formatBRL(resumos.periodo.entrada - resumos.periodo.saida)} Â·
-            entradas {fmtK(resumos.periodo.entrada)} Â· saÃ­das {fmtK(resumos.periodo.saida)} Â·
+            Saldo do período {formatBRL(resumos.periodo.entrada - resumos.periodo.saida)} ·
+            entradas {fmtK(resumos.periodo.entrada)} · saídas {fmtK(resumos.periodo.saida)} ·
             saldo final projetado {fmtK(Number(fluxoDados?.projecao30dias?.saldoProjetado) || 0)}
           </p>
 
           <div style={{ height: 220, marginTop: 16 }}>
             {serieFluxo.length === 0 ? (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: 'var(--card2)', border: '1px dashed var(--nexus-border)', color: 'var(--label)', fontSize: 12 }}>
-                Sem movimento pago no perÃ­odo selecionado.
+                Sem movimento pago no período selecionado.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -913,7 +913,7 @@ const duplicar = useCallback(async (l: LancView) => {
                   <Legend wrapperStyle={{ fontSize: 11, color: 'var(--nexus-muted)' }} iconType="circle" iconSize={7} />
                   <Area type="monotone" dataKey="saldo" name="Saldo" stroke="#3b82f6" strokeWidth={2} fill="#3b82f6" fillOpacity={0.14} dot={false} />
                   <Line type="monotone" dataKey="entradas" name="Entradas" stroke="#22c55e" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="saidas" name="SaÃ­das" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="saidas" name="Saídas" stroke="#f59e0b" strokeWidth={2} dot={false} />
                 </RLineChart>
               </ResponsiveContainer>
             )}
@@ -922,14 +922,14 @@ const duplicar = useCallback(async (l: LancView) => {
           <div className="fin-grid-4" style={{ marginTop: 16 }}>
             {([
               ['Hoje', resumos.hoje, false],
-              ['Ãšltimos 7 dias', resumos.semana, false],
-              ['PerÃ­odo', resumos.periodo, false],
+              ['Últimos 7 dias', resumos.semana, false],
+              ['Período', resumos.periodo, false],
               ['Projetado 30 dias', resumos.projetado, true],
             ] as Array<[string, { entrada: number; saida: number }, boolean]>).map(([titulo, r, proj]) => (
               <div key={titulo} style={{ background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 10, fontSize: 11 }}>
                 <div style={{ color: 'var(--label2)', textTransform: 'uppercase', letterSpacing: 0.6, fontSize: 10 }}>{titulo}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}><span style={{ color: 'var(--muted)' }}>{traduzir('entrada', "Entrada")}</span><strong style={{ color: 'var(--success)' }}>{fmtK(r.entrada)}</strong></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}><span style={{ color: 'var(--muted)' }}>{traduzir('saida', "SaÃ­da")}</span><strong style={{ color: 'var(--warning)' }}>{fmtK(r.saida)}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}><span style={{ color: 'var(--muted)' }}>{traduzir('saida', "Saída")}</span><strong style={{ color: 'var(--warning)' }}>{fmtK(r.saida)}</strong></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, paddingTop: 4, borderTop: '1px solid var(--nexus-border)' }}>
                   <span style={{ color: 'var(--muted)' }}>{traduzir('saldo', "Saldo")}</span>
                   <strong style={{ color: r.entrada - r.saida >= 0 ? 'var(--success)' : 'var(--danger)' }}>
@@ -942,9 +942,9 @@ const duplicar = useCallback(async (l: LancView) => {
           </div>
         </section>
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <section className="fin-card" style={{ padding: 20 }} aria-label={traduzir('novo_lancamento', "Novo lanÃ§amento")}>
-            <h3 className="fin-title">{traduzir('novo_lancamento', "Novo lanÃ§amento")}</h3>
-            <p className="fin-sub">Registro rÃ¡pido de despesa ou receita</p>
+          <section className="fin-card" style={{ padding: 20 }} aria-label={traduzir('novo_lancamento', "Novo lançamento")}>
+            <h3 className="fin-title">{traduzir('novo_lancamento', "Novo lançamento")}</h3>
+            <p className="fin-sub">Registro rápido de despesa ou receita</p>
 
             <form onSubmit={salvarLancamento} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -971,7 +971,7 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
 
               <div>
-                <label className="fin-label" htmlFor="fin-desc">{traduzir('descricao', "DescriÃ§Ã£o")}</label>
+                <label className="fin-label" htmlFor="fin-desc">{traduzir('descricao', "Descrição")}</label>
                 <input id="fin-desc" className="fin-input" value={fDesc} onChange={(e) => setFDesc(e.target.value)} placeholder="Ex.: Conta de luz loja centro" />
               </div>
 
@@ -1007,28 +1007,28 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
 
               <button type="submit" disabled={saving} style={{ ...btnP, width: '100%' }}>
-                {saving ? 'LanÃ§andoâ€¦' : 'LanÃ§ar'}
+                {saving ? 'Lançando…' : 'Lançar'}
               </button>
               <button type="button" onClick={() => abrirNovo(fTipo === 'DESPESA' ? 'RECEITA' : 'DESPESA')} style={{ ...btnG, width: '100%', height: 40, justifyContent: 'center', color: '#fff' }}>
-                LanÃ§ar {fTipo === 'DESPESA' ? 'receita' : 'despesa'}
+                Lançar {fTipo === 'DESPESA' ? 'receita' : 'despesa'}
               </button>
             </form>
           </section>
-          {/* IA NEXUS â€” insights derivados dos nÃºmeros reais do perÃ­odo */}
+          {/* IA NEXUS — insights derivados dos números reais do período */}
           <section style={{ background: 'linear-gradient(135deg,var(--nexus-panel),var(--nexus-panel-2))', border: '1px solid var(--nexus-border)', borderRadius: 16, padding: 18 }} aria-label="Insights da IA NEXUS">
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span className="fin-ia-icon" style={{ width: 42, height: 42, borderRadius: 12, background: 'linear-gradient(135deg,var(--nexus-accent),var(--nx-accent-2))', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Sparkles size={18} color="#fff" />
               </span>
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700 }}>IA NEXUS Â· Analista Financeiro</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>Insights automÃ¡ticos do perÃ­odo</div>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>IA NEXUS · Analista Financeiro</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>Insights automáticos do período</div>
               </div>
             </div>
             <div style={{ marginTop: 12 }}>
               {insights.length === 0 ? (
                 <div style={{ background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 12, fontSize: 11, color: 'var(--muted)' }}>
-                  Sem lanÃ§amentos no perÃ­odo â€” nÃ£o hÃ¡ o que analisar ainda.
+                  Sem lançamentos no período — não há o que analisar ainda.
                 </div>
               ) : insights.map((i) => (
                 <div key={i.titulo} style={{ background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 12, marginBottom: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
@@ -1037,7 +1037,7 @@ const duplicar = useCallback(async (l: LancView) => {
                 </div>
               ))}
             </div>
-            <button type="button" onClick={() => addToast('AnÃ¡lise gerada a partir dos lanÃ§amentos do perÃ­odo.')} style={{ background: 'var(--primary)', height: 36, borderRadius: 8, padding: '0 14px', color: '#fff', fontSize: 11, fontWeight: 700, width: '100%', border: 'none', cursor: 'pointer', marginTop: 4 }}>
+            <button type="button" onClick={() => addToast('Análise gerada a partir dos lançamentos do período.')} style={{ background: 'var(--primary)', height: 36, borderRadius: 8, padding: '0 14px', color: '#fff', fontSize: 11, fontWeight: 700, width: '100%', border: 'none', cursor: 'pointer', marginTop: 4 }}>
               Analisar mais
             </button>
           </section>
@@ -1046,38 +1046,38 @@ const duplicar = useCallback(async (l: LancView) => {
       {/* ===== Linha 3: Contas a pagar / a receber ===== */}
       <div className="fin-grid-2" style={{ marginBottom: 16 }}>
         <TabelaContas titulo="Contas a pagar" icone={Wallet} variante="pagar" linhas={pagar} totalRotulo="Total em aberto"
-          vazio={queryDeb || tipoF !== 'Todos' || statusF !== 'Todos' ? 'Nenhuma conta a pagar com os filtros atuais' : 'Nenhuma despesa lanÃ§ada no perÃ­odo'} />
+          vazio={queryDeb || tipoF !== 'Todos' || statusF !== 'Todos' ? 'Nenhuma conta a pagar com os filtros atuais' : 'Nenhuma despesa lançada no período'} />
         <TabelaContas titulo="Contas a receber" icone={ArrowUpRight} variante="receber" linhas={receber} totalRotulo="Total em aberto"
-          vazio={queryDeb || tipoF !== 'Todos' || statusF !== 'Todos' ? 'Nenhuma conta a receber com os filtros atuais' : 'Nenhuma receita lanÃ§ada no perÃ­odo'} />
+          vazio={queryDeb || tipoF !== 'Todos' || statusF !== 'Todos' ? 'Nenhuma conta a receber com os filtros atuais' : 'Nenhuma receita lançada no período'} />
       </div>
 
-      {/* ===== Linha 4: DRE + projeÃ§Ã£o ===== */}
+      {/* ===== Linha 4: DRE + projeção ===== */}
       <div className="fin-grid-2">
         <section className="fin-card" aria-label="DRE resumido">
           <SectionTitle
-            kicker="DRE Â· Demonstrativo de resultado"
+            kicker="DRE · Demonstrativo de resultado"
             right={<button type="button" onClick={() => setShowDre(true)} style={btnG}><BarChart3 size={13} /> Ver DRE completo</button>}
           >
-            Resumo do perÃ­odo
+            Resumo do período
           </SectionTitle>
 
           {dre ? (
             <div style={{ marginTop: 12 }}>
               <LinhaDre rotulo="Receita bruta" valor={Number(dre.detalhes.receitaBruta)} />
-              <LinhaDre rotulo="(-) DeduÃ§Ãµes e impostos" valor={Number(dre.detalhes.deducoes)} ind />
-              <LinhaDre rotulo="(=) Receita lÃ­quida" valor={Number(dre.detalhes.receitaLiquida)} />
+              <LinhaDre rotulo="(-) Deduções e impostos" valor={Number(dre.detalhes.deducoes)} ind />
+              <LinhaDre rotulo="(=) Receita líquida" valor={Number(dre.detalhes.receitaLiquida)} />
               <LinhaDre rotulo="(-) Custo dos produtos vendidos" valor={Number(dre.detalhes.custos)} ind />
               <LinhaDre rotulo="(=) Lucro bruto" valor={Number(dre.detalhes.receitaLiquida) - Number(dre.detalhes.custos)} margem={dre.detalhes.margemBruta === null ? undefined : Number(dre.detalhes.margemBruta)} />
               <LinhaDre rotulo="(-) Despesas operacionais" valor={Number(dre.detalhes.despesas)} ind />
               <LinhaDre rotulo="(=) Resultado operacional" valor={Number(dre.detalhes.resultadoOperacional)} />
-              <LinhaDre rotulo="(=) Lucro / prejuÃ­zo" valor={Number(dre.detalhes.lucroPrejuizo)} margem={dre.detalhes.margemLiquida === null ? undefined : Number(dre.detalhes.margemLiquida)} />
+              <LinhaDre rotulo="(=) Lucro / prejuízo" valor={Number(dre.detalhes.lucroPrejuizo)} margem={dre.detalhes.margemLiquida === null ? undefined : Number(dre.detalhes.margemLiquida)} />
               <p className="fin-sub" style={{ marginTop: 10 }}>
-                {Number(dre.detalhes.qtdVendas)} venda(s) concluÃ­da(s) no perÃ­odo. Custos vÃªm do custo unitÃ¡rio dos itens vendidos.
+                {Number(dre.detalhes.qtdVendas)} venda(s) concluída(s) no período. Custos vêm do custo unitário dos itens vendidos.
               </p>
             </div>
           ) : (
             <div style={{ marginTop: 12 }}>
-              <EmptyState title="DRE indisponÃ­vel" description="VocÃª pode nÃ£o ter a permissÃ£o 'financeiro Â· visualizar' ou ainda nÃ£o hÃ¡ dados no perÃ­odo." icon={Target} />
+              <EmptyState title="DRE indisponível" description="Você pode não ter a permissão 'financeiro · visualizar' ou ainda não há dados no período." icon={Target} />
             </div>
           )}
 
@@ -1085,7 +1085,7 @@ const duplicar = useCallback(async (l: LancView) => {
             <h4 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Despesas por categoria</h4>
             {porCategoria.length === 0 ? (
               <div style={{ height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: 'var(--card2)', border: '1px dashed var(--nexus-border)', color: 'var(--label)', fontSize: 12 }}>
-                Nenhuma despesa no perÃ­odo.
+                Nenhuma despesa no período.
               </div>
             ) : (
               <>
@@ -1103,7 +1103,7 @@ const duplicar = useCallback(async (l: LancView) => {
                   {porCategoria.map((c, i) => (
                     <span key={c.categoria} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--muted)' }}>
                       <span style={{ width: 8, height: 8, borderRadius: 2, background: PALETA[i % PALETA.length] }} />
-                      {c.categoria} Â· {fmtK(c.valor)}
+                      {c.categoria} · {fmtK(c.valor)}
                     </span>
                   ))}
                 </div>
@@ -1113,19 +1113,19 @@ const duplicar = useCallback(async (l: LancView) => {
         </section>
         <section className="fin-card" aria-label="Saldos e fluxo projetado">
           <SectionTitle
-            kicker="PosiÃ§Ã£o de caixa"
+            kicker="Posição de caixa"
             right={<button type="button" onClick={() => setShowFluxo(true)} style={btnG}><Calendar size={13} /> Planejar fluxo</button>}
           >
-            Fluxo projetado Â· prÃ³ximos 30 dias
+            Fluxo projetado · próximos 30 dias
           </SectionTitle>
 
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Saldo realizado no perÃ­odo</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Saldo realizado no período</div>
             <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 2 }}>
               {formatBRL(resumos.periodo.entrada - resumos.periodo.saida)}
             </div>
             <div style={{ fontSize: 11, color: 'var(--label)', marginTop: 4 }}>
-              ProjeÃ§Ã£o com os pendentes que vencem nos prÃ³ximos 30 dias:{' '}
+              Projeção com os pendentes que vencem nos próximos 30 dias:{' '}
               <strong style={{ color: (Number(fluxoDados?.projecao30dias?.saldoProjetado) ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
                 {formatBRL(Number(fluxoDados?.projecao30dias?.saldoProjetado) || 0)}
               </strong>
@@ -1135,7 +1135,7 @@ const duplicar = useCallback(async (l: LancView) => {
           <div style={{ marginTop: 16, height: 180 }}>
             {serieFluxo.length === 0 ? (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: 'var(--card2)', border: '1px dashed var(--nexus-border)', color: 'var(--label)', fontSize: 12 }}>
-                Sem sÃ©rie diÃ¡ria no perÃ­odo.
+                Sem série diária no período.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -1156,21 +1156,21 @@ const duplicar = useCallback(async (l: LancView) => {
             )}
           </div>
 
-          {/* AÃ§Ãµes do modelo de dados: contas bancÃ¡rias ainda nÃ£o existem no schema. */}
+          {/* Ações do modelo de dados: contas bancárias ainda não existem no schema. */}
           <div style={{ marginTop: 16 }}>
-            <h4 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Saldos bancÃ¡rios e conciliaÃ§Ã£o</h4>
+            <h4 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Saldos bancários e conciliação</h4>
             <EmptyState
-              title="Contas bancÃ¡rias ainda nÃ£o modeladas"
-              description="O mÃ³dulo financeiro nÃ£o possui entidade de conta bancÃ¡ria nem conciliaÃ§Ã£o de extrato. As integraÃ§Ãµes bancÃ¡rias entram pela Central de IntegraÃ§Ãµes."
+              title="Contas bancárias ainda não modeladas"
+              description="O módulo financeiro não possui entidade de conta bancária nem conciliação de extrato. As integrações bancárias entram pela Central de Integrações."
               icon={Building2}
             />
           </div>
 
           {agenda.length > 0 ? (
             <div style={{ marginTop: 16 }}>
-              <h4 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>PrÃ³ximos vencimentos ({agenda.length})</h4>
+              <h4 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Próximos vencimentos ({agenda.length})</h4>
               <BarChart
-                points={agenda.slice(0, 8).map((a) => ({ label: a.l.vencimento ? formatDate(a.l.vencimento) : 'â€”', value: (Number(a.saida) || 0) - (Number(a.entrada) || 0) }))}
+                points={agenda.slice(0, 8).map((a) => ({ label: a.l.vencimento ? formatDate(a.l.vencimento) : '—', value: (Number(a.saida) || 0) - (Number(a.entrada) || 0) }))}
                 format="currency"
                 height={120}
                 maxLabels={8}
@@ -1178,14 +1178,14 @@ const duplicar = useCallback(async (l: LancView) => {
                 emptyLabel="Sem vencimentos previstos."
               />
               <p className="fin-sub" style={{ marginTop: 6 }}>
-                Barras azuis = saÃ­das menos entradas. Saldo projetado atÃ© o fim da agenda:{' '}
+                Barras azuis = saídas menos entradas. Saldo projetado até o fim da agenda:{' '}
                 <strong style={{ color: saldoPlanejado >= 0 ? 'var(--success)' : 'var(--danger)' }}>{formatBRL(saldoPlanejado)}</strong>
               </p>
             </div>
           ) : null}
         </section>
       </div>
-      {/* ===== Modal: novo lanÃ§amento ===== */}
+      {/* ===== Modal: novo lançamento ===== */}
       {showNew ? (
         <div
           onClick={() => setShowNew(false)}
@@ -1193,13 +1193,13 @@ const duplicar = useCallback(async (l: LancView) => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            role="dialog" aria-modal="true" aria-label={traduzir('novo_lancamento', "Novo lanÃ§amento")}
+            role="dialog" aria-modal="true" aria-label={traduzir('novo_lancamento', "Novo lançamento")}
             className="fin-modal-box fin-scroll"
             style={{ width: 640, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 28, boxShadow: '0 24px 64px rgba(0,0,0,.6)' }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{traduzir('novo_lancamento', "Novo lanÃ§amento")}</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{traduzir('novo_lancamento', "Novo lançamento")}</h2>
                 <p className="fin-sub">Os campos seguem o contrato de POST /financeiro.</p>
               </div>
               <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setShowNew(false)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1226,7 +1226,7 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
-                <label className="fin-label" htmlFor="m-desc">{traduzir('descricao', "DescriÃ§Ã£o")}</label>
+                <label className="fin-label" htmlFor="m-desc">{traduzir('descricao', "Descrição")}</label>
                 <input id="m-desc" className="fin-input" value={fDesc} onChange={(e) => setFDesc(e.target.value)} placeholder="Ex.: Conta de luz loja centro" />
               </div>
 
@@ -1259,21 +1259,21 @@ const duplicar = useCallback(async (l: LancView) => {
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 12, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Forma de pagamento, conta bancÃ¡ria, recorrÃªncia, parcelamento e anexo ainda nÃ£o existem
-                  no contrato do financeiro â€” entram junto da entidade bancÃ¡ria.
+                  Forma de pagamento, conta bancária, recorrência, parcelamento e anexo ainda não existem
+                  no contrato do financeiro — entram junto da entidade bancária.
                 </div>
               </div>
 
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
                 <button type="button" onClick={() => setShowNew(false)} style={{ ...btnG, height: 44, padding: '0 20px', color: '#fff' }}>{traduzir('cancelar', "Cancelar")}</button>
-                <button type="button" onClick={() => abrirNovo(fTipo)} style={{ ...btnG, height: 44, padding: '0 20px', color: '#fff' }}>LanÃ§ar e abrir outro</button>
-                <button type="submit" disabled={saving} style={btnP}>{saving ? 'LanÃ§andoâ€¦' : 'LanÃ§ar'}</button>
+                <button type="button" onClick={() => abrirNovo(fTipo)} style={{ ...btnG, height: 44, padding: '0 20px', color: '#fff' }}>Lançar e abrir outro</button>
+                <button type="submit" disabled={saving} style={btnP}>{saving ? 'Lançando…' : 'Lançar'}</button>
               </div>
             </form>
           </div>
         </div>
       ) : null}
-      {/* ===== Modal: detalhe do lanÃ§amento ===== */}
+      {/* ===== Modal: detalhe do lançamento ===== */}
       {detail ? (
         <div
           onClick={() => setDetail(null)}
@@ -1281,13 +1281,13 @@ const duplicar = useCallback(async (l: LancView) => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            role="dialog" aria-modal="true" aria-label="Detalhe do lanÃ§amento"
+            role="dialog" aria-modal="true" aria-label="Detalhe do lançamento"
             className="fin-modal-box fin-scroll"
             style={{ width: 600, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 20, padding: 24, boxShadow: '0 24px 64px rgba(0,0,0,.6)' }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Detalhe do lanÃ§amento</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Detalhe do lançamento</h2>
                 <p className="fin-sub">ID {detail.id}</p>
               </div>
               <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setDetail(null)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1297,7 +1297,7 @@ const duplicar = useCallback(async (l: LancView) => {
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: detail.statusUp === 'PAGO' ? 'var(--success)' : detail.statusUp === 'VENCIDO' ? 'var(--danger)' : '#fff' }}>
-                {detail.tipoUp === 'RECEITA' ? '+' : 'âˆ’'} {formatBRL(Number(detail.valor) || 0)}
+                {detail.tipoUp === 'RECEITA' ? '+' : '−'} {formatBRL(Number(detail.valor) || 0)}
               </div>
               <StatusChip st={detail.statusUp} atraso={isAtrasado(detail, hoje) ? diasAtraso(detail, hoje) : undefined} />
             </div>
@@ -1315,15 +1315,15 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
               <div>
                 <div style={lbl}>{traduzir('vencimento', "Vencimento")}</div>
-                <div style={{ fontSize: 12, color: '#fff' }}>{detail.vencimento ? formatDate(detail.vencimento) : 'â€”'}</div>
+                <div style={{ fontSize: 12, color: '#fff' }}>{detail.vencimento ? formatDate(detail.vencimento) : '—'}</div>
               </div>
               <div>
                 <div style={lbl}>{traduzir('centro_de_custo', "Centro de custo")}</div>
-                <div style={{ fontSize: 12, color: '#fff' }}>{detail.centroCusto || 'â€”'}</div>
+                <div style={{ fontSize: 12, color: '#fff' }}>{detail.centroCusto || '—'}</div>
               </div>
               <div>
                 <div style={lbl}>Origem</div>
-                <div style={{ fontSize: 12, color: '#fff' }}>{detail.origem || 'â€”'}</div>
+                <div style={{ fontSize: 12, color: '#fff' }}>{detail.origem || '—'}</div>
               </div>
               <div>
                 <div style={lbl}>Registrado em</div>
@@ -1332,16 +1332,16 @@ const duplicar = useCallback(async (l: LancView) => {
             </div>
 
             <div style={{ marginTop: 16, background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 12, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
-              A API financeira expÃµe apenas <code>GET /financeiro</code> e{' '}
-              <code>POST /financeiro</code>: nÃ£o existe rota de baixa, pagamento,
-              anexo, forma de pagamento nem conta bancÃ¡ria â€” o modelo do banco
-              nÃ£o tem esses campos. Por isso nÃ£o hÃ¡ botÃ£o de â€œpagarâ€ aqui.
+              A API financeira expõe apenas <code>GET /financeiro</code> e{' '}
+              <code>POST /financeiro</code>: não existe rota de baixa, pagamento,
+              anexo, forma de pagamento nem conta bancária — o modelo do banco
+              não tem esses campos. Por isso não há botão de “pagar” aqui.
               <br />
-              Na prÃ¡tica: lanÃ§amentos criados por esta tela entram sempre como{' '}
-              <strong>PENDENTE</strong> e permanecem assim. SÃ³ entram como{' '}
-              <strong>PAGO</strong> os lanÃ§amentos gerados por uma venda
-              finalizada, que jÃ¡ nascem quitados. A baixa manual ainda nÃ£o Ã©
-              possÃ­vel pelo NEXUS OS.
+              Na prática: lançamentos criados por esta tela entram sempre como{' '}
+              <strong>PENDENTE</strong> e permanecem assim. Só entram como{' '}
+              <strong>PAGO</strong> os lançamentos gerados por uma venda
+              finalizada, que já nascem quitados. A baixa manual ainda não é
+              possível pelo NEXUS OS.
             </div>
 
             <div className="fin-wrap" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
@@ -1349,7 +1349,7 @@ const duplicar = useCallback(async (l: LancView) => {
               <button type="button" onClick={() => { void duplicar(detail); setDetail(null); }} style={{ ...btnG, color: '#fff' }}>
                 <Copy size={13} />{traduzir('duplicar', "Duplicar")}</button>
               <button type="button" onClick={() => { const t = detail.tipoUp === 'RECEITA' ? 'RECEITA' : 'DESPESA'; setDetail(null); abrirNovo(t); }} style={btnP}>
-                <Plus size={14} /> LanÃ§ar outro
+                <Plus size={14} /> Lançar outro
               </button>
             </div>
           </div>
@@ -1370,15 +1370,15 @@ const duplicar = useCallback(async (l: LancView) => {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Planejar fluxo de caixa</h2>
-                {/* Diz na PRIMEIRA linha que Ã© uma simulaÃ§Ã£o. O texto antigo sÃ³
+                {/* Diz na PRIMEIRA linha que é uma simulação. O texto antigo só
                     aparecia depois de o gestor clicar em "Salvar planejamento" e
-                    receber um toast de sucesso â€” quando ele jÃ¡ acreditava que os
+                    receber um toast de sucesso — quando ele já acreditava que os
                     valores digitados tinham sido gravados no banco. */}
                 <p className="fin-sub">
-                  <strong style={{ color: 'var(--warning)' }}>SimulaÃ§Ã£o â€” nada Ã© gravado no banco.</strong>{' '}
-                  LanÃ§amentos em aberto que vencem nos prÃ³ximos 60 dias. Ajuste os
-                  valores para projetar cenÃ¡rios; ao fechar esta janela, os ajustes
-                  sÃ£o descartados.
+                  <strong style={{ color: 'var(--warning)' }}>Simulação — nada é gravado no banco.</strong>{' '}
+                  Lançamentos em aberto que vencem nos próximos 60 dias. Ajuste os
+                  valores para projetar cenários; ao fechar esta janela, os ajustes
+                  são descartados.
                 </p>
               </div>
               <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setShowFluxo(false)} style={{ width: 32, height: 32, background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: '50%', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1387,16 +1387,16 @@ const duplicar = useCallback(async (l: LancView) => {
             </div>
 
             {agenda.length === 0 ? (
-              <EmptyState title="Nada a planejar" description="NÃ£o hÃ¡ lanÃ§amentos em aberto com vencimento nos prÃ³ximos 60 dias." icon={Calendar} />
+              <EmptyState title="Nada a planejar" description="Não há lançamentos em aberto com vencimento nos próximos 60 dias." icon={Calendar} />
             ) : (
               <div className="fin-x">
                 <table role="table" aria-label="Planejamento de fluxo de caixa" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead className="fin-thead">
                     <tr>
                       <th scope="col">{traduzir('vencimento', "Vencimento")}</th>
-                      <th scope="col">{traduzir('descricao', "DescriÃ§Ã£o")}</th>
+                      <th scope="col">{traduzir('descricao', "Descrição")}</th>
                       <th scope="col" style={{ textAlign: 'right' }}>{traduzir('entrada', "Entrada")}</th>
-                      <th scope="col" style={{ textAlign: 'right' }}>{traduzir('saida', "SaÃ­da")}</th>
+                      <th scope="col" style={{ textAlign: 'right' }}>{traduzir('saida', "Saída")}</th>
                       <th scope="col" style={{ textAlign: 'right' }}>{traduzir('saldo', "Saldo")}</th>
                     </tr>
                   </thead>
@@ -1407,7 +1407,7 @@ const duplicar = useCallback(async (l: LancView) => {
                         acc += (Number(a.entrada) || 0) - (Number(a.saida) || 0);
                         return (
                           <tr key={a.l.id}>
-                            <td className="fin-cell" style={{ whiteSpace: 'nowrap', color: 'var(--muted)' }}>{a.l.vencimento ? formatDate(a.l.vencimento) : 'â€”'}</td>
+                            <td className="fin-cell" style={{ whiteSpace: 'nowrap', color: 'var(--muted)' }}>{a.l.vencimento ? formatDate(a.l.vencimento) : '—'}</td>
                             <td className="fin-cell" style={{ color: '#fff', fontWeight: 600 }}>{a.l.descricao}</td>
                             <td className="fin-cell" style={{ textAlign: 'right' }}>
                               <input
@@ -1418,7 +1418,7 @@ const duplicar = useCallback(async (l: LancView) => {
                             </td>
                             <td className="fin-cell" style={{ textAlign: 'right' }}>
                               <input
-                                type="number" min={0} step="0.01" value={a.saida} aria-label={`SaÃ­da de ${a.l.descricao}`}
+                                type="number" min={0} step="0.01" value={a.saida} aria-label={`Saída de ${a.l.descricao}`}
                                 onChange={(e) => setPlanoValor(a.l.id, 'saida', e.target.value, { entrada: a.entrada, saida: a.saida })}
                                 style={{ background: 'var(--card3)', border: '1px solid var(--border3)', borderRadius: 6, padding: '2px 6px', width: 90, textAlign: 'right', fontSize: 11, color: '#fff' }}
                               />
@@ -1450,7 +1450,7 @@ const duplicar = useCallback(async (l: LancView) => {
               <div>
                 <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>DRE completo</h2>
                 <p className="fin-sub">
-                  {intervalo.inicio.split('-').reverse().join('/')} atÃ© {intervalo.fim.split('-').reverse().join('/')} Â·
+                  {intervalo.inicio.split('-').reverse().join('/')} até {intervalo.fim.split('-').reverse().join('/')} ·
                   {' '}{Number(dre?.detalhes?.qtdVendas) || 0} venda(s)
                 </p>
               </div>
@@ -1467,23 +1467,23 @@ const duplicar = useCallback(async (l: LancView) => {
                 <div>
                   <h3 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Demonstrativo</h3>
                   <LinhaDre rotulo="Receita bruta" valor={Number(dre.detalhes.receitaBruta)} />
-                  <LinhaDre rotulo="(-) DeduÃ§Ãµes (impostos sobre venda)" valor={Number(dre.detalhes.deducoes)} ind />
-                  <LinhaDre rotulo="(=) Receita lÃ­quida" valor={Number(dre.detalhes.receitaLiquida)} />
+                  <LinhaDre rotulo="(-) Deduções (impostos sobre venda)" valor={Number(dre.detalhes.deducoes)} ind />
+                  <LinhaDre rotulo="(=) Receita líquida" valor={Number(dre.detalhes.receitaLiquida)} />
                   <LinhaDre rotulo="(-) CMV (custo x qtd vendida)" valor={Number(dre.detalhes.custos)} ind />
                   <LinhaDre rotulo="(=) Lucro bruto" valor={Number(dre.detalhes.receitaLiquida) - Number(dre.detalhes.custos)} margem={dre.detalhes.margemBruta === null ? undefined : Number(dre.detalhes.margemBruta)} />
                   <LinhaDre rotulo="(-) Despesas operacionais" valor={Number(dre.detalhes.despesas)} ind />
                   <LinhaDre rotulo="(=) Resultado operacional" valor={Number(dre.detalhes.resultadoOperacional)} />
-                  <LinhaDre rotulo="(=) Lucro lÃ­quido" valor={Number(dre.detalhes.lucroPrejuizo)} margem={dre.detalhes.margemLiquida === null ? undefined : Number(dre.detalhes.margemLiquida)} />
+                  <LinhaDre rotulo="(=) Lucro líquido" valor={Number(dre.detalhes.lucroPrejuizo)} margem={dre.detalhes.margemLiquida === null ? undefined : Number(dre.detalhes.margemLiquida)} />
                   <p className="fin-sub" style={{ marginTop: 10 }}>
-                    CÃ¡lculo real do backend: receita do financeiro, custos pelo custo unitÃ¡rio dos itens vendidos
-                    e despesas lanÃ§adas. IRPJ/CSLL e receitas financeiras entram quando houver entidade prÃ³pria.
+                    Cálculo real do backend: receita do financeiro, custos pelo custo unitário dos itens vendidos
+                    e despesas lançadas. IRPJ/CSLL e receitas financeiras entram quando houver entidade própria.
                   </p>
                 </div>
                 <div>
                   <h3 className="fin-title" style={{ fontSize: 13, marginBottom: 8 }}>Receita x despesa x resultado por categoria</h3>
                   {barrasDre.length === 0 ? (
                     <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: 'var(--card2)', border: '1px dashed var(--nexus-border)', color: 'var(--label)', fontSize: 12 }}>
-                      Sem lanÃ§amentos no perÃ­odo.
+                      Sem lançamentos no período.
                     </div>
                   ) : (
                     <div style={{ height: 260 }}>
@@ -1504,7 +1504,7 @@ const duplicar = useCallback(async (l: LancView) => {
                 </div>
               </div>
             ) : (
-              <EmptyState title="DRE indisponÃ­vel" description="Sem permissÃ£o 'financeiro - visualizar' ou sem dados no perÃ­odo." icon={Target} />
+              <EmptyState title="DRE indisponível" description="Sem permissão 'financeiro - visualizar' ou sem dados no período." icon={Target} />
             )}
           </div>
         </div>
@@ -1518,15 +1518,15 @@ const duplicar = useCallback(async (l: LancView) => {
 
             <div className="fin-wrap" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setShowFluxo(false)} style={btnG}>{traduzir('fechar', "Fechar")}</button>
-              {/* Os valores digitados acima sÃ£o REAIS e jÃ¡ servem Ã  decisÃ£o: o saldo projetado
+              {/* Os valores digitados acima são REAIS e já servem à decisão: o saldo projetado
               e a coluna de saldo por linha recalculam a cada tecla. Por isso o
-              botÃ£o assume o nome "Aplicar ajustes Ã  agenda" em vez de "Salvar
-              planejamento" â€” o plano NÃƒO Ã© salvo no PostgreSQL (nÃ£o existe
-              endpoint para isso), e a resposta anterior ("SimulaÃ§Ã£o mantida nesta
-              sessÃ£o") sÃ³ era dita DEPOIS do clique de sucesso, quando o usuÃ¡rio
-              jÃ¡ acreditava que havia gravaÃ§Ã£o. */}
-              <button type="button" onClick={() => addToast('Ajustes aplicados Ã  agenda desta tela. Nada foi gravado no banco â€” feche a janela para descartÃ¡-los.')} style={btnP}>
-                Aplicar ajustes Ã  agenda
+              botão assume o nome "Aplicar ajustes à agenda" em vez de "Salvar
+              planejamento" — o plano NÃO é salvo no PostgreSQL (não existe
+              endpoint para isso), e a resposta anterior ("Simulação mantida nesta
+              sessão") só era dita DEPOIS do clique de sucesso, quando o usuário
+              já acreditava que havia gravação. */}
+              <button type="button" onClick={() => addToast('Ajustes aplicados à agenda desta tela. Nada foi gravado no banco — feche a janela para descartá-los.')} style={btnP}>
+                Aplicar ajustes à agenda
               </button>
             </div>
           </div>

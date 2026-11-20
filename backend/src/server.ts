@@ -95,10 +95,10 @@ const app = Fastify({
 await app.register(cors, opcoesCors());
 await app.register(cookie);
 validarJwtSecret();
-  await app.register(jwt, { secret: process.env.JWT_SECRET! });
+await app.register(jwt, { secret: process.env.JWT_SECRET! });
 
 await app.register(registerAuthentication);
-// TEMPORARIAMENTE DESATIVADO: registro do Enterprise Pack.
+// O Enterprise Pack (pasta Nexus-OS-Enterprise-Pack/ na raiz) ainda não está integrado ao backend.
 
 /**
  * Tratamento de erros centralizado (Seção 45). Ordem importa:

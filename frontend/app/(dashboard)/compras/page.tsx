@@ -12,14 +12,14 @@ type PItem = { produto: string; sku: string; qtd: number; valorUnit: number };
 type Purchase = { id: string; data: string; filialId: string; filialNome: string; fornecedorId: string; fornecedorNome: string; cnpj: string; itens: PItem[]; cond: string; status: Status };
 type Toast = { id: number; msg: string; kind: 'success' | 'error' | 'info' };
 
-// Filiais e fornecedores NÃƒO sÃ£o mais listas fixas neste arquivo. Antes havia
+// Filiais e fornecedores NÃO são mais listas fixas neste arquivo. Antes havia
 // `FILIAIS = [matriz, filial-rj, cd-campinas]` e `FORNECEDORES = [f1..f4]` com
 // ids inventados, e o modal de "Nova Compra" enviava esses ids ao backend. Como
-// o banco usa cuid, TODO envio era rejeitado com "Filial invÃ¡lida para esta
-// empresa" â€” o botÃ£o "Registrar SOLICITADA" nÃ£o funcionava. Agora as duas listas
-// vÃªm de `GET /compras`, que as devolve no mesmo payload.
-// Ordem do fluxo de Status possÃ­veis de uma compra (SOLICITADA -> PEDIDO ->
-// RECEBIDA). Ã‰ a ordem do processo, nÃ£o um dado de exemplo.
+// o banco usa cuid, TODO envio era rejeitado com "Filial inválida para esta
+// empresa" — o botão "Registrar SOLICITADA" não funcionava. Agora as duas listas
+// vêm de `GET /compras`, que as devolve no mesmo payload.
+// Ordem do fluxo de Status possíveis de uma compra (SOLICITADA -> PEDIDO ->
+// RECEBIDA). É a ordem do processo, não um dado de exemplo.
 const WORKFLOW: Status[] = ['SOLICITADA', 'PEDIDO', 'RECEBIDA'];
 
 const STATUS_CONFIG: Record<Status, { label: string; color: string; bg: string; dot: string; border: string }> = {
@@ -28,23 +28,23 @@ const STATUS_CONFIG: Record<Status, { label: string; color: string; bg: string; 
   RECEBIDA: { label: 'RECEBIDA', color: 'var(--nx-green)', bg: 'rgba(var(--nx-green-rgb), 0.10)', dot: 'var(--nx-green)', border: 'rgba(var(--nx-green-rgb), 0.30)' },
   CANCELADA: { label: 'CANCELADA', color: 'var(--nx-red)', bg: 'rgba(var(--nx-red-rgb), 0.10)', dot: 'var(--nx-red)', border: 'rgba(var(--nx-red-rgb), 0.30)' },
 };
-// Moeda e data seguem a preferÃªncia "Moeda" / "Formato data" da aba
-// ConfiguraÃ§Ãµes (lib/format) â€” antes fixavam BRL/pt-BR aqui.
+// Moeda e data seguem a preferência "Moeda" / "Formato data" da aba
+// Configurações (lib/format) — antes fixavam BRL/pt-BR aqui.
 const formatBRL = (v: number | string | null | undefined): string => fmtBRL(v);
 const formatDate = (iso: string | Date | null | undefined): string => {
   if (!iso) return '--';
-  // Datas "2025-09-22" sem hora sÃ£o interpretadas como UTC pelo navegador e
+  // Datas "2025-09-22" sem hora são interpretadas como UTC pelo navegador e
   // podem voltar um dia; o T12:00:00 ancora no meio-dia local.
   const d = typeof iso === 'string' ? new Date(iso + (iso.length === 10 ? 'T12:00:00' : '')) : iso;
   return fmtDate(d);
 };
 function totalOf(p: Purchase): number { return p.itens.reduce((s, i) => s + i.qtd * i.valorUnit, 0); }
 // O painel de detalhe usava `calcNovoCustoMedio(estoqueAntes, custoMedioAntes,
-// ...)`. Nem `estoqueAntes` nem `custoMedioAntes` vinham da API â€” os dois caÃ­am
-// no default e o cÃ¡lculo devolvia sempre o prÃ³prio valorUnit, rotulado como
-// "novo medio". Ou seja: um nÃºmero sem origem, apresentado como projeÃ§Ã£o.
-// Removido â€” o custo do produto Ã© atualizado no recebimento e quem manda nele
-// Ã© a aba Estoque.
+// ...)`. Nem `estoqueAntes` nem `custoMedioAntes` vinham da API — os dois caíam
+// no default e o cálculo devolvia sempre o próprio valorUnit, rotulado como
+// "novo medio". Ou seja: um número sem origem, apresentado como projeção.
+// Removido — o custo do produto é atualizado no recebimento e quem manda nele
+// é a aba Estoque.
 function getProgressColor(pct: number): string { if (pct >= 100) return 'var(--success)'; if (pct >= 50) return 'var(--primary)'; return 'var(--warningText)'; }
 
 function Card(p: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -91,7 +91,7 @@ function Stepper(p: { current: Status }) {
         return (
           <React.Fragment key={s}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 28, height: 28, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'monospace', background: done ? 'var(--nexus-accent)' : 'var(--nexus-panel-2)', color: '#fff', border: '1px solid ' + (done ? 'var(--nexus-accent)' : 'var(--nexus-border)') }}>{done ? 'âœ“' : (i + 1)}</span>
+              <span style={{ width: 28, height: 28, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'monospace', background: done ? 'var(--nexus-accent)' : 'var(--nexus-panel-2)', color: '#fff', border: '1px solid ' + (done ? 'var(--nexus-accent)' : 'var(--nexus-border)') }}>{done ? '✓' : (i + 1)}</span>
               <span style={{ fontSize: 10.5, color: done ? 'var(--nexus-accent-2)' : 'var(--nexus-muted)', fontWeight: 700 }}>{s}</span>
             </div>
             {i < WORKFLOW.length - 1 ? <div style={{ height: 2, flex: 1, margin: '0 8px', minWidth: 20, background: i < idx ? 'rgba(var(--nx-accent-rgb),0.60)' : 'var(--nexus-border)' }} /> : null}
@@ -110,10 +110,10 @@ function ErrorState(p: { msg: string; retry: () => void }) {
 
 export default function ComprasPage() {
   const router = useRouter();
-  // ComeÃ§a VAZIO de propÃ³sito. Antes a tela nascia com `MOCKS` (cinco compras
-  // fictÃ­cias) e sÃ³ trocava pela lista real quando a API devolvia alguma coisa
-  // â€” ou seja, uma empresa sem compras via compras inventadas. Agora a lista
-  // nasce vazia e Ã© preenchida sÃ³ com `GET /compras`.
+  // Começa VAZIO de propósito. Antes a tela nascia com `MOCKS` (cinco compras
+  // fictícias) e só trocava pela lista real quando a API devolvia alguma coisa
+  // — ou seja, uma empresa sem compras via compras inventadas. Agora a lista
+  // nasce vazia e é preenchida só com `GET /compras`.
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [search, setSearch] = useState('');
   const [searchDeb, setSearchDeb] = useState('');
@@ -130,13 +130,13 @@ export default function ComprasPage() {
   const [newItems, setNewItems] = useState<NewItem[]>([{ produto: '', sku: '', qtd: 1, valorUnit: 0 }]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [backendOk, setBackendOk] = useState(false);
-  // CatÃ¡logos vindos do backend. `filiais`/`fornecedores` nÃ£o podem mais ter id
-  // fixo, entÃ£o o valor inicial dos selects Ã© string vazia e o primeiro item real
+  // Catálogos vindos do backend. `filiais`/`fornecedores` não podem mais ter id
+  // fixo, então o valor inicial dos selects é string vazia e o primeiro item real
   // que chegar vira o selecionado.
   const [filiais, setFiliais] = useState<Array<{ id: string; nome: string }>>([]);
   const [fornecedores, setFornecedores] = useState<Array<{ id: string; nome: string; cnpj: string | null; status: string }>>([]);
   // Trava de envio: sem ela, dois cliques em "Registrar SOLICITADA" criam DUAS
-  // compras â€” o POST nÃ£o Ã© idempotente e o backend nÃ£o rejeita o segundo.
+  // compras — o POST não é idempotente e o backend não rejeita o segundo.
   const [salvando, setSalvando] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const toastId = useRef(0);
@@ -157,14 +157,14 @@ export default function ComprasPage() {
       const arr = Array.isArray(list) ? list : (list as { compras?: unknown[] }).compras;
       const fil = (list as { filiais?: Array<{ id: string; nome: string }> }).filiais;
       const forn = (list as { fornecedores?: Array<{ id: string; nome: string; cnpj: string | null; status: string }> }).fornecedores;
-      // CatÃ¡logos: uma resposta bem-sucedida sempre repÃµe as listas, mesmo
-      // quando estÃ£o vazias â€” caso contrÃ¡rio o select ficaria mostrando a filial
+      // Catálogos: uma resposta bem-sucedida sempre repõe as listas, mesmo
+      // quando estão vazias — caso contrário o select ficaria mostrando a filial
       // de uma empresa anterior.
       setFiliais(Array.isArray(fil) ? fil : []);
       setFornecedores(Array.isArray(forn) ? forn : []);
-      // `length > 0` no if jÃ¡ era um bug: uma empresa legitimamente sem compras
+      // `length > 0` no if já era um bug: uma empresa legitimamente sem compras
       // nunca marcava o backend como conectado e nunca limpava a lista anterior.
-      // Uma resposta vÃ¡lida â€” inclusive vazia â€” Ã© sucesso.
+      // Uma resposta válida — inclusive vazia — é sucesso.
       const mapped: Purchase[] = (Array.isArray(arr) ? arr : []).map((c: unknown) => {
         const r = c as Record<string, unknown>;
         const fornRel = r.fornecedor as Record<string, unknown> | undefined;
@@ -173,28 +173,28 @@ export default function ComprasPage() {
         return {
           // Todo campo vem do banco. Antes havia um por um de defaults que
           // fabricavam registro: `sem-id-0`, data fixa '2025-09-20', filial
-          // 'Matriz Sao Paulo', fornecedor 'f1' e status 'SOLICITADA' â€” se um
+          // 'Matriz Sao Paulo', fornecedor 'f1' e status 'SOLICITADA' — se um
           // campo viesse vazio, a tela mostrava um dado inventado como se fosse real.
           id: String(r.id ?? ''),
           data: String(r.dataCompra ?? r.createdAt ?? ''),
           filialId: String(r.filialId ?? ''),
-          filialNome: String(filialRel?.nome ?? 'â€”'),
+          filialNome: String(filialRel?.nome ?? '—'),
           fornecedorId: String(r.fornecedorId ?? ''),
-          fornecedorNome: String(fornRel?.nome ?? 'â€”'),
-          cnpj: String(fornRel?.cnpj ?? 'â€”'),
+          fornecedorNome: String(fornRel?.nome ?? '—'),
+          cnpj: String(fornRel?.cnpj ?? '—'),
           // O backend inclui `produto: { nome, sku }` no item. A tela lia
-          // `it.produto` direto e caÃ­a no default 'Item', mostrando
+          // `it.produto` direto e caía no default 'Item', mostrando
           // "[object Object]" no painel de detalhe.
           itens: (itens ?? []).map((it) => {
             const prod = it.produto as Record<string, unknown> | undefined;
             return {
-              produto: String(prod?.nome ?? 'â€”'),
-              sku: String(prod?.sku ?? 'â€”'),
+              produto: String(prod?.nome ?? '—'),
+              sku: String(prod?.sku ?? '—'),
               qtd: Number(it.quantidade ?? 0),
               valorUnit: Number(it.valorUnit ?? 0),
             };
           }),
-          cond: String(r.condPagamento ?? 'â€”'),
+          cond: String(r.condPagamento ?? '—'),
           status: (r.status as Status) ?? 'SOLICITADA',
         };
       });
@@ -206,11 +206,11 @@ export default function ComprasPage() {
       setBackendOk(true);
       setLoadError(null);
     } catch (e) {
-      // Antes: `catch { setLoadError(null) }` â€” o catch fazia o CONTRARIO do
+      // Antes: `catch { setLoadError(null) }` — o catch fazia o CONTRARIO do
       // nome. Um 403/500 deixava a tela vazia, sem nenhuma mensagem e sem o
       // "Tentar novamente", parecendo uma empresa sem compras.
       setBackendOk(false);
-      setLoadError(e instanceof Error && e.message ? e.message : 'NÃ£o foi possÃ­vel carregar as compras.');
+      setLoadError(e instanceof Error && e.message ? e.message : 'Não foi possível carregar as compras.');
     }
   }, []);
   useEffect(() => {
@@ -241,8 +241,8 @@ export default function ComprasPage() {
       return (p.id + ' ' + p.fornecedorNome + ' ' + p.itens.map((i) => i.produto + ' ' + i.sku).join(' ')).toLowerCase().includes(q);
     });
   }, [purchases, searchDeb, statusFilter, filialFilter, fornecedorFilter]);
-  // "Recebidas no mes" contava TODAS as compras RECEBIDA, de qualquer data â€”
-  // o rÃ³tulo prometia o mÃªs e o nÃºmero nÃ£o era do mÃªs.
+  // "Recebidas no mes" contava TODAS as compras RECEBIDA, de qualquer data —
+  // o rótulo prometia o mês e o número não era do mês.
   const recebidasMes = useMemo(() => {
     const hoje = new Date();
     return purchases.filter((p) => {
@@ -251,9 +251,9 @@ export default function ComprasPage() {
       return !Number.isNaN(d.getTime()) && d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
     }).length;
   }, [purchases]);
-  // A mÃ©trica real desta tela: quanto ainda estÃ¡ comprometido com o fornecedor e
-  // ainda nÃ£o virou estoque. Substitui o KPI "Economia", que dependia de
-  // `custoMedioAntes` â€” campo que a API nunca devolve, entÃ£o valia sempre
+  // A métrica real desta tela: quanto ainda está comprometido com o fornecedor e
+  // ainda não virou estoque. Substitui o KPI "Economia", que dependia de
+  // `custoMedioAntes` — campo que a API nunca devolve, então valia sempre
   // R$ 0,00 apresentado como economia real.
   const emAberto = useMemo(() => purchases.filter((p) => p.status === 'SOLICITADA' || p.status === 'PEDIDO').reduce((s, p) => s + totalOf(p), 0), [purchases]);
   const kpis = useMemo(() => {
@@ -273,7 +273,7 @@ export default function ComprasPage() {
         pushToast(`Status atualizado para ${next}`, 'success');
       })
       .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel atualizar a compra', 'error');
+        pushToast(error instanceof Error ? error.message : 'Não foi possível atualizar a compra', 'error');
       });
   }, [purchases, pushToast]);
   const cancelPurchase = useCallback((id: string) => {
@@ -284,21 +284,21 @@ export default function ComprasPage() {
         pushToast('Compra cancelada no backend.', 'info');
       })
       .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel cancelar a compra', 'error');
+        pushToast(error instanceof Error ? error.message : 'Não foi possível cancelar a compra', 'error');
       });
   }, [pushToast]);
   const confirmRecebimento = useCallback((id: string) => {
     api.post(`/compras/${id}/receber`)
       .then(() => {
         // Receber muda estoque, custo do produto e financeiro no servidor. A
-        // atualizaÃ§Ã£o otimista de status sozinha deixaria a tela com dado velho,
-        // entÃ£o recarrega a lista para o que aparece ser o que estÃ¡ gravado.
+        // atualização otimista de status sozinha deixaria a tela com dado velho,
+        // então recarrega a lista para o que aparece ser o que está gravado.
         setPurchases((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'RECEBIDA' as Status } : p)));
         void load();
         pushToast('Recebimento confirmado: estoque, custo e despesa gravados.', 'success');
       })
       .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel confirmar o recebimento', 'error');
+        pushToast(error instanceof Error ? error.message : 'Não foi possível confirmar o recebimento', 'error');
       });
   }, [pushToast, load]);
   const handleAddNew = useCallback(() => {
@@ -307,17 +307,17 @@ export default function ComprasPage() {
     if (!newForn) { pushToast('Selecione um fornecedor cadastrado.', 'error'); return; }
     const valid = newItems.filter((i) => i.qtd > 0 && i.valorUnit > 0 && (i.produto.trim() || i.sku.trim()));
     if (valid.length === 0) { pushToast('Adicione ao menos 1 item valido.', 'error'); return; }
-    // A validaÃ§Ã£o do fornecedor olha a lista REAL do backend. Antes apontava
+    // A validação do fornecedor olha a lista REAL do backend. Antes apontava
     // para a constante FORNECEDORES (f1..f4), que passava sempre e deixava o
-    // prÃ³prio id invÃ¡lido ser enviado para o banco.
+    // próprio id inválido ser enviado para o banco.
     const forn = fornecedores.find((f) => f.id === newForn);
     if (!forn) {
       pushToast('Selecione um fornecedor cadastrado no backend antes de registrar a compra.', 'error');
       return;
     }
-    // O POST /compras sÃ³ aceita fornecedor Ativo (regra do prÃ³prio backend).
+    // O POST /compras só aceita fornecedor Ativo (regra do próprio backend).
     if (forn.status && forn.status !== 'Ativo') {
-      pushToast(`O fornecedor ${forn.nome} estÃ¡ ${forn.status} e nÃ£o aceita nova compra.`, 'error');
+      pushToast(`O fornecedor ${forn.nome} está ${forn.status} e não aceita nova compra.`, 'error');
       return;
     }
     setSalvando(true);
@@ -327,14 +327,14 @@ export default function ComprasPage() {
         const itens = valid.map((item) => {
           const alvoNome = item.produto.trim().toLowerCase();
           const alvoSku = item.sku.trim().toLowerCase();
-          // Casamento por SKU exato tem prioridade; o nome sÃ³ entra como
-          // segunda opÃ§Ã£o, e SEM o `includes()` que existia antes. Com ele, um
+          // Casamento por SKU exato tem prioridade; o nome só entra como
+          // segunda opção, e SEM o `includes()` que existia antes. Com ele, um
           // item sem nome ("") casava com o primeiro produto da lista porque
-          // `nome.includes('')` Ã© sempre verdadeiro â€” a compra saÃ­a com o
+          // `nome.includes('')` é sempre verdadeiro — a compra saía com o
           // produto errado, sem aviso.
           const match = produtos.find((p) => String(p.sku ?? '').toLowerCase() === alvoSku && alvoSku !== '')
             ?? (alvoNome ? produtos.find((p) => String(p.nome ?? '').toLowerCase() === alvoNome) : undefined);
-          if (!match) throw new Error(`Produto nÃ£o encontrado: ${item.produto || item.sku || 'item'}`);
+          if (!match) throw new Error(`Produto não encontrado: ${item.produto || item.sku || 'item'}`);
           return { produtoId: String(match.id), quantidade: Number(item.qtd), valorUnit: Number(item.valorUnit) };
         });
 
@@ -353,7 +353,7 @@ export default function ComprasPage() {
         pushToast('Compra registrada como SOLICITADA no backend.', 'success');
       })
       .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'NÃ£o foi possÃ­vel registrar a compra', 'error');
+        pushToast(error instanceof Error ? error.message : 'Não foi possível registrar a compra', 'error');
       })
       .finally(() => { setSalvando(false); });
   }, [newItems, newFilial, newForn, newCond, load, pushToast, salvando, fornecedores]);
@@ -446,7 +446,7 @@ export default function ComprasPage() {
             {loadError ? <ErrorState msg={loadError} retry={() => void load()} /> : null}
           </div>
           <div style={{ borderTop: '1px solid var(--borderLight)', background: 'var(--nexus-panel-2)', padding: '12px 16px', fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Zap size={13} /> backend: GET /compras Â· POST /compras Â· POST /compras/:id/confirmar|receber|cancelar Â· {filtered.length} registros Â· {periodo}
+            <Zap size={13} /> backend: GET /compras · POST /compras · POST /compras/:id/confirmar|receber|cancelar · {filtered.length} registros · {periodo}
           </div>
         </div>
       </main>
@@ -476,7 +476,7 @@ export default function ComprasPage() {
                   {selected.itens.map((it, i) => (
                     <div key={i} style={{ fontSize: 12, color: 'var(--nexus-text)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{it.produto}</strong><span>{formatBRL(it.qtd * it.valorUnit)}</span></div>
-                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', marginTop: 4 }}>{it.sku} Â· {it.qtd}x {formatBRL(it.valorUnit)}</div>
+                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', marginTop: 4 }}>{it.sku} · {it.qtd}x {formatBRL(it.valorUnit)}</div>
                     </div>
                   ))}
                 </div>

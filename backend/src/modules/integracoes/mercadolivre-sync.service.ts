@@ -28,9 +28,9 @@
 //   - FINALIZADA só com EVIDÊNCIA de pagamento da API (status 'paid' OU
 //     payment 'approved'); cancelado vira CANCELADA; o restante vira ABERTA.
 //     Moeda diferente de BRL: recusado (não há conversão neste projeto).
-//   - NÃ£o cria financeiro, caixa ou indicadores; pedidos ativos geram baixa
-//     de estoque idempotente na mesma transaÃ§Ã£o, e cancelamentos devolvem
-//     o saldo uma vez. Caixa e financeiro seguem sem conciliaÃ§Ã£o automÃ¡tica.
+//   - Não cria financeiro, caixa ou indicadores; pedidos ativos geram baixa
+//     de estoque idempotente na mesma transação, e cancelamentos devolvem
+//     o saldo uma vez. Caixa e financeiro seguem sem conciliação automática.
 //
 //   REGISTRO DE ORIGEM/RESULTADO
 //   - Cada execução grava linha em `Importacao` (tipo MERCADO_LIVRE_*) com

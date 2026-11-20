@@ -69,7 +69,7 @@ model Empresa {
   cidade                   String?
   estado                   String?
   // Fuso IANA da empresa. O registro de ponto usa para decidir a que DIA
-  // pertence uma marcaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o: ÃƒÆ’Ã‚Â s 23h30 em SÃƒÆ’Ã‚Â£o Paulo a batida ÃƒÆ’Ã‚Â© do dia 27, e o
+  // pertence uma marcação: às 23h30 em São Paulo a batida é do dia 27, e o
   // mesmo instante em UTC seria do dia 28. Ausente => `America/Sao_Paulo`.
   fusoHorario              String?                   @default("America/Sao_Paulo")
   status                   StatusGeral               @default(ATIVO)
@@ -155,9 +155,9 @@ model Empresa {
   vendaPagamentos          VendaPagamento[]
 }
 
-// --- ImportaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de dados (CSV/API) --------------------------------------------
+// --- Importação de dados (CSV/API) --------------------------------------------
 // A tabela existe desde a migration 202609130001_importacao; o model entrou no
-// schema na FASE 1 (correÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o das migrations) para manter paridade total entre
+// schema na FASE 1 (correção das migrations) para manter paridade total entre
 // schema.prisma e a cadeia de migrations (migrate diff vazio).
 model Importacao {
   id           String   @id
@@ -187,9 +187,9 @@ model Filial {
   cnpj                 String?
   cidade               String?
   estado               String?
-  // FASE 1 PDV PRO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â fuso IANA da filial. Prevalece sobre Empresa.fusoHorario
+  // FASE 1 PDV PRO — fuso IANA da filial. Prevalece sobre Empresa.fusoHorario
   // para data operacional do caixa/vendas. Ausente => America/Sao_Paulo.
-  // UTC continua sendo o instante absoluto (createdAt); o fuso sÃƒÆ’Ã‚Â³ deriva o DIA operacional.
+  // UTC continua sendo o instante absoluto (createdAt); o fuso só deriva o DIA operacional.
   fusoHorario          String?                 @default("America/Sao_Paulo")
   status               StatusGeral             @default(ATIVO)
   origem               Origem                  @default(MANUAL)
@@ -277,9 +277,9 @@ model Permissao {
   @@index([usuarioId])
 }
 
-// Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 5 - recupera+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o de senha. Armazena apenas o hash do token; o valor
-// bruto +ÃƒÂ¯Ã‚Â¿Ã‚Â½ entregue uma +ÃƒÂ¯Ã‚Â¿Ã‚Â½nica vez ao usu+ÃƒÂ¯Ã‚Â¿Ã‚Â½rio pelo canal de envio (e-mail),
-// que ainda n+ÃƒÂ¯Ã‚Â¿Ã‚Â½o est+ÃƒÂ¯Ã‚Â¿Ã‚Â½ integrado nesta base (ver PEND+ÃƒÂ¯Ã‚Â¿Ã‚Â½NCIAS no relat+ÃƒÂ¯Ã‚Â¿Ã‚Â½rio).
+// Se+ï¿½+ï¿½o 5 - recupera+ï¿½+ï¿½o de senha. Armazena apenas o hash do token; o valor
+// bruto +ï¿½ entregue uma +ï¿½nica vez ao usu+ï¿½rio pelo canal de envio (e-mail),
+// que ainda n+ï¿½o est+ï¿½ integrado nesta base (ver PEND+ï¿½NCIAS no relat+ï¿½rio).
 model TokenRecuperacaoSenha {
   id        String    @id @default(cuid())
   usuarioId String
@@ -313,9 +313,10 @@ model Auditoria {
   @@index([usuarioId])
   @@index([entidade, entidadeId])
   @@index([createdAt])
+  @@index([empresaId])
 }
 
-// --- PARTE 2: Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 8 Produtos ---
+// --- PARTE 2: Se+ï¿½+ï¿½o 8 Produtos ---
 model Categoria {
   id        String    @id @default(cuid())
   empresaId String
@@ -348,7 +349,7 @@ model Produto {
   custo                     Decimal                 @db.Decimal(14, 6)
   precoVenda                Decimal                 @db.Decimal(10, 2)
   margem                    Decimal?                @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
-  unidade                   String                  @default("UN") // unidade legado ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mantida para compatibilidade de leitura antiga
+  unidade                   String                  @default("UN") // unidade legado — mantida para compatibilidade de leitura antiga
   estoqueMinimo             Decimal                 @default(5) @db.Decimal(14, 3)
   estoqueMaximo             Decimal                 @default(100) @db.Decimal(14, 3)
   pontoPedido               Decimal                 @default(0) @db.Decimal(14, 3)
@@ -406,14 +407,14 @@ model ProducaoKit {
   filialId            String
   produtoKitId        String
   usuarioId           String?
-  quantidade          Decimal  @db.Decimal(14, 3) // quantidade produzida (na unidade de produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o)
-  unidadeProducao     String? // sÃƒÆ’Ã‚Â­mbolo da unidade de produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  quantidade          Decimal  @db.Decimal(14, 3) // quantidade produzida (na unidade de produção)
+  unidadeProducao     String? // símbolo da unidade de produção
   fatorAplicado       Decimal? @db.Decimal(14, 6) // fator para converter para unidade base do produto
-  quantidadeProduzida Decimal  @db.Decimal(14, 3) // quantidade efetivamente produzida (apÃƒÆ’Ã‚Â³s perdas)
-  perda               Decimal  @default(0) @db.Decimal(14, 3) // perda registrada na produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  quantidadeProduzida Decimal  @db.Decimal(14, 3) // quantidade efetivamente produzida (após perdas)
+  perda               Decimal  @default(0) @db.Decimal(14, 3) // perda registrada na produção
   custoUnitario       Decimal  @db.Decimal(14, 6)
   custoTotal          Decimal  @db.Decimal(14, 2)
-  composicaoSnapshot  Json // cÃƒÆ’Ã‚Â³pia da ficha tÃƒÆ’Ã‚Â©cnica, fatores e custos da data da produÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  composicaoSnapshot  Json // cópia da ficha técnica, fatores e custos da data da produção
   idempotencyKey      String
   createdAt           DateTime @default(now())
   filial              Filial   @relation(fields: [filialId], references: [id], onDelete: Restrict)
@@ -426,7 +427,7 @@ model ProducaoKit {
   @@index([filialId, createdAt])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 9 Estoque ---
+// --- Se+ï¿½+ï¿½o 9 Estoque ---
 model Estoque {
   id         String               @id @default(cuid())
   empresaId  String
@@ -437,7 +438,7 @@ model Estoque {
   filial     Filial               @relation(fields: [filialId], references: [id])
   quantidade Decimal              @default(0) @db.Decimal(14, 3)
   valorTotal Decimal              @default(0) @db.Decimal(14, 2)
-  lote       String? // nÃƒÆ’Ã‚Âºmero do lote para controle de validade
+  lote       String? // número do lote para controle de validade
   local      String? // local de armazenamento (prateleira, estante, etc.)
   updatedAt  DateTime             @updatedAt
   contagens  ContagemInventario[]
@@ -446,51 +447,51 @@ model Estoque {
   @@index([empresaId])
 }
 
-// Decis+ÃƒÂ¯Ã‚Â¿Ã‚Â½o arquitetural (Fase 3, d+ÃƒÂ¯Ã‚Â¿Ã‚Â½vida t+ÃƒÂ¯Ã‚Â¿Ã‚Â½cnica registrada em
-// DEBITO-TECNICO.md item 8): giro real precisa de estoque m+ÃƒÂ¯Ã‚Â¿Ã‚Â½dio no
-// per+ÃƒÂ¯Ã‚Â¿Ã‚Â½odo, que por sua vez precisa de uma s+ÃƒÂ¯Ã‚Â¿Ã‚Â½rie hist+ÃƒÂ¯Ã‚Â¿Ã‚Â½rica de saldo di+ÃƒÂ¯Ã‚Â¿Ã‚Â½rio
-// ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ a posi+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o atual (Estoque) e o log de eventos (EstoqueMovimentacao) n+ÃƒÂ¯Ã‚Â¿Ã‚Â½o
+// Decis+ï¿½o arquitetural (Fase 3, d+ï¿½vida t+ï¿½cnica registrada em
+// DEBITO-TECNICO.md item 8): giro real precisa de estoque m+ï¿½dio no
+// per+ï¿½odo, que por sua vez precisa de uma s+ï¿½rie hist+ï¿½rica de saldo di+ï¿½rio
+// ï¿½ï¿½ï¿½ a posi+ï¿½+ï¿½o atual (Estoque) e o log de eventos (EstoqueMovimentacao) n+ï¿½o
 // bastam sozinhos porque reconstruir o saldo em cada dia passado a partir
-// s+ÃƒÂ¯Ã‚Â¿Ã‚Â½ do log seria caro de consultar toda vez. Uma linha por
-// produto+ÃƒÂ¯Ã‚Â¿Ã‚Â½filial+ÃƒÂ¯Ã‚Â¿Ã‚Â½dia +ÃƒÂ¯Ã‚Â¿Ã‚Â½ o suficiente (n+ÃƒÂ¯Ã‚Â¿Ã‚Â½o guarda hist+ÃƒÂ¯Ã‚Â¿Ã‚Â½rico de pre+ÃƒÂ¯Ã‚Â¿Ã‚Â½o por
-// unidade nem lote ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ isso seria over-engineering para o que a Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 9
+// s+ï¿½ do log seria caro de consultar toda vez. Uma linha por
+// produto+ï¿½filial+ï¿½dia +ï¿½ o suficiente (n+ï¿½o guarda hist+ï¿½rico de pre+ï¿½o por
+// unidade nem lote ï¿½ï¿½ï¿½ isso seria over-engineering para o que a Se+ï¿½+ï¿½o 9
 // pede). Alimentada por src/scripts/gerarSnapshotsDiarios.ts (rodado uma
-// vez por dia por um agendador externo ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ este projeto n+ÃƒÂ¯Ã‚Â¿Ã‚Â½o inclui um
+// vez por dia por um agendador externo ï¿½ï¿½ï¿½ este projeto n+ï¿½o inclui um
 // scheduler) ou por POST /estoque/snapshot/gerar.
 // ===========================================================================
-//  Ciclo 6 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â SessÃƒÆ’Ã‚Â£o de InventÃƒÆ’Ã‚Â¡rio
+//  Ciclo 6 — Sessão de Inventário
 // ===========================================================================
 //
-//  POR QUE UMA SESSÃƒÆ’Ã†â€™O E NÃƒÆ’Ã†â€™O UM CAMPO NA FOLHA
+//  POR QUE UMA SESSÃO E NÃO UM CAMPO NA FOLHA
 //  -----------------------------------------
-//  A folha de inventÃƒÆ’Ã‚Â¡rio morre com a tela: fechar o navegador perde a contagem
-//  inteira. Um inventÃƒÆ’Ã‚Â¡rio de depÃƒÆ’Ã‚Â³sito leva horas ou dias, e a empresa fecha a
-//  loja ÃƒÆ’Ã‚Â s 18h com metade dela contada. A sessÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© o registro que sobrevive ao
-//  navegador ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â reabrir amanhÃƒÆ’Ã‚Â£ continua de onde parou.
+//  A folha de inventário morre com a tela: fechar o navegador perde a contagem
+//  inteira. Um inventário de depósito leva horas ou dias, e a empresa fecha a
+//  loja às 18h com metade dela contada. A sessão é o registro que sobrevive ao
+//  navegador — reabrir amanhã continua de onde parou.
 //
-//  O SALDO DO SISTEMA ÃƒÆ’Ã¢â‚¬Â° CONGELADO NA ABERTURA
+//  O SALDO DO SISTEMA É CONGELADO NA ABERTURA
 //  --------------------------------------------
-//  `quantidadeSistema` ÃƒÆ’Ã‚Â© gravada no momento em que a sessÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© criada e nunca
-//  muda. Isso nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© economia de consulta, ÃƒÆ’Ã‚Â© o que dÃƒÆ’Ã‚Â¡ sentido ao nÃƒÆ’Ã‚Âºmero: se o
+//  `quantidadeSistema` é gravada no momento em que a sessão é criada e nunca
+//  muda. Isso não é economia de consulta, é o que dá sentido ao número: se o
 //  estoque muda no meio da contagem (uma venda, uma entrada de compra) e a
-//  divergÃƒÆ’Ã‚Âªncia fosse recalculada a cada leitura, o inventÃƒÆ’Ã‚Â¡rio compararia a
-//  contagem fÃƒÆ’Ã‚Â­sica com um alvo que se moveu ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e acharia desvio onde sÃƒÆ’Ã‚Â³ houve
-//  operaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o normal. Congelado, a divergÃƒÆ’Ã‚Âªncia ÃƒÆ’Ã‚Â© a diferenÃƒÆ’Ã‚Â§a entre o que estava
-//  lÃƒÆ’Ã‚Â¡ quando alguÃƒÆ’Ã‚Â©m abriu a folha e o que realmente existe.
+//  divergência fosse recalculada a cada leitura, o inventário compararia a
+//  contagem física com um alvo que se moveu — e acharia desvio onde só houve
+//  operação normal. Congelado, a divergência é a diferença entre o que estava
+//  lá quando alguém abriu a folha e o que realmente existe.
 //
-//  A IDENTIFICAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã†â€™O DO ITEM ÃƒÆ’Ã¢â‚¬Â° COPIADA, NÃƒÆ’Ã†â€™O REFERENCIADA
+//  A IDENTIFICAÇÃO DO ITEM É COPIADA, NÃO REFERENCIADA
 //  ---------------------------------------------------
-//  Produto, unidade e local sÃƒÆ’Ã‚Â£o gravados como texto. Um inventÃƒÆ’Ã‚Â¡rio ÃƒÆ’Ã‚Â© documento
-//  de trabalho: ele precisa continuar legÃƒÆ’Ã‚Â­vel depois que o produto foi
+//  Produto, unidade e local são gravados como texto. Um inventário é documento
+//  de trabalho: ele precisa continuar legível depois que o produto foi
 //  renomeado ou desativado, e uma linha que vira "null" porque o cadastro
-//  mudou ÃƒÆ’Ã‚Â© pior que inÃƒÆ’Ã‚Âºtil. O `estoqueId` fica sÃƒÆ’Ã‚Â³ como rastro, e pode sumir.
+//  mudou é pior que inútil. O `estoqueId` fica só como rastro, e pode sumir.
 //
-//  VISÃƒÆ’Ã†â€™O CEGA FICA REGISTRADA
+//  VISÃO CEGA FICA REGISTRADA
 //  --------------------------
-//  `cegas` diz se aquela sessÃƒÆ’Ã‚Â£o foi contada sem o saldo visÃƒÆ’Ã‚Â­vel. Um perÃƒÆ’Ã‚Â­odo
-//  depois, o histÃƒÆ’Ã‚Â³rico mostra se a contagem foi cega ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e o `criadoPorId` diz
-//  quem abriu. ÃƒÆ’Ã¢â‚¬Â° a diferenÃƒÆ’Ã‚Â§a entre "inventÃƒÆ’Ã‚Â¡rio" e "conferÃƒÆ’Ã‚Âªncia", e precisa ser
-//  auditÃƒÆ’Ã‚Â¡vel.
+//  `cegas` diz se aquela sessão foi contada sem o saldo visível. Um período
+//  depois, o histórico mostra se a contagem foi cega — e o `criadoPorId` diz
+//  quem abriu. É a diferença entre "inventário" e "conferência", e precisa ser
+//  auditável.
 
 enum StatusSessaoInventario {
   ABERTA
@@ -502,18 +503,18 @@ model SessaoInventario {
   id             String                 @id @default(cuid())
   empresaId      String
   empresa        Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  /// RÃƒÆ’Ã‚Â³tulo que a empresa dÃƒÆ’Ã‚Â¡ ÃƒÆ’Ã‚Â  contagem ("InventÃƒÆ’Ã‚Â¡rio 3T2026 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Centro").
+  /// Rótulo que a empresa dá à contagem ("Inventário 3T2026 — Centro").
   nome           String
   filialId       String
   filial         Filial                 @relation(fields: [filialId], references: [id])
   status         StatusSessaoInventario @default(ABERTA)
-  /// `true` quando a folha foi aberta sem o saldo do sistema ÃƒÆ’Ã‚Â  vista.
+  /// `true` quando a folha foi aberta sem o saldo do sistema à vista.
   cegas          Boolean                @default(true)
-  /// Quem abriu a folha e quando ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a autoria ÃƒÆ’Ã‚Â© o que dÃƒÆ’Ã‚Â¡ valor ao histÃƒÆ’Ã‚Â³rico.
+  /// Quem abriu a folha e quando — a autoria é o que dá valor ao histórico.
   criadoPorId    String?
   criadoPor      Usuario?               @relation("SessaoInventarioCriador", fields: [criadoPorId], references: [id])
   criadoEm       DateTime               @default(now())
-  /// Quem fechou a contagem. NULL enquanto a sessÃƒÆ’Ã‚Â£o estÃƒÆ’Ã‚Â¡ aberta.
+  /// Quem fechou a contagem. NULL enquanto a sessão está aberta.
   concluidoPorId String?
   concluidoPor   Usuario?               @relation("SessaoInventarioConclusor", fields: [concluidoPorId], references: [id])
   concluidoEm    DateTime?
@@ -524,7 +525,7 @@ model SessaoInventario {
   contagens ContagemInventario[]
 
   /// Duas folhas abertas na mesma filial transformam uma contagem em duas
-  /// versÃƒÆ’Ã‚Âµes diferentes do mesmo nÃƒÆ’Ã‚Âºmero.
+  /// versões diferentes do mesmo número.
   @@index([empresaId, status])
   @@index([empresaId, filialId, criadoEm])
 }
@@ -536,19 +537,19 @@ model ContagemInventario {
   sessaoId  String
   sessao    SessaoInventario @relation(fields: [sessaoId], references: [id], onDelete: Cascade)
   /// Rastro da linha de estoque contada. `SetNull`: o produto pode ser
-  /// desativado ou a linha removida, e a contagem jÃƒÆ’Ã‚Â¡ feita continua valendo.
+  /// desativado ou a linha removida, e a contagem já feita continua valendo.
   estoqueId String?
   estoque   Estoque?         @relation(fields: [estoqueId], references: [id], onDelete: SetNull)
 
-  // CÃƒÆ’Ã‚Â³pia do que foi contado ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o inventÃƒÆ’Ã‚Â¡rio precisa continuar legÃƒÆ’Ã‚Â­vel.
+  // Cópia do que foi contado — o inventário precisa continuar legível.
   produtoId         String
   produtoNome       String
   unidade           String?
   local             String?
   /// Saldo do sistema NO MOMENTO DA ABERTURA. Congelado, nunca recalculado.
   quantidadeSistema Decimal   @db.Decimal(14, 3)
-  /// NULL enquanto ninguÃƒÆ’Ã‚Â©m contou. ÃƒÆ’Ã¢â‚¬Â° o que distingue "nÃƒÆ’Ã‚Â£o contado" de
-  /// "contado como zero" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â os dois sÃƒÆ’Ã‚Â£oZero no papel, e um deles ÃƒÆ’Ã‚Â© erro.
+  /// NULL enquanto ninguém contou. É o que distingue "não contado" de
+  /// "contado como zero" — os dois sãoZero no papel, e um deles é erro.
   quantidadeContada Decimal?  @db.Decimal(14, 3)
   /// Quem contou este item e quando.
   contadoPorId      String?
@@ -563,11 +564,11 @@ model ContagemInventario {
 }
 
 // ===========================================================================
-//  Snapshot diario de saldo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â base do giro real (ver DEBITO-TECNICO.md item 8).
+//  Snapshot diario de saldo — base do giro real (ver DEBITO-TECNICO.md item 8).
 // ===========================================================================
 
 // ===========================================================================
-//  Snapshot diario de saldo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â base do giro real (ver DEBITO-TECNICO.md item 8).
+//  Snapshot diario de saldo — base do giro real (ver DEBITO-TECNICO.md item 8).
 //  Uma linha por dia, filial e produto: reconstruir o saldo de um dia passado
 //  a partir so do log de movimentos seria caro de consultar toda vez.
 // ===========================================================================
@@ -597,9 +598,9 @@ model EstoqueMovimentacao {
   produtoId       String
   produto         Produto        @relation(fields: [produtoId], references: [id])
   // Filial onde o efeito de estoque desta linha ocorre. Para TRANSFERENCIA,
-  // esta +ÃƒÂ¯Ã‚Â¿Ã‚Â½ a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
-  // aponta a filial que recebe ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ uma segunda linha (tipo TRANSFERENCIA,
-  // quantidade positiva) +ÃƒÂ¯Ã‚Â¿Ã‚Â½ criada na filial de destino, ligada pelo mesmo
+  // esta +ï¿½ a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
+  // aponta a filial que recebe ï¿½ï¿½ï¿½ uma segunda linha (tipo TRANSFERENCIA,
+  // quantidade positiva) +ï¿½ criada na filial de destino, ligada pelo mesmo
   // valor de `documento` (ver estoque.service.ts).
   filialId        String
   filial          Filial         @relation("MovOrigem", fields: [filialId], references: [id])
@@ -619,14 +620,14 @@ model EstoqueMovimentacao {
   @@index([createdAt])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 11 Fornecedores ---
+// --- Se+ï¿½+ï¿½o 11 Fornecedores ---
 model Fornecedor {
-  // v2 (aba /fornecedores ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â artefato "nexus-fornecedores-add-v2"):
-  // - status virou TEXT: o design system exige Ativo/CrÃƒÆ’Ã‚Â­tico/Inativo e o enum
-  //   StatusGeral nÃƒÆ’Ã‚Â£o tem "CrÃƒÆ’Ã‚Â­tico" (migraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o converte ATIVO/INATIVO/ARQUIVADO).
-  // - cnpjCpf renomeado para cnpj (campo do formulÃƒÆ’Ã‚Â¡rio ADD).
-  // - relaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o Produto[] renomeada para produtosVinculados para liberar o nome
-  //   `produtos` do CSV textual ("Camisa, BonÃƒÆ’Ã‚Â©") exigido pelo modal ADD.
+  // v2 (aba /fornecedores — artefato "nexus-fornecedores-add-v2"):
+  // - status virou TEXT: o design system exige Ativo/Crítico/Inativo e o enum
+  //   StatusGeral não tem "Crítico" (migração converte ATIVO/INATIVO/ARQUIVADO).
+  // - cnpjCpf renomeado para cnpj (campo do formulário ADD).
+  // - relação Produto[] renomeada para produtosVinculados para liberar o nome
+  //   `produtos` do CSV textual ("Camisa, Boné") exigido pelo modal ADD.
   // - categoria com default "Outros" para o POST legado (tela de Compras)
   //   continuar gravando sem enviar a coluna.
   id                 String             @id @default(cuid())
@@ -634,15 +635,15 @@ model Fornecedor {
   empresa            Empresa            @relation(fields: [empresaId], references: [id])
   nome               String
   cnpj               String?
-  categoria          String             @default("Outros") // Malharia, Jeans, BonÃƒÆ’Ã‚Â©s, AcessÃƒÆ’Ã‚Â³rios, CalÃƒÆ’Ã‚Â§ados, Outros
-  status             String             @default("Ativo") // Ativo, CrÃƒÆ’Ã‚Â­tico, Inativo
+  categoria          String             @default("Outros") // Malharia, Jeans, Bonés, Acessórios, Calçados, Outros
+  status             String             @default("Ativo") // Ativo, Crítico, Inativo
   contato            String?
   whatsapp           String?
   telefone           String?
   email              String?
   endereco           String?
-  produtos           String? // CSV "Camisa, BonÃƒÆ’Ã‚Â©" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o que o fornecedor fornece
-  condicaoPagamento  String? // ÃƒÆ’Ã¢â€šÂ¬ vista, 30 dias, 30/60, 30/60/90
+  produtos           String? // CSV "Camisa, Boné" — o que o fornecedor fornece
+  condicaoPagamento  String? // À vista, 30 dias, 30/60, 30/60/90
   observacoes        String?
   totalComprado      Decimal            @default(0) @db.Decimal(12, 2) // soma de CompraFornecedor.valor
   totalPedidos       Int                @default(0)
@@ -660,9 +661,9 @@ model Fornecedor {
   @@index([empresaId, categoria])
 }
 
-// ===== Fornecedores ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â pedidos de compra por fornecedor (SeÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o 11 v2) =====
-// Uma linha por pedido da aba /fornecedores. `compraId` ÃƒÆ’Ã‚Â© extensÃƒÆ’Ã‚Â£o do modelo
-// do artefato: sem o vÃƒÆ’Ã‚Â­nculo com a Compra original nÃƒÆ’Ã‚Â£o seria possÃƒÆ’Ã‚Â­vel
+// ===== Fornecedores — pedidos de compra por fornecedor (Seção 11 v2) =====
+// Uma linha por pedido da aba /fornecedores. `compraId` é extensão do modelo
+// do artefato: sem o vínculo com a Compra original não seria possível
 // estornar/atualizar o pedido quando a compra muda de status.
 model CompraFornecedor {
   id           String     @id @default(cuid())
@@ -680,15 +681,15 @@ model CompraFornecedor {
   @@index([empresaId, status])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 10 Compras ---
-// Decis+ÃƒÂ¯Ã‚Â¿Ã‚Â½o arquitetural (Fase 3): a filial de destino +ÃƒÂ¯Ã‚Â¿Ã‚Â½ definida na CRIA+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½O
-// da compra, n+ÃƒÂ¯Ã‚Â¿Ã‚Â½o solta no momento do recebimento. Motivo: uma ordem de
-// compra real j+ÃƒÂ¯Ã‚Â¿Ã‚Â½ nasce sabendo para onde a mercadoria vai (or+ÃƒÂ¯Ã‚Â¿Ã‚Â½amento,
-// centro de custo, planejamento de estoque da filial); aceitar a filial s+ÃƒÂ¯Ã‚Â¿Ã‚Â½
+// --- Se+ï¿½+ï¿½o 10 Compras ---
+// Decis+ï¿½o arquitetural (Fase 3): a filial de destino +ï¿½ definida na CRIA+ï¿½+ï¿½O
+// da compra, n+ï¿½o solta no momento do recebimento. Motivo: uma ordem de
+// compra real j+ï¿½ nasce sabendo para onde a mercadoria vai (or+ï¿½amento,
+// centro de custo, planejamento de estoque da filial); aceitar a filial s+ï¿½
 // no recebimento permitiria receber uma compra numa filial diferente da
-// planejada sem nenhum registro de que isso +ÃƒÂ¯Ã‚Â¿Ã‚Â½ uma exce+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o. Com
+// planejada sem nenhum registro de que isso +ï¿½ uma exce+ï¿½+ï¿½o. Com
 // Compra.filialId fixo, POST /compras/:id/receber deixa de aceitar
-// filialId no corpo e usa sempre compra.filialId ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½ imposs+ÃƒÂ¯Ã‚Â¿Ã‚Â½vel divergir.
+// filialId no corpo e usa sempre compra.filialId ï¿½ï¿½ï¿½ imposs+ï¿½vel divergir.
 model Compra {
   id              String       @id @default(cuid())
   empresaId       String
@@ -717,13 +718,13 @@ model CompraItem {
   produtoId      String
   produto        Produto  @relation(fields: [produtoId], references: [id])
   quantidade     Decimal  @db.Decimal(14, 3) // quantidade na unidade de compra
-  unidadeCompra  String? // sÃƒÆ’Ã‚Â­mbolo da unidade de compra no momento (ex: "saco", "cx", "kg")
+  unidadeCompra  String? // símbolo da unidade de compra no momento (ex: "saco", "cx", "kg")
   fatorAplicado  Decimal? @db.Decimal(14, 6) // fator usado para converter para unidade base
   quantidadeBase Decimal? @db.Decimal(14, 3) // quantidade convertida para unidade base
-  valorUnit      Decimal  @db.Decimal(14, 6) // preÃƒÆ’Ã‚Â§o por unidade de compra
+  valorUnit      Decimal  @db.Decimal(14, 6) // preço por unidade de compra
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 12 Clientes ---
+// --- Se+ï¿½+ï¿½o 12 Clientes ---
 model Cliente {
   id                 String      @id @default(cuid())
   empresaId          String
@@ -746,7 +747,7 @@ model Cliente {
   @@index([empresaId])
 }
 
-// --- PARTE 3: Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 13 Vendas ---
+// --- PARTE 3: Se+ï¿½+ï¿½o 13 Vendas ---
 enum StatusVenda {
   ABERTA
   FINALIZADA
@@ -775,10 +776,10 @@ model Venda {
   cliente               Cliente?            @relation(fields: [clienteId], references: [id])
   funcionarioId         String? // Usuario que vendeu
   formaPagamento        FormaPagamento      @default(DINHEIRO)
-  /// Em quantas parcelas o cliente pagou (1 = ÃƒÆ’Ã‚Â  vista). O PDV oferecia 1x a 6x
-  /// e o cupom imprimia "3x", mas o nÃƒÆ’Ã‚Âºmero nÃƒÆ’Ã‚Â£o era gravado em lugar nenhum:
+  /// Em quantas parcelas o cliente pagou (1 = à vista). O PDV oferecia 1x a 6x
+  /// e o cupom imprimia "3x", mas o número não era gravado em lugar nenhum:
   /// o comprovante do cliente afirmava um parcelamento inexistente no sistema.
-  /// NÃƒÆ’Ã†â€™O implica receber em N parcelas no financeiro ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a receita continua
+  /// NÃO implica receber em N parcelas no financeiro — a receita continua
   /// uma linha pelo total; isto registra o que foi combinado na venda.
   parcelas              Int                 @default(1)
   status                StatusVenda         @default(ABERTA)
@@ -790,18 +791,18 @@ model Venda {
   pdvSincronizado       Boolean             @default(false)
   caixaId               String? // PDV: turno de caixa que fechou a venda
   caixa                 Caixa?              @relation(fields: [caixaId], references: [id])
-  // FASE 1 PDV PRO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â idempotÃƒÆ’Ã‚Âªncia: mesma key + mesma empresa = mesma operaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
-  // Nulo nas vendas antigas; novas vendas PDV devem preencher. O backend impÃƒÆ’Ã‚Âµe
-  // unicidade via tabela IdempotencyKey (fonte normativa), este campo ÃƒÆ’Ã‚Â© ÃƒÆ’Ã‚Â­ndice auxiliar.
+  // FASE 1 PDV PRO — idempotência: mesma key + mesma empresa = mesma operação.
+  // Nulo nas vendas antigas; novas vendas PDV devem preencher. O backend impõe
+  // unicidade via tabela IdempotencyKey (fonte normativa), este campo é índice auxiliar.
   idempotencyKey        String?
-  // FASE 1 PDV PRO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â dia operacional da filial (YYYY-MM-DD como Date UTC meia-noite).
-  // Derivado de createdAt + Filial.fusoHorario no momento da criaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o; nunca editado.
+  // FASE 1 PDV PRO — dia operacional da filial (YYYY-MM-DD como Date UTC meia-noite).
+  // Derivado de createdAt + Filial.fusoHorario no momento da criação; nunca editado.
   // Backfill cobre vendas antigas; novas vendas sempre preenchem.
   dataOperacional       DateTime?           @db.Date
   troco                 Decimal?            @db.Decimal(10, 2) // troco devolvido ao cliente
   valorRecebido         Decimal?            @db.Decimal(10, 2) // valor pago pelo cliente
   observacao            String?             @db.VarChar(500) // observação livre
-  // FASE 1 PDV PRO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â desconto com alÃƒÆ’Ã‚Â§ada: quem autorizou quando passou do limite do operador.
+  // FASE 1 PDV PRO — desconto com alçada: quem autorizou quando passou do limite do operador.
   descontoAutorizadoPor String?
   motivoDesconto        String?
   createdAt             DateTime            @default(now())
@@ -824,7 +825,7 @@ model VendaItem {
   venda          Venda    @relation(fields: [vendaId], references: [id], onDelete: Cascade)
   produtoId      String
   quantidade     Decimal  @db.Decimal(14, 3) // quantidade na unidade de venda
-  unidadeVenda   String? // sÃƒÆ’Ã‚Â­mbolo da unidade de venda no momento (ex: "UN", "dz", "kg")
+  unidadeVenda   String? // símbolo da unidade de venda no momento (ex: "UN", "dz", "kg")
   fatorAplicado  Decimal? @db.Decimal(14, 6) // fator usado para converter para unidade base
   quantidadeBase Decimal? @db.Decimal(14, 3) // quantidade convertida para unidade base (baixa de estoque)
   preco          Decimal  @db.Decimal(10, 2)
@@ -835,7 +836,7 @@ model VendaItem {
   @@index([vendaId])
 }
 
-// --- SeÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½o 14 PDV ÃƒÂ¯Ã‚Â¿Ã‚Â½ Caixa (turno de operaÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½o de balcÃƒÂ¯Ã‚Â¿Ã‚Â½o) ---
+// --- Seï¿½ï¿½o 14 PDV ï¿½ Caixa (turno de operaï¿½ï¿½o de balcï¿½o) ---
 enum StatusCaixa {
   ABERTO
   FECHADO
@@ -900,7 +901,7 @@ model MovimentacaoCaixa {
 }
 
 // ============================================================================
-// Etapas 2-9 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Unidades, tipos de produto, conversÃƒÆ’Ã‚Âµes e custos
+// Etapas 2-9 — Unidades, tipos de produto, conversões e custos
 // ============================================================================
 
 enum DimensaoTipo {
@@ -947,7 +948,7 @@ model Unidade {
   dimensao         Dimensao         @relation(fields: [dimensaoId], references: [id])
   nome             String // ex: Kilograma, Grama, Litro, Mililitro, Unidade, Duzia, Caixa
   simbolo          String // ex: kg, g, L, mL, UN, dz, cx
-  fatorCanonico    Decimal          @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade canÃƒÆ’Ã‚Â´nica da dimensÃƒÆ’Ã‚Â£o
+  fatorCanonico    Decimal          @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade canônica da dimensão
   ativo            Boolean          @default(true)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -1017,8 +1018,8 @@ model ConsumoInterno {
   fatorAplicado  Decimal   @db.Decimal(14, 6)
   custoUnitario  Decimal   @db.Decimal(14, 6) // custo por unidade base no momento
   custoTotal     Decimal   @db.Decimal(14, 2)
-  motivo         String // motivo obrigatÃƒÆ’Ã‚Â³rio do consumo
-  aprovadoPorId  String? // aprovaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o quando exigida por polÃƒÆ’Ã‚Â­tica
+  motivo         String // motivo obrigatório do consumo
+  aprovadoPorId  String? // aprovação quando exigida por política
   aprovadoPor    Usuario?  @relation("ConsumoInternoAprovador", fields: [aprovadoPorId], references: [id])
   aprovadoEm     DateTime?
   documento      String?
@@ -1030,7 +1031,7 @@ model ConsumoInterno {
   @@index([createdAt])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 14 PDV - Integra+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o oficial ---
+// --- Se+ï¿½+ï¿½o 14 PDV - Integra+ï¿½+ï¿½o oficial ---
 enum StatusIntegracao {
   CONECTADO
   ATENCAO
@@ -1058,7 +1059,7 @@ model IntegracaoPDV {
   @@index([empresaId])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 15 Financeiro ---
+// --- Se+ï¿½+ï¿½o 15 Financeiro ---
 enum TipoFinanceiro {
   RECEITA
   DESPESA
@@ -1077,7 +1078,7 @@ model Financeiro {
   empresa     Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   filialId    String?
   tipo        TipoFinanceiro
-  categoria   String // vendas, fornecedores, salarios, servi+ÃƒÂ¯Ã‚Â¿Ã‚Â½os, impostos, operacionais
+  categoria   String // vendas, fornecedores, salarios, servi+ï¿½os, impostos, operacionais
   centroCusto String?
   descricao   String
   valor       Decimal          @db.Decimal(12, 2)
@@ -1092,7 +1093,7 @@ model Financeiro {
   @@index([vencimento])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 16 DRE ---
+// --- Se+ï¿½+ï¿½o 16 DRE ---
 model DRE {
   id                   String   @id @default(cuid())
   empresaId            String
@@ -1115,7 +1116,7 @@ model DRE {
   @@index([empresaId, periodoInicio, periodoFim])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 18 Ticket M+ÃƒÂ¯Ã‚Â¿Ã‚Â½dio e 19 Metas ---
+// --- Se+ï¿½+ï¿½o 18 Ticket M+ï¿½dio e 19 Metas ---
 model IndicadorDiario {
   id          String   @id @default(cuid())
   empresaId   String
@@ -1152,15 +1153,15 @@ model Meta {
   @@index([empresaId, tipo, periodo])
 }
 
-// --- PARTE 5: Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 20 RH ---
+// --- PARTE 5: Se+ï¿½+ï¿½o 20 RH ---
 enum StatusFuncionario {
   ATIVO
   INATIVO
   FERIAS
   AFASTADO
   DESLIGADO
-  // ApÃƒÆ’Ã‚Â³s 30 dias de desligamento: sai da operaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, vai para o arquivo.
-  // O cadastro e os documentos continuam preservados e consultÃƒÆ’Ã‚Â¡veis.
+  // Após 30 dias de desligamento: sai da operação, vai para o arquivo.
+  // O cadastro e os documentos continuam preservados e consultáveis.
   ARQUIVADO
 }
 
@@ -1200,12 +1201,12 @@ model Funcionario {
   departamento              Departamento?             @relation(fields: [departamentoId], references: [id])
   cargoId                   String?
   cargo                     Cargo?                    @relation(fields: [cargoId], references: [id])
-  // VÃƒÂ¯Ã‚Â¿Ã‚Â½nculo opcional com um usuÃƒÂ¯Ã‚Â¿Ã‚Â½rio do sistema. ÃƒÂ¯Ã‚Â¿Ã‚Â½ o que permite atribuir as
-  // vendas reais do PDV a um funcionÃƒÂ¯Ã‚Â¿Ã‚Â½rio na aba Desempenho, sem duplicar cadastro.
+  // Vï¿½nculo opcional com um usuï¿½rio do sistema. ï¿½ o que permite atribuir as
+  // vendas reais do PDV a um funcionï¿½rio na aba Desempenho, sem duplicar cadastro.
   usuarioId                 String?
   usuario                   Usuario?                  @relation(fields: [usuarioId], references: [id])
   nome                      String
-  cpf                       String? // CPF +ÃƒÂ¯Ã‚Â¿Ã‚Â½nico por empresa
+  cpf                       String? // CPF +ï¿½nico por empresa
   idExternoPonto            String? // ID do ControlID iDClass para sincronizar
   dataAdmissao              DateTime?
   dataDesligamento          DateTime?
@@ -1219,29 +1220,29 @@ model Funcionario {
   salario                   Decimal?                  @db.Decimal(12, 2)
   tipoContrato              String? // CLT, PJ, Estagio
   cargaHoraria              String? // ex: 44h/semana
-  jornada                   String? // ex: 08:00-17:00 (texto livre, mantido como estÃƒÆ’Ã‚Â¡)
-  // HorÃƒÆ’Ã‚Â¡rios previstos da jornada, SEPARADOS. `jornada` acima ÃƒÆ’Ã‚Â© um texto livre
-  // ("08:00-17:00"): serve para o RH escrever o que quiser, mas nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© comparÃƒÆ’Ã‚Â¡vel
-  // ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nÃƒÆ’Ã‚Â£o dÃƒÆ’Ã‚Â¡ para subtrair uma batida real de "08:00-17:00" sem antes extrair e
-  // interpretar a string, e o texto mente quando estÃƒÆ’Ã‚Â¡ vazio ou escrito de outra
-  // forma. Estes dois campos sÃƒÆ’Ã‚Â£o a referÃƒÆ’Ã‚Âªncia numÃƒÆ’Ã‚Â©rica da jornada, e ÃƒÆ’Ã‚Â© deles que
+  jornada                   String? // ex: 08:00-17:00 (texto livre, mantido como está)
+  // Horários previstos da jornada, SEPARADOS. `jornada` acima é um texto livre
+  // ("08:00-17:00"): serve para o RH escrever o que quiser, mas não é comparável
+  // — não dá para subtrair uma batida real de "08:00-17:00" sem antes extrair e
+  // interpretar a string, e o texto mente quando está vazio ou escrito de outra
+  // forma. Estes dois campos são a referência numérica da jornada, e é deles que
   // o Ponto tira o atraso e o Espelho tira o cumprimento.
   //
-  // SÃƒÆ’Ã‚Â£o `String` no formato `HH:MM`, e nÃƒÆ’Ã‚Â£o `@db.Time`, de propÃƒÆ’Ã‚Â³sito: horÃƒÆ’Ã‚Â¡rio nÃƒÆ’Ã‚Â£o
+  // São `String` no formato `HH:MM`, e não `@db.Time`, de propósito: horário não
   // tem fuso, e um tipo de data/hora no banco convida exatamente o bug de
-  // `@db.Date` que o projeto jÃƒÆ’Ã‚Â¡ cometeu trÃƒÆ’Ã‚Âªs vezes (13Ãƒâ€šÃ‚Âº, indicadores e marcaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
-  // de ponto) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o valor lido em UTC e o mostrado em SÃƒÆ’Ã‚Â£o Paulo divergem. `HH:MM`
-  // ÃƒÆ’Ã‚Â© texto puro: ordena, subtrai e chega intacto na tela, no PDF e na API.
+  // `@db.Date` que o projeto já cometeu três vezes (13º, indicadores e marcação
+  // de ponto) — o valor lido em UTC e o mostrado em São Paulo divergem. `HH:MM`
+  // é texto puro: ordena, subtrai e chega intacto na tela, no PDF e na API.
   horarioEntradaPrevisto    String? // ex: 08:00
   horarioSaidaPrevisto      String? // ex: 17:00
-  // --- BenefÃƒÆ’Ã‚Â­cios (VA e VR sÃƒÆ’Ã‚Â£o independentes: nenhum, um ou os dois) ---
-  // `false`/`0` como padrÃƒÆ’Ã‚Â£o significam "nÃƒÆ’Ã‚Â£o recebe", que ÃƒÆ’Ã‚Â© uma resposta vÃƒÆ’Ã‚Â¡lida
-  // ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e nÃƒÆ’Ã‚Â£o "ainda nÃƒÆ’Ã‚Â£o informado". A folha lÃƒÆ’Ã‚Âª estes campos; ela nÃƒÆ’Ã‚Â£o estima.
+  // --- Benefícios (VA e VR são independentes: nenhum, um ou os dois) ---
+  // `false`/`0` como padrão significam "não recebe", que é uma resposta válida
+  // — e não "ainda não informado". A folha lê estes campos; ela não estima.
   valeAlimentacao           Boolean                   @default(false)
   valorValeAlimentacao      Decimal                   @default(0) @db.Decimal(12, 2)
   valeRefeicao              Boolean                   @default(false)
   valorValeRefeicao         Decimal                   @default(0) @db.Decimal(12, 2)
-  biometriaId               String? // ex: BIO-1006 (digital cadastrada no relÃƒÂ¯Ã‚Â¿Ã‚Â½gio)
+  biometriaId               String? // ex: BIO-1006 (digital cadastrada no relï¿½gio)
   matricula                 String?
   pis                       String?
   re                        String? // Registro de Empregado
@@ -1259,16 +1260,16 @@ model Funcionario {
   lancamentosFolha          LancamentoFolha[]
   pagamentosFolha           PagamentoRH[]
   decimos                   DecimoTerceiro[]
-  // Radar Organizacional (entradas do RH ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o Radar sÃƒÆ’Ã‚Â³ cruza, nÃƒÆ’Ã‚Â£o diagnostica)
+  // Radar Organizacional (entradas do RH — o Radar só cruza, não diagnostica)
   avaliacoesComportamentais AvaliacaoComportamental[]
   pesquisasBemEstar         PesquisaBemEstar[]
   registrosGamificacao      RegistroGamificacao[]
   acoesRadar                AcaoRadar[]
-  // Ciclo 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Plano de desenvolvimento a partir de uma avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o DISC.
+  // Ciclo 1 — Plano de desenvolvimento a partir de uma avaliação DISC.
   planosDesenvolvimento     PlanoDesenvolvimento[]
-  // Ciclo 2 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Treinamentos em que a pessoa participou (histÃƒÆ’Ã‚Â³rico real).
+  // Ciclo 2 — Treinamentos em que a pessoa participou (histórico real).
   participacoesTreinamento  ParticipanteTreinamento[]
-  // Ciclo 3 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Feedbacks de lideranÃƒÆ’Ã‚Â§a recebidos (histÃƒÆ’Ã‚Â³rico real de conversa).
+  // Ciclo 3 — Feedbacks de liderança recebidos (histórico real de conversa).
   feedbacksLideranca        FeedbackLideranca[]
 
   @@unique([empresaId, cpf])
@@ -1282,41 +1283,41 @@ model Funcionario {
 ///
 /// POR QUE EXISTE
 /// -------------
-/// Antes as colunas `documentos` de AdvertÃƒÆ’Ã‚Âªncia/SuspensÃƒÆ’Ã‚Â£o/Desligamento eram
-/// `String[]` guardando apenas o NOME do arquivo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â sem binÃƒÆ’Ã‚Â¡rio, sem caminho, sem
-/// chave. O nome aparecia na tela e no dossie, mas o arquivo nÃƒÆ’Ã‚Â£o existia em lugar
+/// Antes as colunas `documentos` de Advertência/Suspensão/Desligamento eram
+/// `String[]` guardando apenas o NOME do arquivo — sem binário, sem caminho, sem
+/// chave. O nome aparecia na tela e no dossie, mas o arquivo não existia em lugar
 /// nenhum: era metadado de arquivo inexistente.
 ///
-/// Aqui fica o endereÃƒÆ’Ã‚Â§o real: `chave` ÃƒÆ’Ã‚Â© o caminho dentro do bucket e
-/// `bucket`/`provedor` dizem ONDE ele estÃƒÆ’Ã‚Â¡. O download nunca usa `nomeArquivo`
-/// para montar caminho ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â usa `chave`, que ÃƒÆ’Ã‚Â© o que o provedor reconhece.
+/// Aqui fica o endereço real: `chave` é o caminho dentro do bucket e
+/// `bucket`/`provedor` dizem ONDE ele está. O download nunca usa `nomeArquivo`
+/// para montar caminho — usa `chave`, que é o que o provedor reconhece.
 ///
-/// SEGURANÃƒÆ’Ã¢â‚¬Â¡A
+/// SEGURANÇA
 /// ---------
-///   ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ `empresaId` ÃƒÆ’Ã‚Â© obrigatÃƒÆ’Ã‚Â³rio e toda leitura filtra por ele: documento de uma
-///     empresa nunca ÃƒÆ’Ã‚Â© acessÃƒÆ’Ã‚Â­vel por usuÃƒÆ’Ã‚Â¡rio de outra (isolamento por tenant).
-///   ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ O bucket ÃƒÆ’Ã‚Â© PRIVADO. O acesso ÃƒÆ’Ã‚Â© por URL assinada com expiraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o curta
-///     (`/rh/documentos/:id/download`), nunca por URL pÃƒÆ’Ã‚Âºblica permanente.
-///   ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ `contentType` e `tamanho` gravam o que foi declarado no upload e sÃƒÆ’Ã‚Â£o
-///     devolvidos no download ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o `Content-Type` da resposta vem daqui, para o
-///     navegador nÃƒÆ’Ã‚Â£o abrir HTML onde se esperava PDF.
+///   • `empresaId` é obrigatório e toda leitura filtra por ele: documento de uma
+///     empresa nunca é acessível por usuário de outra (isolamento por tenant).
+///   • O bucket é PRIVADO. O acesso é por URL assinada com expiração curta
+///     (`/rh/documentos/:id/download`), nunca por URL pública permanente.
+///   • `contentType` e `tamanho` gravam o que foi declarado no upload e são
+///     devolvidos no download — o `Content-Type` da resposta vem daqui, para o
+///     navegador não abrir HTML onde se esperava PDF.
 ///
 model Documento {
   id            String        @id @default(cuid())
   empresaId     String
   empresa       Empresa       @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   // Entidade dona do anexo: Funcionario | Advertencia | Suspensao | Desligamento
-  // Guardada como string (e nÃƒÆ’Ã‚Â£o como relaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o) porque o mesmo bucket serve a
-  // vÃƒÆ’Ã‚Â¡rias telas; a validaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de que a entidade existe e pertence ÃƒÆ’Ã‚Â  mesma
+  // Guardada como string (e não como relação) porque o mesmo bucket serve a
+  // várias telas; a validação de que a entidade existe e pertence à mesma
   // empresa acontece na rota de upload.
   entidadeTipo  String
   entidadeId    String
-  /// Atalho de relacao quando o anexo e de um funcionÃƒÆ’Ã‚Â¡rio (dossiÃƒÆ’Ã‚Âª). O
-  /// `Documento` continua genÃƒÆ’Ã‚Â©rico: anexos de AdvertÃƒÆ’Ã‚Âªncia/SuspensÃƒÆ’Ã‚Â£o/Desligamento
+  /// Atalho de relacao quando o anexo e de um funcionário (dossiê). O
+  /// `Documento` continua genérico: anexos de Advertência/Suspensão/Desligamento
   /// usam apenas `entidadeTipo`/`entidadeId`.
   funcionarioId String?
   funcionario   Funcionario?  @relation(fields: [funcionarioId], references: [id])
-  // Nome original, sÃƒÆ’Ã‚Â³ para exibiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o. NUNCA usado para montar caminho no bucket.
+  // Nome original, só para exibição. NUNCA usado para montar caminho no bucket.
   nomeOriginal  String
   // Chave real dentro do bucket, ex.: "empresa-abc/rh/1699999999-contrato.pdf"
   chave         String        @unique
@@ -1324,13 +1325,13 @@ model Documento {
   provedor      String        @default("s3") // s3 | supabase
   contentType   String
   tamanho       Int // bytes
-  // DescriÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o livre de onde veio (ex.: "Atestado de ponto").
+  // Descrição livre de onde veio (ex.: "Atestado de ponto").
   descricao     String?
-  // Quem anexou ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â para auditoria de quem expÃƒÆ’Ã‚Âµe documento de terceiro.
+  // Quem anexou — para auditoria de quem expõe documento de terceiro.
   enviadoPorId  String?
   enviadoPor    Usuario?      @relation(fields: [enviadoPorId], references: [id])
-  // "disponivel" | "arquivado" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o arquivamento NÃƒÆ’Ã†â€™O apaga o objeto do bucket;
-  // sÃƒÆ’Ã‚Â³ o esconde do acesso operacional (ver janela de 30 dias no RH).
+  // "disponivel" | "arquivado" — o arquivamento NÃO apaga o objeto do bucket;
+  // só o esconde do acesso operacional (ver janela de 30 dias no RH).
   situacao      String        @default("disponivel")
   comprovanteDe PagamentoRH[]
   createdAt     DateTime      @default(now())
@@ -1351,9 +1352,9 @@ model Advertencia {
   motivo            String
   descricao         String?
   data              DateTime        @default(now())
-  aplicadaPor       String? // nome de quem aplicou a advertÃƒÂ¯Ã‚Â¿Ã‚Â½ncia
+  aplicadaPor       String? // nome de quem aplicou a advertï¿½ncia
   statusPedido      String          @default("APLICADA") // APLICADA, CIENTE, CONTESTADA
-  documentoNome     String? // nome do PDF gerado (termo de advertÃƒÂ¯Ã‚Â¿Ã‚Â½ncia)
+  documentoNome     String? // nome do PDF gerado (termo de advertï¿½ncia)
   documentoGeradoEm DateTime?
   origem            Origem          @default(MANUAL)
   createdAt         DateTime        @default(now())
@@ -1361,8 +1362,8 @@ model Advertencia {
   @@index([empresaId, funcionarioId])
 }
 
-// SuspensÃƒÂ¯Ã‚Â¿Ã‚Â½o disciplinar (CLT art. 474). NÃƒÂ¯Ã‚Â¿Ã‚Â½o existia no schema original: a aba
-// "SuspensÃƒÂ¯Ã‚Â¿Ã‚Â½es" do RH nÃƒÂ¯Ã‚Â¿Ã‚Â½o tinha onde persistir nada.
+// Suspensï¿½o disciplinar (CLT art. 474). Nï¿½o existia no schema original: a aba
+// "Suspensï¿½es" do RH nï¿½o tinha onde persistir nada.
 model Suspensao {
   id                String      @id @default(cuid())
   empresaId         String
@@ -1375,7 +1376,7 @@ model Suspensao {
   fim               DateTime    @db.Date
   aplicadaPor       String?
   statusPedido      String      @default("APLICADA") // APLICADA, CUMPRIDA, CANCELADA
-  documentoNome     String? // nome do PDF gerado (notificaÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½o de suspensÃƒÂ¯Ã‚Â¿Ã‚Â½o)
+  documentoNome     String? // nome do PDF gerado (notificaï¿½ï¿½o de suspensï¿½o)
   documentoGeradoEm DateTime?
   origem            Origem      @default(MANUAL)
   createdAt         DateTime    @default(now())
@@ -1389,13 +1390,13 @@ enum TipoAdvertencia {
   SUSPENSAO
 }
 
-// Desligamento / termo de rescisÃƒÆ’Ã‚Â£o (CLT art. 477 e seguintes).
+// Desligamento / termo de rescisão (CLT art. 477 e seguintes).
 //
-// NÃƒÆ’Ã‚Â£o existia no schema: a aba "Desligamento" do RH montava o termo e as
+// Não existia no schema: a aba "Desligamento" do RH montava o termo e as
 // verbas apenas no estado do navegador, sem gravar nada, e ainda criava um
-// registro DE EXEMPLO quando a lista estava vazia ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o usuÃƒÆ’Ã‚Â¡rio via um termo
-// com dados fictÃƒÆ’Ã‚Â­cios e, ao recarregar a tela, tudo sumia. Com este modelo o
-// termo passa a ser um registro real, auditÃƒÆ’Ã‚Â¡vel e persistente.
+// registro DE EXEMPLO quando a lista estava vazia — o usuário via um termo
+// com dados fictícios e, ao recarregar a tela, tudo sumia. Com este modelo o
+// termo passa a ser um registro real, auditável e persistente.
 model Desligamento {
   id                  String      @id @default(cuid())
   empresaId           String
@@ -1405,7 +1406,7 @@ model Desligamento {
   data                DateTime    @db.Date
   // Motivo: sem-justa-causa | justa-causa | pedido | acordo | ato-improbidade
   tipo                String
-  tipoLabel           String // rÃƒÆ’Ã‚Â³tulo exibido no termo (ex.: "Sem justa causa")
+  tipoLabel           String // rótulo exibido no termo (ex.: "Sem justa causa")
   art                 String // enquadramento legal (ex.: "ART. 487 CLT")
   motivo              String
   // aviso: trabalhado | indenizado | dispensado
@@ -1413,26 +1414,26 @@ model Desligamento {
   saldoDias           Int         @default(0)
   // Verbas calculadas no momento do registro e gravadas como SNAPSHOT.
   //
-  // Guardadas separadamente porque o salÃƒÆ’Ã‚Â¡rio e as datas do cadastro podem
-  // mudar depois, mas o termo jÃƒÆ’Ã‚Â¡ impresso precisa continuar fiel ao que foi
+  // Guardadas separadamente porque o salário e as datas do cadastro podem
+  // mudar depois, mas o termo já impresso precisa continuar fiel ao que foi
   // apurado no ato. A soma de `verbas13 + verbasFerias + verbasAviso +
-  // verbasTotal` NÃƒÆ’Ã†â€™O fecha sozinha: `verbasTotal` inclui tambÃƒÆ’Ã‚Â©m 1/3, fÃƒÆ’Ã‚Â©rias
-  // proporcionais e saldo de salÃƒÆ’Ã‚Â¡rio, que ganharam colunas prÃƒÆ’Ã‚Â³prias.
-  verbas13            Decimal?    @db.Decimal(12, 2) // 13Ãƒâ€šÃ‚Âº proporcional
-  verbasFerias        Decimal?    @db.Decimal(12, 2) // fÃƒÆ’Ã‚Â©rias vencidas
-  verbasAviso         Decimal?    @db.Decimal(12, 2) // aviso prÃƒÆ’Ã‚Â©vio indenizado
+  // verbasTotal` NÃO fecha sozinha: `verbasTotal` inclui também 1/3, férias
+  // proporcionais e saldo de salário, que ganharam colunas próprias.
+  verbas13            Decimal?    @db.Decimal(12, 2) // 13º proporcional
+  verbasFerias        Decimal?    @db.Decimal(12, 2) // férias vencidas
+  verbasAviso         Decimal?    @db.Decimal(12, 2) // aviso prévio indenizado
   verbasTotal         Decimal?    @db.Decimal(12, 2)
   // Detalhamento que o Art. 477 exige no termo. Antes estes valores eram
-  // calculados no navegador com percentuais fixos e NÃƒÆ’Ã†â€™O eram gravados: o PDF
-  // saÃƒÆ’Ã‚Â­a com nÃƒÆ’Ã‚Âºmeros que o banco nÃƒÆ’Ã‚Â£o conseguia reproduzir.
+  // calculados no navegador com percentuais fixos e NÃO eram gravados: o PDF
+  // saía com números que o banco não conseguia reproduzir.
   verbasTerco         Decimal?    @db.Decimal(12, 2) // 1/3 constitucional
-  verbasSaldo         Decimal?    @db.Decimal(12, 2) // saldo de salÃƒÆ’Ã‚Â¡rio (em REAIS)
-  verbasFeriasProporc Decimal?    @db.Decimal(12, 2) // fÃƒÆ’Ã‚Â©rias proporcionais
-  meses13             Int? // meses considerados no 13Ãƒâ€šÃ‚Âº (informativo)
-  anosCompletos       Int? // anos completos de serviÃƒÆ’Ã‚Â§o (fÃƒÆ’Ã‚Â©rias vencidas)
-  diasAviso           Int? // dias de aviso prÃƒÆ’Ã‚Â©vio gerados
-  // FGTS e multa rescisÃƒÆ’Ã‚Â³ria dependem do saldo DEPOSITADO do FGTS, que nÃƒÆ’Ã‚Â£o
-  // existe no schema (nÃƒÆ’Ã‚Â£o hÃƒÆ’Ã‚Â¡ tabela de depÃƒÆ’Ã‚Â³sitos). Ficam nulos de propÃƒÆ’Ã‚Â³sito:
+  verbasSaldo         Decimal?    @db.Decimal(12, 2) // saldo de salário (em REAIS)
+  verbasFeriasProporc Decimal?    @db.Decimal(12, 2) // férias proporcionais
+  meses13             Int? // meses considerados no 13º (informativo)
+  anosCompletos       Int? // anos completos de serviço (férias vencidas)
+  diasAviso           Int? // dias de aviso prévio gerados
+  // FGTS e multa rescisória dependem do saldo DEPOSITADO do FGTS, que não
+  // existe no schema (não há tabela de depósitos). Ficam nulos de propósito:
   // o termo os exibe como "não apurado" em vez de estimar por percentual.
   saldoFgts           Decimal?    @db.Decimal(12, 2)
   multaFgts           Decimal?    @db.Decimal(12, 2)
@@ -1444,15 +1445,15 @@ model Desligamento {
   status              String      @default("PENDENTE")
   documentoNome       String? // nome do PDF gerado
   documentoGeradoEm   DateTime?
-  // Cancelamento (art. 5 CLT): o registro NÃƒÆ’Ã†â€™O ÃƒÆ’Ã‚Â© apagado, entra em CANCELADO
-  // e o funcionÃƒÆ’Ã‚Â¡rio volta a ATIVO. O histÃƒÆ’Ã‚Â³rico fica preservado.
+  // Cancelamento (art. 5 CLT): o registro NÃO é apagado, entra em CANCELADO
+  // e o funcionário volta a ATIVO. O histórico fica preservado.
   canceladoEm         DateTime?
   canceladoPorId      String?
   motivoCancelamento  String?
-  // Arquivamento: 30 dias apÃƒÆ’Ã‚Â³s o desligamento o cadastro sai da operaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o e
+  // Arquivamento: 30 dias após o desligamento o cadastro sai da operação e
   // passa a arquivado. `arquivadoEm` nulo = ainda dentro da janela.
   arquivadoEm         DateTime?
-  // ImpressÃƒÆ’Ã‚Â£o do dossiÃƒÆ’Ã‚Âª completo (advertÃƒÆ’Ã‚Âªncias + suspensÃƒÆ’Ã‚Âµes + rescisÃƒÆ’Ã‚Â£o).
+  // Impressão do dossiê completo (advertências + suspensões + rescisão).
   dossieGeradoEm      DateTime?
   origem              Origem      @default(MANUAL)
   createdAt           DateTime    @default(now())
@@ -1461,8 +1462,8 @@ model Desligamento {
   @@index([empresaId])
   @@index([empresaId, funcionarioId])
   @@index([empresaId, status])
-  // Suporta a varredura de "quem venceu os 30 dias": sÃƒÆ’Ã‚Â³ os desligamentos ainda
-  // dentro da janela entram no ÃƒÆ’Ã‚Â­ndice com `arquivadoEm` nulo.
+  // Suporta a varredura de "quem venceu os 30 dias": só os desligamentos ainda
+  // dentro da janela entram no índice com `arquivadoEm` nulo.
   @@index([arquivadoEm, status])
 }
 
@@ -1476,8 +1477,8 @@ model Ferias {
   origem        Origem      @default(MANUAL)
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o 21 Controle de Ponto - ControlID iDClass API oficial ---
-// Documenta+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o oficial ControlID: POST /login.fcgi + POST /load_objects.fcgi com object: access_logs
+// --- Se+ï¿½+ï¿½o 21 Controle de Ponto - ControlID iDClass API oficial ---
+// Documenta+ï¿½+ï¿½o oficial ControlID: POST /login.fcgi + POST /load_objects.fcgi com object: access_logs
 model Ponto {
   id               String      @id @default(cuid())
   empresaId        String
@@ -1504,7 +1505,7 @@ model Ponto {
   @@index([empresaId, data])
 }
 
-// Integra+ÃƒÂ¯Ã‚Â¿Ã‚Â½+ÃƒÂ¯Ã‚Â¿Ã‚Â½o ControlID
+// Integra+ï¿½+ï¿½o ControlID
 model IntegracaoPonto {
   id                  String           @id @default(cuid())
   empresaId           String
@@ -1519,6 +1520,7 @@ model IntegracaoPonto {
   erros               Json?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  @@index([empresaId])
 }
 
 // ===== PARTE 6 - IA (mesclado de schema-additions-ia.prisma) =====
@@ -1594,6 +1596,7 @@ model RegraAutomacao {
   ativa     Boolean  @default(true)
   origem    Origem   @default(AUTOMATICO)
   createdAt DateTime @default(now())
+  @@index([empresaId])
 }
 
 model ConversaIA {
@@ -1606,6 +1609,7 @@ model ConversaIA {
   contexto  Json?
   origem    Origem   @default(IA)
   createdAt DateTime @default(now())
+  @@index([empresaId])
 }
 
 // ===== COMERCIAL / ASSINATURA =====
@@ -1655,7 +1659,7 @@ model Pagamento {
   @@index([orderNsu])
 }
 
-// ===== RelatÃƒÆ’Ã‚Â³rios gerados pela IA (SeÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o 33 + IA NEXUS) =====
+// ===== Relatórios gerados pela IA (Seção 33 + IA NEXUS) =====
 model RelatorioGerado {
   id               String   @id @default(cuid())
   empresaId        String
@@ -1671,43 +1675,43 @@ model RelatorioGerado {
 }
 
 // ===========================================================================
-//  SeÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o 22 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Folha de Pagamento
+//  Seção 22 — Folha de Pagamento
 //
-//  DECISÃƒÆ’Ã†â€™O DE PROJETO: por que estes modelos sÃƒÆ’Ã‚Â£o novos e nÃƒÆ’Ã‚Â£o reaproveitados
+//  DECISÃO DE PROJETO: por que estes modelos são novos e não reaproveitados
 //  --------------------------------------------------------------------------
-//  O `Pagamento` que jÃƒÆ’Ã‚Â¡ existe no schema ÃƒÆ’Ã‚Â© da ASSINATURA SaaS (vinculado a
-//  `Assinatura`, com `assinaturaId` e cobranca de 19,90/mÃƒÆ’Ã‚Âªs). NÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© folha de
-//  pagamento de funcionÃƒÆ’Ã‚Â¡rio ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â reutilizÃƒÆ’Ã‚Â¡-lo misturaria a receita da plataforma com
-//  obrigaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o trabalhista, e aÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½o tÃƒÆ’Ã‚Â©m empresas deÃƒâ€žÃ¢â‚¬Å“fusos de vida diferentes. Por
-//  isso a folha tem modelos prÃƒÆ’Ã‚Â³prios, e `PagamentoRH` ÃƒÆ’Ã‚Â© o nome deliberado.
+//  O `Pagamento` que já existe no schema é da ASSINATURA SaaS (vinculado a
+//  `Assinatura`, com `assinaturaId` e cobranca de 19,90/mês). Não é folha de
+//  pagamento de funcionário — reutilizá-lo misturaria a receita da plataforma com
+//  obrigação trabalhista, e aï¿½ï¿½o tém empresas deēfusos de vida diferentes. Por
+//  isso a folha tem modelos próprios, e `PagamentoRH` é o nome deliberado.
 //
-//  O cÃƒÆ’Ã‚Â¡lculo NÃƒÆ’Ã†â€™O fica no schema: `Folha.lancamentos` guarda o resultado apurado
-//  pelo servidor como SNAPSHOT, pelo mesmo motivo das verbas de rescisÃƒÆ’Ã‚Â£o ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â folha
-//  fechada nÃƒÆ’Ã‚Â£o pode mudar porque o salÃƒÆ’Ã‚Â¡rio foi reajustado depois.
+//  O cálculo NÃO fica no schema: `Folha.lancamentos` guarda o resultado apurado
+//  pelo servidor como SNAPSHOT, pelo mesmo motivo das verbas de rescisão — folha
+//  fechada não pode mudar porque o salário foi reajustado depois.
 // ===========================================================================
 
-/// SituaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o da folha mensal. `FECHADA` impede lanÃƒÆ’Ã‚Â§amentos (ver rotas).
+/// Situação da folha mensal. `FECHADA` impede lançamentos (ver rotas).
 enum StatusFolha {
   ABERTA
   PROCESSADA
   FECHADA
 }
 
-/// SituaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o do pagamento de UM funcionÃƒÆ’Ã‚Â¡rio dentro da competÃƒÆ’Ã‚Âªncia.
-/// `ATRASADO` ÃƒÆ’Ã‚Â© DERIVADO, nunca gravado: depende da data prevista e de hoje.
+/// Situação do pagamento de UM funcionário dentro da competência.
+/// `ATRASADO` é DERIVADO, nunca gravado: depende da data prevista e de hoje.
 enum StatusPagamentoFolha {
   PENDENTE
   PAGO
 }
 
-/// Provento credita o funcionÃƒÆ’Ã‚Â¡rio; desconto debita.
+/// Provento credita o funcionário; desconto debita.
 enum TipoLancamento {
   PROVENTO
   DESCONTO
 }
 
-/// De onde veio o lanÃƒÆ’Ã‚Â§amento. `PONTO` sÃƒÆ’Ã‚Â³ existe se o mÃƒÆ’Ã‚Â³dulo de ponto tiver
-/// batidas reais na competÃƒÆ’Ã‚Âªncia; `AUTOMATICO` ÃƒÆ’Ã‚Â© o salÃƒÆ’Ã‚Â¡rio-base e adicionais
+/// De onde veio o lançamento. `PONTO` só existe se o módulo de ponto tiver
+/// batidas reais na competência; `AUTOMATICO` é o salário-base e adicionais
 /// derivados do cadastro.
 enum OrigemLancamento {
   AUTOMATICO
@@ -1715,13 +1719,13 @@ enum OrigemLancamento {
   MANUAL
 }
 
-/// CompetÃƒÆ’Ã‚Âªncia mensal (AAAA-MM). `Folha` ÃƒÆ’Ã‚Â© ÃƒÆ’Ã‚Âºnica por empresa+competÃƒÆ’Ã‚Âªncia.
+/// Competência mensal (AAAA-MM). `Folha` é única por empresa+competência.
 model Folha {
   id                String      @id @default(cuid())
   empresaId         String
   empresa           Empresa     @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  /// AAAA-MM. Texto e nÃƒÆ’Ã‚Â£o DateTime de propÃƒÆ’Ã‚Â³sito: competÃƒÆ’Ã‚Âªncia ÃƒÆ’Ã‚Â© perÃƒÆ’Ã‚Â­odo, nÃƒÆ’Ã‚Â£o
-  /// instante, e um DateTime traria fuso e horÃƒÆ’Ã‚Â¡rio para uma informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o que nÃƒÆ’Ã‚Â£o os tem.
+  /// AAAA-MM. Texto e não DateTime de propósito: competência é período, não
+  /// instante, e um DateTime traria fuso e horário para uma informação que não os tem.
   competencia       String
   status            StatusFolha @default(ABERTA)
   dataAbertura      DateTime    @default(now())
@@ -1729,7 +1733,7 @@ model Folha {
   dataFechamento    DateTime?
   fechadaPorId      String?
   fechadaPor        Usuario?    @relation(fields: [fechadaPorId], references: [id])
-  /// Totais da competÃƒÆ’Ã‚Âªncia, gravados no fechamento como snapshot do fechamento.
+  /// Totais da competência, gravados no fechamento como snapshot do fechamento.
   /// A listagem usa estes valores em vez de somar linha a linha a cada leitura.
   totalProventos    Decimal     @default(0) @db.Decimal(12, 2)
   totalDescontos    Decimal     @default(0) @db.Decimal(12, 2)
@@ -1745,7 +1749,7 @@ model Folha {
   @@index([empresaId, status])
 }
 
-/// Um lanÃƒÆ’Ã‚Â§amento de provento ou desconto na folha.
+/// Um lançamento de provento ou desconto na folha.
 model LancamentoFolha {
   id            String           @id @default(cuid())
   empresaId     String
@@ -1754,21 +1758,21 @@ model LancamentoFolha {
   folha         Folha            @relation(fields: [folhaId], references: [id], onDelete: Cascade)
   funcionarioId String
   funcionario   Funcionario      @relation(fields: [funcionarioId], references: [id])
-  /// CÃƒÆ’Ã‚Â³digo da rubrica (ex.: "001", "HORA_EXTRA", "INSS"). Label-like, nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Âºnique
-  /// global: a mesma rubrica pode mudar de descriÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o entre competÃƒÆ’Ã‚Âªncias.
+  /// Código da rubrica (ex.: "001", "HORA_EXTRA", "INSS"). Label-like, não únique
+  /// global: a mesma rubrica pode mudar de descrição entre competências.
   codigo        String
   descricao     String
   tipo          TipoLancamento
-  /// Quantidade/referÃƒÆ’Ã‚Âªncia (horas, dias, %). NULL quando a rubrica nÃƒÆ’Ã‚Â£o tem.
+  /// Quantidade/referência (horas, dias, %). NULL quando a rubrica não tem.
   referencia    Decimal?         @db.Decimal(12, 4)
   valor         Decimal          @db.Decimal(12, 2)
-  /// SalÃƒÆ’Ã‚Â¡rio-base no momento do lanÃƒÆ’Ã‚Â§amento. Guardado para que o histÃƒÆ’Ã‚Â³rico
-  /// sobreviva a reajuste salarial: o 13Ãƒâ€šÃ‚Âº de marÃƒÆ’Ã‚Â§o nÃƒÆ’Ã‚Â£o pode virar 13Ãƒâ€šÃ‚Âº de
+  /// Salário-base no momento do lançamento. Guardado para que o histórico
+  /// sobreviva a reajuste salarial: o 13º de março não pode virar 13º de
   /// setembro reescalado.
   salarioBase   Decimal?         @db.Decimal(12, 2)
-  /// "% de desconto do empregado sobre o total de proventos", quando o lanÃƒÆ’Ã‚Â§amento
+  /// "% de desconto do empregado sobre o total de proventos", quando o lançamento
   /// representa um percentual (INSS, IRRF, vale-transporte). Guardado como
-  /// REFERÃƒÆ’Ã…Â Ncia, nunca aplicado sobre outro total.
+  /// REFERÊNcia, nunca aplicado sobre outro total.
   percentual    Decimal?         @db.Decimal(6, 4)
   observacoes   String?
   origem        OrigemLancamento @default(MANUAL)
@@ -1779,7 +1783,7 @@ model LancamentoFolha {
   @@index([funcionarioId, folhaId])
 }
 
-/// Pagamento do salÃƒÆ’Ã‚Â¡rio lÃƒÆ’Ã‚Â­quido de UM funcionÃƒÆ’Ã‚Â¡rio numa competÃƒÆ’Ã‚Âªncia.
+/// Pagamento do salário líquido de UM funcionário numa competência.
 model PagamentoRH {
   id             String               @id @default(cuid())
   empresaId      String
@@ -1788,8 +1792,8 @@ model PagamentoRH {
   folha          Folha                @relation(fields: [folhaId], references: [id], onDelete: Cascade)
   funcionarioId  String
   funcionario    Funcionario          @relation(fields: [funcionarioId], references: [id])
-  /// LÃƒÆ’Ã‚Â­quido apurado no fechamento ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â snapshot. O valor real do pagamento nÃƒÆ’Ã‚Â£o pode
-  /// divergir do lÃƒÆ’Ã‚Â­quido (adiantamentos, ajustes); os dois sÃƒÆ’Ã‚Â£o gravados.
+  /// Líquido apurado no fechamento — snapshot. O valor real do pagamento não pode
+  /// divergir do líquido (adiantamentos, ajustes); os dois são gravados.
   valorLiquido   Decimal              @db.Decimal(12, 2)
   valorPago      Decimal?             @db.Decimal(12, 2)
   status         StatusPagamentoFolha @default(PENDENTE)
@@ -1797,7 +1801,7 @@ model PagamentoRH {
   dataPagamento  DateTime?
   formaPagamento String?
   observacoes    String?
-  /// Comprovante em PDF, referÃƒÆ’Ã‚Âªncia a `Documento` (bucket). NULL atÃƒÆ’Ã‚Â© o anexo.
+  /// Comprovante em PDF, referência a `Documento` (bucket). NULL até o anexo.
   documentoId    String?
   documento      Documento?           @relation(fields: [documentoId], references: [id])
   createdAt      DateTime             @default(now())
@@ -1807,36 +1811,36 @@ model PagamentoRH {
   @@index([funcionarioId, status])
 }
 
-/// 13Ãƒâ€šÃ‚Âº salary: controle por ano-calendÃƒÆ’Ã‚Â¡rio, com parcelas e proporcionalidade.
+/// 13º salary: controle por ano-calendário, com parcelas e proporcionalidade.
 model DecimoTerceiro {
   id                   String      @id @default(cuid())
   empresaId            String
   empresa              Empresa     @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   funcionarioId        String
   funcionario          Funcionario @relation(fields: [funcionarioId], references: [id])
-  /// Ano-calendÃƒÆ’Ã‚Â¡rio do 13Ãƒâ€šÃ‚Âº.
+  /// Ano-calendário do 13º.
   ano                  Int
   salarioBase          Decimal     @db.Decimal(12, 2)
-  /// Meses de direito proporcional (1..12). Vem da data de admissÃƒÆ’Ã‚Â£o real.
+  /// Meses de direito proporcional (1..12). Vem da data de admissão real.
   mesesDireito         Int         @default(12)
   valorBruto           Decimal     @db.Decimal(12, 2)
-  /// Primeira parcela (adiantamento) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 50% do bruto, pago atÃƒÆ’Ã‚Â© 30/11.
+  /// Primeira parcela (adiantamento) — 50% do bruto, pago até 30/11.
   valorPrimeiraParcela Decimal?    @db.Decimal(12, 2)
   dataPrimeiraParcela  DateTime?
   valorSegundaParcela  Decimal?    @db.Decimal(12, 2)
   dataSegundaParcela   DateTime?
-  /// Descontos aplicÃƒÆ’Ã‚Â¡veis ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â INSS, IRRF, adiantamentos. Soma dos lanÃƒÆ’Ã‚Â§amentos
-  /// marcados como desconto NA folha deste funcionÃƒÆ’Ã‚Â¡rio/ano.
+  /// Descontos aplicáveis — INSS, IRRF, adiantamentos. Soma dos lançamentos
+  /// marcados como desconto NA folha deste funcionário/ano.
   totalDescontos       Decimal     @default(0) @db.Decimal(12, 2)
   valorLiquido         Decimal     @db.Decimal(12, 2)
-  /// Percentual de fgts a cargo da empresa ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â guardado como REFERÃƒÆ’Ã…Â Ncia para o
-  /// pagamento do 13Ãƒâ€šÃ‚Âº. Ver `lib/folha.ts`: sem histÃƒÆ’Ã‚Â³rico de saldos, isto ÃƒÆ’Ã‚Â©
-  /// informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, e nÃƒÆ’Ã‚Â£o cÃƒÆ’Ã‚Â¡lculo.
+  /// Percentual de fgts a cargo da empresa — guardado como REFERÊNcia para o
+  /// pagamento do 13º. Ver `lib/folha.ts`: sem histórico de saldos, isto é
+  /// informação, e não cálculo.
   fgtsReferencia       Decimal?    @db.Decimal(6, 4)
-  /// Saldo de FGTS do funcionÃƒÆ’Ã‚Â¡rio. NULL atÃƒÆ’Ã‚Â© existir tabela de depÃƒÆ’Ã‚Â³sitos (nÃƒÆ’Ã‚Â£o hÃƒÆ’Ã‚Â¡ no
-  /// schema) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÆ’Ã‚Â© o que impede estimar multa/FGTS por percentual.
+  /// Saldo de FGTS do funcionário. NULL até existir tabela de depósitos (não há no
+  /// schema) — é o que impede estimar multa/FGTS por percentual.
   saldoFgts            Decimal?    @db.Decimal(12, 2)
-  /// `null` = "nÃƒÆ’Ã‚Â£o apurÃƒÆ’Ã‚Â¡vel com os dados atuais".
+  /// `null` = "não apurável com os dados atuais".
   status               String      @default("PENDENTE")
   dataPagamento        DateTime?
   observacoes          String?
@@ -1869,7 +1873,7 @@ model PixSettings {
   empresa      Empresa      @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   enabled      Boolean      @default(false)
   keyType      TipoChavePix
-  pixKey       String // criptografada com AES (lib/secrets.ts) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nunca em texto puro
+  pixKey       String // criptografada com AES (lib/secrets.ts) — nunca em texto puro
   merchantName String // max 25 (BACEN campo 59)
   merchantCity String // max 15 (BACEN campo 60)
   document     String?
@@ -1921,15 +1925,15 @@ model IntegracaoExterno {
   empresaId     String
   empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   tipo          String    @default("MERCADO_LIVRE") // MERCADO_LIVRE
-  state         String? // Nonce OAuth: valor ÃƒÆ’Ã‚Âºnico que valida o callback (gerado com randomBytes(24).base64url)
-  stateExpiraEm DateTime? // Validade do state (uso ÃƒÆ’Ã‚Âºnico, expira em 10 min); nulo quando nÃƒÆ’Ã‚Â£o hÃƒÆ’Ã‚Â¡ tentativa pendente
+  state         String? // Nonce OAuth: valor único que valida o callback (gerado com randomBytes(24).base64url)
+  stateExpiraEm DateTime? // Validade do state (uso único, expira em 10 min); nulo quando não há tentativa pendente
   nome          String
   // Credenciais OAuth (clientId / clientSecret / redirectUri). Sempre
   // criptografadas antes de gravar e NUNCA expostas na resposta.
   clientId      String?
   clientSecret  String?
   redirectUri   String?
-  // InformaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes da conta vinculada apÃƒÆ’Ã‚Â³s o OAuth
+  // Informações da conta vinculada após o OAuth
   accountName   String?
   accountId     String?
   // Token de acesso (criptografado)
@@ -1937,7 +1941,7 @@ model IntegracaoExterno {
   refreshToken  String?
   tokenExpiry   DateTime?
   scope         String?
-  // Controle de estado de sincronizaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+  // Controle de estado de sincronização
   status        String    @default("NAO_CONFIGURADO") // NAO_CONFIGURADO | CONECTANDO | CONECTADO | EXPIRADO | ERRO | REVOGADO
   erros         Json?
   ultimoTesteEm DateTime?
@@ -1951,39 +1955,39 @@ model IntegracaoExterno {
   @@index([state])
 }
 
-// --- SincronizaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o automÃƒÆ’Ã‚Â¡tica do Mercado Livre --------------------------------
-// Estado-mÃƒÆ’Ã‚Â¡quina das tarefas recorrentes de sync (produtos / estoque /
-// pedidos). POR QUE UMA TABELA PRÃƒÆ’Ã¢â‚¬Å“PRIA: o agendamento precisa sobreviver a
-// reinicializaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, ser recuperÃƒÆ’Ã‚Â¡vel e seguro entre mÃƒÆ’Ã‚Âºltiplas instÃƒÆ’Ã‚Â¢ncias ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â
-// `setInterval` em memÃƒÆ’Ã‚Â³ria perde o estado no restart e duplica execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o com
+// --- Sincronização automática do Mercado Livre --------------------------------
+// Estado-máquina das tarefas recorrentes de sync (produtos / estoque /
+// pedidos). POR QUE UMA TABELA PRÓPRIA: o agendamento precisa sobreviver a
+// reinicialização, ser recuperável e seguro entre múltiplas instâncias —
+// `setInterval` em memória perde o estado no restart e duplica execução com
 // mais de um processo. Uma linha por (empresa, tipo) concentra o que falta
-// executar e a evidÃƒÆ’Ã‚Âªncia do que jÃƒÆ’Ã‚Â¡ foi feito (sem duplicar a semÃƒÆ’Ã‚Â¢ntica de
-// `Importacao`, que registra cada execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o individual).
+// executar e a evidência do que já foi feito (sem duplicar a semântica de
+// `Importacao`, que registra cada execução individual).
 //
-// CONCORRÃƒÆ’Ã…Â NCIA: a trava ÃƒÆ’Ã‚Â© o par status=EXECUTANDO + leaseExpiraEm. A execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
-// ÃƒÆ’Ã‚Â© tomada com updateMany condicional (count=1 => venceu) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â operaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o atÃƒÆ’Ã‚Â´mica
-// do PostgreSQL, segura entre instÃƒÆ’Ã‚Â¢ncias sem lock distribuÃƒÆ’Ã‚Â­do. Lease vencido
-// = execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â³rfÃƒÆ’Ã‚Â£ (processo caiu no meio): o prÃƒÆ’Ã‚Â³ximo tick desengata e conta
-// a recuperaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o em `recuperadas`.
+// CONCORRÊNCIA: a trava é o par status=EXECUTANDO + leaseExpiraEm. A execução
+// é tomada com updateMany condicional (count=1 => venceu) — operação atômica
+// do PostgreSQL, segura entre instâncias sem lock distribuído. Lease vencido
+// = execução órfã (processo caiu no meio): o próximo tick desengata e conta
+// a recuperação em `recuperadas`.
 model SincronizacaoTarefa {
   id                String    @id @default(cuid())
   empresaId         String
   empresa           Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   // Mesmos identificadores dos tipos de Importacao (MERCADO_LIVRE_*): o
-  // histÃƒÆ’Ã‚Â³rico de execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes e a tarefa falando a mesma lÃƒÆ’Ã‚Â­ngua.
+  // histórico de execuções e a tarefa falando a mesma língua.
   tipo              String // MERCADO_LIVRE_PRODUTOS | MERCADO_LIVRE_ESTOQUE | MERCADO_LIVRE_PEDIDOS
   status            String    @default("AGUARDANDO") // AGUARDANDO | EXECUTANDO | PAUSADA
-  // ExecuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o vencida = candidata no tick; ÃƒÆ’Ã‚Â­ndice cobre a fila de vencidas.
+  // Execução vencida = candidata no tick; índice cobre a fila de vencidas.
   proximaExecucaoEm DateTime
-  // Lease da execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o em andamento; ao expirar, qualquer instÃƒÆ’Ã‚Â¢ncia desengata.
+  // Lease da execução em andamento; ao expirar, qualquer instância desengata.
   leaseExpiraEm     DateTime?
   instanciaId       String?
   tentativas        Int       @default(0) // falhas consecutivas (backoff exponencial)
-  recuperadas       Int       @default(0) // execuÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes ÃƒÆ’Ã‚Â³rfÃƒÆ’Ã‚Â£s desengatadas (lease vencido)
+  recuperadas       Int       @default(0) // execuções órfãs desengatadas (lease vencido)
   ultimaExecucaoEm  DateTime?
   ultimoSucessoEm   DateTime?
-  // Redigido por construÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o: guarda apenas { motivo, em } ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nunca token,
-  // segredo, cabeÃƒÆ’Ã‚Â§alho ou corpo de requisiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
+  // Redigido por construção: guarda apenas { motivo, em } — nunca token,
+  // segredo, cabeçalho ou corpo de requisição.
   ultimoErro        Json?
   processadosUltima Int       @default(0)
   falhasUltima      Int       @default(0)
@@ -1994,7 +1998,7 @@ model SincronizacaoTarefa {
   @@index([status, proximaExecucaoEm])
 }
 
-/// Caixa durÃƒÆ’Ã‚Â¡vel dos webhooks do Mercado Livre: a rota confirma o recebimento
+/// Caixa durável dos webhooks do Mercado Livre: a rota confirma o recebimento
 /// depois de persistir o ponteiro e um worker os consulta/processa em seguida.
 model NotificacaoMercadoLivre {
   id                String    @id @default(cuid())
@@ -2019,7 +2023,7 @@ model NotificacaoMercadoLivre {
   @@index([status, proximaExecucaoEm])
 }
 
-// ConexÃƒÆ’Ã‚Âµes Shopee sÃƒÆ’Ã‚Â£o por loja: ao contrÃƒÆ’Ã‚Â¡rio de IntegracaoExterno (ML), uma
+// Conexões Shopee são por loja: ao contrário de IntegracaoExterno (ML), uma
 // empresa pode vincular mais de uma loja autorizada.
 model ShopeeConexao {
   id                    String         @id @default(cuid())
@@ -2056,7 +2060,7 @@ model ShopeeConexao {
 }
 
 // Guarda somente o hash do state OAuth; o valor bruto existe apenas no
-// navegador durante a autorizaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o. Empresa e usuÃƒÆ’Ã‚Â¡rio vÃƒÆ’Ã‚Âªm da sessÃƒÆ’Ã‚Â£o NEXUS.
+// navegador durante a autorização. Empresa e usuário vêm da sessão NEXUS.
 model ShopeeOAuthState {
   id         String    @id @default(cuid())
   stateHash  String    @unique
@@ -2073,7 +2077,7 @@ model ShopeeOAuthState {
 }
 
 // Snapshot de identidade/status de pedido, sem PII nem payload bruto. Este
-// registro serve para polling/reconciliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o; nÃƒÆ’Ã‚Â£o representa uma Venda NEXUS.
+// registro serve para polling/reconciliação; não representa uma Venda NEXUS.
 model ShopeePedido {
   id                String        @id @default(cuid())
   empresaId         String
@@ -2103,29 +2107,29 @@ model TokenRevogado {
 }
 
 // =============================================================================
-// Radar Organizacional ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â camada de inteligÃƒÆ’Ã‚Âªncia que cruza os mÃƒÆ’Ã‚Â³dulos
+// Radar Organizacional — camada de inteligência que cruza os módulos
 // =============================================================================
 //
 // POR QUE CADA TABELA EXISTE (nenhuma duplica estrutura existente):
 //
-// 1) AvaliacaoComportamental ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o prompt do Radar diz que o perfil DISC ÃƒÆ’Ã‚Â©
-//    "informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o levantada pelo RH", ou seja, ENTRADA humana, nÃƒÆ’Ã‚Â£o mediÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
-//    automÃƒÆ’Ã‚Â¡tica. Sem um lugar para o RH registrar, o campo ÃƒÆ’Ã‚Â© sempre null e o
-//    Radar mostraria um espaÃƒÆ’Ã‚Â§o permanentemente vazio. Nenhum modelo existente
+// 1) AvaliacaoComportamental — o prompt do Radar diz que o perfil DISC é
+//    "informação levantada pelo RH", ou seja, ENTRADA humana, não medição
+//    automática. Sem um lugar para o RH registrar, o campo é sempre null e o
+//    Radar mostraria um espaço permanentemente vazio. Nenhum modelo existente
 //    guarda isso.
 //
-// 2) PesquisaBemEstar ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â mesma lÃƒÆ’Ã‚Â³gica: bem-estar ÃƒÆ’Ã‚Â© perception humana coletada
-//    pelo RH. O Radar sÃƒÆ’Ã‚Â³ faz o cruzamento; quem mede ÃƒÆ’Ã‚Â© a pessoa.
+// 2) PesquisaBemEstar — mesma lógica: bem-estar é perception humana coletada
+//    pelo RH. O Radar só faz o cruzamento; quem mede é a pessoa.
 //
-// 3) RegistroGamificacao ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o prompt proÃƒÆ’Ã‚Â­be localStorage para informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
+// 3) RegistroGamificacao — o prompt proíbe localStorage para informação
 //    empresarial. Pontos, conquistas e reconhecimento precisam sobreviver a
-//    troca de navegador e ser auditÃƒÆ’Ã‚Â¡veis.
+//    troca de navegador e ser auditáveis.
 //
-// 4) AcaoRadar ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o botÃƒÆ’Ã‚Â£o "Criar Plano de AÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o" precisa persistir o que o
-//    gestor planejou a partir de um alerta. Hoje ele nÃƒÆ’Ã‚Â£o grava nada.
+// 4) AcaoRadar — o botão "Criar Plano de Ação" precisa persistir o que o
+//    gestor planejou a partir de um alerta. Hoje ele não grava nada.
 //
-// Ponto comum: as quatro sÃƒÆ’Ã‚Â£o multi-tenant (empresaId) e ficam fora do modelo
-// de decisÃƒÆ’Ã‚Â£o ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o Radar mostra sinais, nÃƒÆ’Ã‚Â£o diagnostica.
+// Ponto comum: as quatro são multi-tenant (empresaId) e ficam fora do modelo
+// de decisão — o Radar mostra sinais, não diagnostica.
 
 enum PerfilDisc {
   D
@@ -2135,41 +2139,41 @@ enum PerfilDisc {
 }
 
 // ===========================================================================
-//  Ciclo 1 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Plano de Desenvolvimento DISC
+//  Ciclo 1 — Plano de Desenvolvimento DISC
 // ===========================================================================
-//  Transforma uma avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o DISC REAL em um plano de desenvolvimento
+//  Transforma uma avaliação DISC REAL em um plano de desenvolvimento
 //  individual.
 //
-//  POR QUE UMA TABELA NOVA E NÃƒÆ’Ã†â€™O REAPROVEITAR `AcaoRadar`
+//  POR QUE UMA TABELA NOVA E NÃO REAPROVEITAR `AcaoRadar`
 //  --------------------------------------------------
-//  `AcaoRadar` ÃƒÆ’Ã‚Â© o plano de aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o derivado de um ALERTA. O plano de
-//  desenvolvimento parte de uma AVALIAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã†â€™O, e a diferenÃƒÆ’Ã‚Â§a nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© de campo, ÃƒÆ’Ã‚Â© de
-//  domÃƒÆ’Ã‚Â­nio: `AcaoRadar.alertaRef` e `alertaTitulo` sÃƒÆ’Ã‚Â£o NOT NULL porque a linha
-//  sÃƒÆ’Ã‚Â³ existe quando existe um alerta, e ÃƒÆ’Ã‚Â© esse `alertaRef` que faz o badge do
-//  alerta virar "Em aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o"/"Resolvido" (radar.routes.ts). Um plano de
-//  desenvolvimento nÃƒÆ’Ã‚Â£o tem alerta de origem.
+//  `AcaoRadar` é o plano de ação derivado de um ALERTA. O plano de
+//  desenvolvimento parte de uma AVALIAÇÃO, e a diferença não é de campo, é de
+//  domínio: `AcaoRadar.alertaRef` e `alertaTitulo` são NOT NULL porque a linha
+//  só existe quando existe um alerta, e é esse `alertaRef` que faz o badge do
+//  alerta virar "Em ação"/"Resolvido" (radar.routes.ts). Um plano de
+//  desenvolvimento não tem alerta de origem.
 //
-//  ForÃƒÆ’Ã‚Â§ar o reuso exigiria tornar as duas colunas opcionais e acrescentar
+//  Forçar o reuso exigiria tornar as duas colunas opcionais e acrescentar
 //  seis campos (avaliacaoId, objetivo, competencia, descricao, dataInicio,
-//  analiseIA) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e a tabela passaria a guardar duas coisas diferentes com o
-//  mesmo nome. Criar a entidade prÃƒÆ’Ã‚Â³pria ÃƒÆ’Ã‚Â© o caminho mais simples de explicar e
-//  de manter, que ÃƒÆ’Ã‚Â© o critÃƒÆ’Ã‚Â©rio que o prÃƒÆ’Ã‚Â³prio schema usa nas outras decisÃƒÆ’Ã‚Âµes.
+//  analiseIA) — e a tabela passaria a guardar duas coisas diferentes com o
+//  mesmo nome. Criar a entidade própria é o caminho mais simples de explicar e
+//  de manter, que é o critério que o próprio schema usa nas outras decisões.
 //
-//  RELAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã¢â‚¬Â¢ES
+//  RELAÇÕES
 //  ----------
-//  * `funcionario` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â de quem ÃƒÆ’Ã‚Â© o plano (CASCADE: plano nÃƒÆ’Ã‚Â£o sobrevive ÃƒÆ’Ã‚Â  pessoa).
-//  * `avaliacao`   ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o que o originou. Guardar o id, e nÃƒÆ’Ã‚Â£o sÃƒÆ’Ã‚Â³ o
-//                    perfil, permite responder "com qual avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o este plano
+//  * `funcionario` — de quem é o plano (CASCADE: plano não sobrevive à pessoa).
+//  * `avaliacao`   — a avaliação que o originou. Guardar o id, e não só o
+//                    perfil, permite responder "com qual avaliação este plano
 //                    foi feito?" depois que a vigente mudar.
 //
 //  SNAPSHOT
 //  --------
-//  `perfil` e `scores` sÃƒÆ’Ã‚Â£o cÃƒÆ’Ã‚Â³pia do momento da criaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o. Sem eles, o histÃƒÆ’Ã‚Â³rico
-//  mudaria de significado sozinho quando uma avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o nova entrasse: o plano
+//  `perfil` e `scores` são cópia do momento da criação. Sem eles, o histórico
+//  mudaria de significado sozinho quando uma avaliação nova entrasse: o plano
 //  de 2026 passaria a exibir o perfil de 2027.
 //
 //  `analiseIA` guarda o que a IA sugeriu e o que o gestor aceitou, editou ou
-//  recusou. A IA escreve em UM campo sÃƒÆ’Ã‚Â³, nunca em `perfil`/`scores`.
+//  recusou. A IA escreve em UM campo só, nunca em `perfil`/`scores`.
 
 enum StatusPlanoDesenvolvimento {
   PLANEJADO
@@ -2215,7 +2219,7 @@ model PlanoDesenvolvimento {
   empresa       Empresa                 @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   funcionarioId String
   funcionario   Funcionario             @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
-  /// AvaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o que originou o plano. Snapshot do que foi visto na criaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
+  /// Avaliação que originou o plano. Snapshot do que foi visto na criação.
   avaliacaoId   String
   avaliacao     AvaliacaoComportamental @relation(fields: [avaliacaoId], references: [id])
   perfil        PerfilDisc?
@@ -2224,19 +2228,19 @@ model PlanoDesenvolvimento {
   objetivo      ObjetivoDesenvolvimento
   competencia   CompetenciaDesenvolvimento
   descricao     String
-  /// [{ tipo, descricao, concluida }] ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â `concluida` ÃƒÆ’Ã‚Â© o progresso do gestor.
+  /// [{ tipo, descricao, concluida }] — `concluida` é o progresso do gestor.
   acoes         Json
   /// Quem conduz o plano. Coluna escalar como `AcaoRadar.responsavelId` e
-  /// `AvaliacaoComportamental.aplicadoPorId` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o padrÃƒÆ’Ã‚Â£o do projeto ÃƒÆ’Ã‚Â© nÃƒÆ’Ã‚Â£o
-  /// declarar relaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o para `Usuario` e resolver o nome numa consulta ÃƒÆ’Ã‚Â  parte.
-  /// Mantido assim por consistÃƒÆ’Ã‚Âªncia; a rota valida que o responsÃƒÆ’Ã‚Â¡vel ÃƒÆ’Ã‚Â© desta
+  /// `AvaliacaoComportamental.aplicadoPorId` — o padrão do projeto é não
+  /// declarar relação para `Usuario` e resolver o nome numa consulta à parte.
+  /// Mantido assim por consistência; a rota valida que o responsável é desta
   /// empresa antes de gravar.
   responsavelId String?
   dataInicio    DateTime                   @db.Date
   prazo         DateTime?                  @db.Date
   status        StatusPlanoDesenvolvimento @default(PLANEJADO)
-  /// SugestÃƒÆ’Ã‚Â£o da IA + o que foi aceito. `null` quando a IA nÃƒÆ’Ã‚Â£o respondeu: o
-  /// plano continua vÃƒÆ’Ã‚Â¡lido e ÃƒÆ’Ã‚Â© montado ÃƒÆ’Ã‚Â  mÃƒÆ’Ã‚Â£o.
+  /// Sugestão da IA + o que foi aceito. `null` quando a IA não respondeu: o
+  /// plano continua válido e é montado à mão.
   analiseIA     Json?
   observacoes   String?
   origem        Origem                     @default(MANUAL)
@@ -2249,47 +2253,47 @@ model PlanoDesenvolvimento {
 }
 
 // ===========================================================================
-//  Ciclo 2 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Treinamentos, participantes e presenÃƒÆ’Ã‚Â§a
+//  Ciclo 2 — Treinamentos, participantes e presença
 // ===========================================================================
 //  POR QUE ENTIDADES NOVAS
 //  -----------------------
-//  NÃƒÆ’Ã‚Â£o existe nada de capacitaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o no schema: um treinamento ÃƒÆ’Ã‚Â© um EVENTO com
+//  Não existe nada de capacitação no schema: um treinamento é um EVENTO com
 //  data, hora, instrutor e local, e nada disso existe em `AvaliacaoComportamental`
-//  (que ÃƒÆ’Ã‚Â© uma mediÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o pontual), em `PlanoDesenvolvimento` (que ÃƒÆ’Ã‚Â© um compromisso
-//  de desenvolvimento) ou em `AcaoRadar` (que ÃƒÆ’Ã‚Â© reaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o a um alerta). A aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o
-//  `TREINAMENTO` do plano de desenvolvimento ÃƒÆ’Ã‚Â© um TEXTO dentro de um array ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nÃƒÆ’Ã‚Â£o
-//  tem data, nÃƒÆ’Ã‚Â£o tem sala, nÃƒÆ’Ã‚Â£o tem lista de quem compareceu. Usar um desses
+//  (que é uma medição pontual), em `PlanoDesenvolvimento` (que é um compromisso
+//  de desenvolvimento) ou em `AcaoRadar` (que é reação a um alerta). A ação
+//  `TREINAMENTO` do plano de desenvolvimento é um TEXTO dentro de um array — não
+//  tem data, não tem sala, não tem lista de quem compareceu. Usar um desses
 //  para "agendar" seria guardar um evento como se fosse uma nota.
 //
-//  RELAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã†â€™O COM O PLANO DE DESENVOLVIMENTO (Ciclo 1)
+//  RELAÇÃO COM O PLANO DE DESENVOLVIMENTO (Ciclo 1)
 //  ------------------------------------------------
-//  SÃƒÆ’Ã‚Â£o entidades diferentes e complementares: o plano diz O QUE desenvolver, o
-//  treinamento ÃƒÆ’Ã‚Â© UM evento que pode servir a esse plano. Por isso a ligaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â©
-//  explÃƒÆ’Ã‚Â­cita e opcional (`planoDesenvolvimentoId`), e nÃƒÆ’Ã‚Â£o implÃƒÆ’Ã‚Â­cita: um
-//  treinamento de seguranÃƒÆ’Ã‚Â§a pode existir sem plano, e um plano pode ter aÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes
-//  que nÃƒÆ’Ã‚Â£o viram treinamento.
+//  São entidades diferentes e complementares: o plano diz O QUE desenvolver, o
+//  treinamento é UM evento que pode servir a esse plano. Por isso a ligação é
+//  explícita e opcional (`planoDesenvolvimentoId`), e não implícita: um
+//  treinamento de segurança pode existir sem plano, e um plano pode ter ações
+//  que não viram treinamento.
 //
-//  POR QUE `ParticipanteTreinamento` E NÃƒÆ’Ã†â€™O UM ARRAY JSON
+//  POR QUE `ParticipanteTreinamento` E NÃO UM ARRAY JSON
 //  ---------------------------------------------------
 //  Os outros objetos do projeto guardam listas em `Json` (`acoes` do plano,
-//  `causas` do alerta) porque sÃƒÆ’Ã‚Â£o texto livre, consultado nunca. Aqui a lista
-//  ÃƒÆ’Ã¢â‚¬Â° a consulta: quantas pessoas tomado presenÃƒÆ’Ã‚Â§a, quem faltou, o histÃƒÆ’Ã‚Â³rico
-//  de um funcionÃƒÆ’Ã‚Â¡rio. Isso exige linha, ÃƒÆ’Ã‚Â­ndice e chave ÃƒÆ’Ã‚Âºnica ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o que o schema
-//  jÃƒÆ’Ã‚Â¡ faz com `@@unique([funcionarioId, data])` no `Ponto`.
+//  `causas` do alerta) porque são texto livre, consultado nunca. Aqui a lista
+//  É a consulta: quantas pessoas tomado presença, quem faltou, o histórico
+//  de um funcionário. Isso exige linha, índice e chave única — o que o schema
+//  já faz com `@@unique([funcionarioId, data])` no `Ponto`.
 //
-//  RELAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã†â€™O COM O PONTO
+//  RELAÇÃO COM O PONTO
 //  -------------------
-//  Deliberadamente SEPARADA. PresenÃƒÆ’Ã‚Â§a em treinamento nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© batida de ponto:
-//  nÃƒÆ’Ã‚Â£o gera falta, nÃƒÆ’Ã‚Â£o gera hora extra, nÃƒÆ’Ã‚Â£o entra no espelho de ponto. Um
-//  treinamento de 2h nÃƒÆ’Ã‚Â£o pode aparecer como "2 horas trabalhadas" na folha.
-//  Misturar os dois contaminaria o cÃƒÆ’Ã‚Â¡lculo de jornada com capacitaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
+//  Deliberadamente SEPARADA. Presença em treinamento não é batida de ponto:
+//  não gera falta, não gera hora extra, não entra no espelho de ponto. Um
+//  treinamento de 2h não pode aparecer como "2 horas trabalhadas" na folha.
+//  Misturar os dois contaminaria o cálculo de jornada com capacitação.
 //
-//  HORÃƒÆ’Ã‚ÂRIO
+//  HORÁRIO
 //  --------
-//  `horaInicio`/`horaFim` sÃƒÆ’Ã‚Â£o `String` no formato `HH:MM`, e nÃƒÆ’Ã‚Â£o `@db.Time`, por
-//  exatamente a mesma razÃƒÆ’Ã‚Â£o documentada em `Funcionario.horarioEntradaPrevisto`:
-//  horÃƒÆ’Ã‚Â¡rio nÃƒÆ’Ã‚Â£o tem fuso, e um tipo de data/hora no banco convida o bug de
-//  fuso que o projeto jÃƒÆ’Ã‚Â¡ cometeu trÃƒÆ’Ã‚Âªs vezes.
+//  `horaInicio`/`horaFim` são `String` no formato `HH:MM`, e não `@db.Time`, por
+//  exatamente a mesma razão documentada em `Funcionario.horarioEntradaPrevisto`:
+//  horário não tem fuso, e um tipo de data/hora no banco convida o bug de
+//  fuso que o projeto já cometeu três vezes.
 
 enum StatusTreinamento {
   PLANEJADO
@@ -2305,11 +2309,11 @@ enum PrioridadeTreinamento {
   ALTA
 }
 
-/// `CONVIDADO` e `CONFIRMADO` descrevem a intenÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o; `PRESENTE`/`AUSENTE`
-/// descrevem o que aconteceu. SÃƒÆ’Ã‚Â£o estados diferentes de propÃƒÆ’Ã‚Â³sito: um
-/// treinamento CONCLUIDO com gente ainda em `CONFIRMADO` tem ausÃƒÆ’Ã‚Âªncia nÃƒÆ’Ã‚Â£o
+/// `CONVIDADO` e `CONFIRMADO` descrevem a intenção; `PRESENTE`/`AUSENTE`
+/// descrevem o que aconteceu. São estados diferentes de propósito: um
+/// treinamento CONCLUIDO com gente ainda em `CONFIRMADO` tem ausência não
 /// registrada, e a tela precisa poder dizer isso em vez de mostrar 100%
-/// presente por omissÃƒÆ’Ã‚Â£o.
+/// presente por omissão.
 enum StatusParticipante {
   CONVIDADO
   CONFIRMADO
@@ -2324,34 +2328,34 @@ model Treinamento {
   empresa                Empresa           @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   titulo                 String
   descricao              String
-  /// CatÃƒÆ’Ã‚Â¡logo livre de texto (ex.: "COMUNICACAO", "SEGURANCA"). Sem tabela de
+  /// Catálogo livre de texto (ex.: "COMUNICACAO", "SEGURANCA"). Sem tabela de
   /// categorias: o projeto usa `categoria String` no `Produto` e `tipo String`
-  /// na `Meta`, e uma tabela a mais sÃƒÆ’Ã‚Â³ traria rigidez sem ganho ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o filtro ÃƒÆ’Ã‚Â©
-  /// por valor, e o valor ÃƒÆ’Ã‚Â© legÃƒÆ’Ã‚Â­vel.
+  /// na `Meta`, e uma tabela a mais só traria rigidez sem ganho — o filtro é
+  /// por valor, e o valor é legível.
   categoria              String
   objetivo               String
-  /// Nome de quem ministra. Texto, e nÃƒÆ’Ã‚Â£o relaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o com `Usuario`: o instrutor
-  /// quase nunca ÃƒÆ’Ã‚Â© alguÃƒÆ’Ã‚Â©m com login no sistema (consultor, parceiro), e criar
-  /// um cadastro de usuÃƒÆ’Ã‚Â¡rio para ele seria inventar dado.
+  /// Nome de quem ministra. Texto, e não relação com `Usuario`: o instrutor
+  /// quase nunca é alguém com login no sistema (consultor, parceiro), e criar
+  /// um cadastro de usuário para ele seria inventar dado.
   instrutor              String
   /// Quem responde pelo registro. Coluna escalar, como `AcaoRadar.responsavelId`.
   responsavelId          String?
   data                   DateTime          @db.Date
-  /// `HH:MM`. Ver a nota sobre horÃƒÆ’Ã‚Â¡rio acima.
+  /// `HH:MM`. Ver a nota sobre horário acima.
   horaInicio             String
   horaFim                String
   /// Minutos. DEDITO, nunca estimado: se a rota conseguir calcular
-  /// (horaFim - horaInicio), o valor gravado ÃƒÆ’Ã‚Â© o cÃƒÆ’Ã‚Â¡lculo; a tela nÃƒÆ’Ã‚Â£o inventa.
+  /// (horaFim - horaInicio), o valor gravado é o cálculo; a tela não inventa.
   duracaoMinutos         Int
   local                  String
-  /// `null` = sem limite. `0` nÃƒÆ’Ã‚Â£o ÃƒÆ’Ã‚Â© o mesmo que "sem limite": 0 significaria
-  /// "ninguÃƒÆ’Ã‚Â©m pode participar", que ÃƒÆ’Ã‚Â© uma decisÃƒÆ’Ã‚Â£o, nÃƒÆ’Ã‚Â£o ausÃƒÆ’Ã‚Âªncia de decisÃƒÆ’Ã‚Â£o.
+  /// `null` = sem limite. `0` não é o mesmo que "sem limite": 0 significaria
+  /// "ninguém pode participar", que é uma decisão, não ausência de decisão.
   limiteParticipantes    Int?
   status                 StatusTreinamento @default(PLANEJADO)
   /// Opcional: liga o treinamento ao plano de desenvolvimento que o motivou.
   planoDesenvolvimentoId String?
-  /// SugestÃƒÆ’Ã‚Â£o da IA que o gestor revisou. NULL quando nÃƒÆ’Ã‚Â£o houve IA ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o
-  /// treinamento ÃƒÆ’Ã‚Â© vÃƒÆ’Ã‚Â¡lido de qualquer forma, e a origem (`MANUAL`/`IA`) jÃƒÆ’Ã‚Â¡ diz
+  /// Sugestão da IA que o gestor revisou. NULL quando não houve IA — o
+  /// treinamento é válido de qualquer forma, e a origem (`MANUAL`/`IA`) já diz
   /// como ele nasceu.
   analiseIA              Json?
   observacoes            String?
@@ -2366,12 +2370,12 @@ model Treinamento {
   @@index([empresaId, createdAt])
 }
 
-/// N:N entre treinamento e funcionÃƒÆ’Ã‚Â¡rio, com o registro de presenÃƒÆ’Ã‚Â§a.
+/// N:N entre treinamento e funcionário, com o registro de presença.
 ///
-/// `empresaId` ÃƒÆ’Ã‚Â© redundante com o do treinamento, e mesmo assim fica: ÃƒÆ’Ã‚Â© o que
-/// permite as consultas de multi-tenant rodarem em UMA tabela sÃƒÆ’Ã‚Â³
+/// `empresaId` é redundante com o do treinamento, e mesmo assim fica: é o que
+/// permite as consultas de multi-tenant rodarem em UMA tabela só
 /// (`where: { empresaId }`) sem joins, e o que garante que um `DELETE` em massa
-/// de uma empresa nÃƒÆ’Ã‚Â£o alcance registros de outra.
+/// de uma empresa não alcance registros de outra.
 model ParticipanteTreinamento {
   id            String             @id @default(cuid())
   empresaId     String
@@ -2386,11 +2390,11 @@ model ParticipanteTreinamento {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
-  // Impede o mesmo funcionÃƒÆ’Ã‚Â¡rio entrar duas vezes no mesmo treinamento.
+  // Impede o mesmo funcionário entrar duas vezes no mesmo treinamento.
   @@unique([treinamentoId, funcionarioId])
-  // HistÃƒÆ’Ã‚Â³rico do funcionÃƒÆ’Ã‚Â¡rio: a ordem de quem treinou quando.
+  // Histórico do funcionário: a ordem de quem treinou quando.
   @@index([empresaId, funcionarioId, dataRegistro])
-  // Chamada de presenÃƒÆ’Ã‚Â§a: quem estÃƒÆ’Ã‚Â¡ em cada treinamento.
+  // Chamada de presença: quem está em cada treinamento.
   @@index([empresaId, treinamentoId, status])
 }
 
@@ -2400,15 +2404,15 @@ model AvaliacaoComportamental {
   empresa       Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   funcionarioId String
   funcionario   Funcionario            @relation(fields: [funcionarioId], references: [id])
-  /// Planos de desenvolvimento criados a partir desta avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
+  /// Planos de desenvolvimento criados a partir desta avaliação.
   planos        PlanoDesenvolvimento[]
   perfil        PerfilDisc?
-  /// Scores brutos por eixo (0-100). JSON porque o NEXUS nÃƒÆ’Ã‚Â£o tem um eixo
+  /// Scores brutos por eixo (0-100). JSON porque o NEXUS não tem um eixo
   /// comportamental guardado em colunas.
   scores        Json?
-  /// Texto do RH sobre o contexto profissional avaliado (apoiado, nÃƒÆ’Ã‚Â£o decisÃƒÆ’Ã‚Â³rio).
+  /// Texto do RH sobre o contexto profissional avaliado (apoiado, não decisório).
   observacoes   String?
-  /// Quem aplicou a avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o. Auditoria: perfil comportamental ÃƒÆ’Ã‚Â© dado sensÃƒÆ’Ã‚Â­vel.
+  /// Quem aplicou a avaliação. Auditoria: perfil comportamental é dado sensível.
   aplicadoPorId String?
   dataAvaliacao DateTime               @db.Date
   vigente       Boolean                @default(true)
@@ -2443,7 +2447,7 @@ model RegistroGamificacao {
   id            String             @id @default(cuid())
   empresaId     String
   empresa       Empresa            @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  /// FuncionÃƒÆ’Ã‚Â¡rio recebeu; opcional quando o registro ÃƒÆ’Ã‚Â© da equipe inteira.
+  /// Funcionário recebeu; opcional quando o registro é da equipe inteira.
   funcionarioId String?
   funcionario   Funcionario?       @relation(fields: [funcionarioId], references: [id])
   /// 'meta' | 'objetivo' | 'conquista' | 'reconhecimento'
@@ -2451,12 +2455,12 @@ model RegistroGamificacao {
   descricao     String
   pontos        Int                @default(0)
   /// Regra que gerou o ponto. No Ciclo 5 passou a ser o `id` de um
-  /// `CriterioPontuacao` da prÃƒÆ’Ã‚Â³pria empresa ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o valor gravado aqui ÃƒÆ’Ã‚Â© o que
-  /// A EMPRESA configurou, nunca um valor padrÃƒÆ’Ã‚Â£o do NEXUS.
+  /// `CriterioPontuacao` da própria empresa — o valor gravado aqui é o que
+  /// A EMPRESA configurou, nunca um valor padrão do NEXUS.
   regraId       String?
-  /// Ciclo 5: quando o ponto veio da apuraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o automÃƒÆ’Ã‚Â¡tica de um critÃƒÆ’Ã‚Â©rio da
-  /// empresa. LanÃƒÆ’Ã‚Â§amento manual do gestor fica com este campo NULO ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â sÃƒÆ’Ã‚Â£o dois
-  /// caminhos distintos para o mesmo saldo, e a tela precisa saber qual ÃƒÆ’Ã‚Â©.
+  /// Ciclo 5: quando o ponto veio da apuração automática de um critério da
+  /// empresa. Lançamento manual do gestor fica com este campo NULO — são dois
+  /// caminhos distintos para o mesmo saldo, e a tela precisa saber qual é.
   criterioId    String?
   criterio      CriterioPontuacao? @relation(fields: [criterioId], references: [id], onDelete: SetNull)
   /// De onde veio o evento real (ex.: 'ponto_sem_atraso', 'venda_finalizada').
@@ -2469,46 +2473,46 @@ model RegistroGamificacao {
 
   @@index([empresaId, data])
   @@index([empresaId, tipo])
-  /// Ciclo 5: quem automatizou este registro, e o quando ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÆ’Ã‚Â© o que separa um
-  /// ponto de apuraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de um lanÃƒÆ’Ã‚Â§amento manual do gestor.
+  /// Ciclo 5: quem automatizou este registro, e o quando — é o que separa um
+  /// ponto de apuração de um lançamento manual do gestor.
   @@index([empresaId, criterioId])
 }
 
 // ===========================================================================
-//  Ciclo 4 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Loja de Recompensas e Resgates
+//  Ciclo 4 — Loja de Recompensas e Resgates
 // ===========================================================================
-//  POR QUE DUAS TABELAS E NÃƒÆ’Ã†â€™O UMA
+//  POR QUE DUAS TABELAS E NÃO UMA
 //  --------------------------
-//  A `Recompensa` ÃƒÆ’Ã‚Â© o CATÃƒÆ’Ã‚ÂLOGO: o que a empresa oferece, quanto custa, quanto
-//  tem. O `Resgate` ÃƒÆ’Ã‚Â© a TRANSAÃƒÆ’Ã¢â‚¬Â¡ÃƒÆ’Ã†â€™O: quem pegou o quÃƒÆ’Ã‚Âª, quando e em que status.
-//  Uma tabela sÃƒÆ’Ã‚Â³ misturaria "a empresa tem 10 vale-presente" com "a Ana pegou
-//  um deles" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e o estoque nÃƒÆ’Ã‚Â£o se contaria.
+//  A `Recompensa` é o CATÁLOGO: o que a empresa oferece, quanto custa, quanto
+//  tem. O `Resgate` é a TRANSAÇÃO: quem pegou o quê, quando e em que status.
+//  Uma tabela só misturaria "a empresa tem 10 vale-presente" com "a Ana pegou
+//  um deles" — e o estoque não se contaria.
 //
-//  SALDO DE PONTOS ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â A CONTA CORRETA
+//  SALDO DE PONTOS — A CONTA CORRETA
 //  -------------------------------
-//  `RegistroGamificacao` sÃƒÆ’Ã‚Â³ SOMA pontos. Um resgate precisa DEBITAR, e o
-//  saldo nÃƒÆ’Ã‚Â£o pode ser `soma(pontos)` por trÃƒÆ’Ã‚Âªs motivos:
+//  `RegistroGamificacao` só SOMA pontos. Um resgate precisa DEBITAR, e o
+//  saldo não pode ser `soma(pontos)` por três motivos:
 //    1. resgate cancelado devolve os pontos;
 //    2. registro com status ANULADO precisa deixar de contar;
-//    3. saldo ÃƒÆ’Ã‚Â© histÃƒÆ’Ã‚Â³rico de saldo, nÃƒÆ’Ã‚Â£o soma de coluna.
+//    3. saldo é histórico de saldo, não soma de coluna.
 //
-//  Por isso o saldo ÃƒÆ’Ã‚Â© SEMPRE: soma(registros ATIVOS) ÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢ soma(resgates que
-//  consumiram pontos). ÃƒÆ’Ã¢â‚¬Â° a fÃƒÆ’Ã‚Â³rmula que `saldoDePontos` aplica, e ela estÃƒÆ’Ã‚Â¡
-//  testada. Nenhum nÃƒÆ’Ã‚Âºmero de saldo ÃƒÆ’Ã‚Â© gravado em coluna ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â se fosse, deixaria de
-//  bater com os registros no primeiro lanÃƒÆ’Ã‚Â§amento.
+//  Por isso o saldo é SEMPRE: soma(registros ATIVOS) − soma(resgates que
+//  consumiram pontos). É a fórmula que `saldoDePontos` aplica, e ela está
+//  testada. Nenhum número de saldo é gravado em coluna — se fosse, deixaria de
+//  bater com os registros no primeiro lançamento.
 //
 //  ESTOQUE
 //  -------
-//  `quantidadeDisponivel` ÃƒÆ’Ã‚Â© o estoque real, e um resgate SOLICITADO jÃƒÆ’Ã‚Â¡ o
-//  reserva: ÃƒÆ’Ã‚Â© o que impede que 3 pessoas resgatem o ÃƒÆ’Ã‚Âºltimo vale-presente antes
-//  de alguÃƒÆ’Ã‚Â©m aprovar. Cancelar e rejeitar devolvem ao estoque, na mesma
-//  transaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o que muda o status.
+//  `quantidadeDisponivel` é o estoque real, e um resgate SOLICITADO já o
+//  reserva: é o que impede que 3 pessoas resgatem o último vale-presente antes
+//  de alguém aprovar. Cancelar e rejeitar devolvem ao estoque, na mesma
+//  transação que muda o status.
 //
 //  ESTORNO
 //  -------
-//  Rejeitar/cancelar NÃƒÆ’Ã†â€™O apaga a linha: ela vira histÃƒÆ’Ã‚Â³rico. E o dÃƒÆ’Ã‚Â©bito dos
-//  pontos ÃƒÆ’Ã‚Â© desfeito pela prÃƒÆ’Ã‚Â³pria fÃƒÆ’Ã‚Â³rmula do saldo (o resgate deixa de contar),
-//  e nÃƒÆ’Ã‚Â£o por um segundo lanÃƒÆ’Ã‚Â§amento negativo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â que duplicaria a conta e
+//  Rejeitar/cancelar NÃO apaga a linha: ela vira histórico. E o débito dos
+//  pontos é desfeito pela própria fórmula do saldo (o resgate deixa de contar),
+//  e não por um segundo lançamento negativo — que duplicaria a conta e
 //  esconderia o erro.
 
 enum CategoriaRecompensa {
@@ -2536,12 +2540,12 @@ model Recompensa {
   nome                 String
   descricao            String
   categoria            CategoriaRecompensa @default(OUTRO)
-  /// Quanto custa em pontos. `Int`, porque ponto ÃƒÆ’Ã‚Â© contagem.
+  /// Quanto custa em pontos. `Int`, porque ponto é contagem.
   custoPontos          Int
-  /// Estoque REAL. `0` significa "esgotado" e some da vitrine ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nÃƒÆ’Ã‚Â£o
-  /// "sem limite", que seria outra decisÃƒÆ’Ã‚Â£o e teria outro campo.
+  /// Estoque REAL. `0` significa "esgotado" e some da vitrine — não
+  /// "sem limite", que seria outra decisão e teria outro campo.
   quantidadeDisponivel Int                 @default(0)
-  /// `false` esconde da loja sem apagar o histÃƒÆ’Ã‚Â³rico de quem jÃƒÆ’Ã‚Â¡ resgatou.
+  /// `false` esconde da loja sem apagar o histórico de quem já resgatou.
   ativa                Boolean             @default(true)
   observacoes          String?
   createdAt            DateTime            @default(now())
@@ -2559,15 +2563,15 @@ model ResgateRecompensa {
   empresa          Empresa       @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   recompensaId     String
   recompensa       Recompensa    @relation(fields: [recompensaId], references: [id], onDelete: Cascade)
-  /// Quem resgatou. Coluna escalar, padrÃƒÆ’Ã‚Â£o do projeto; o nome ÃƒÆ’Ã‚Â© resolvido em
-  /// consulta ÃƒÆ’Ã‚Â  parte.
+  /// Quem resgatou. Coluna escalar, padrão do projeto; o nome é resolvido em
+  /// consulta à parte.
   funcionarioId    String
-  /// Custo congelado no momento do resgate. Se a empresa reajustar o preÃƒÆ’Ã‚Â§o
-  /// depois, o histÃƒÆ’Ã‚Â³rico continua dizendo o que a pessoa pagou ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â sem isso, o
-  /// registro mentiria sobre a transaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o antiga.
+  /// Custo congelado no momento do resgate. Se a empresa reajustar o preço
+  /// depois, o histórico continua dizendo o que a pessoa pagou — sem isso, o
+  /// registro mentiria sobre a transação antiga.
   pontosUtilizados Int
   status           StatusResgate @default(SOLICITADO)
-  /// Quem aprovou/rejeitou/cancelou. NULL enquanto ninguÃƒÆ’Ã‚Â©m decidiu.
+  /// Quem aprovou/rejeitou/cancelou. NULL enquanto ninguém decidiu.
   aprovadoPorId    String?
   data             DateTime      @db.Date
   aprovadoEm       DateTime?     @db.Date
@@ -2581,72 +2585,72 @@ model ResgateRecompensa {
 }
 
 // ===========================================================================
-//  Ciclo 5 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PontuaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o CONFIGURÃƒÆ’Ã‚ÂVEL por empresa
+//  Ciclo 5 — Pontuação CONFIGURÁVEL por empresa
 // ===========================================================================
 //
 //  A REGRA DO CICLO, EM UMA FRASE
 //  ---------------------------------
-//  O NEXUS nÃƒÆ’Ã‚Â£o tem opiniÃƒÆ’Ã‚Â£o sobre quanto vale absenceiro. A EMPRESA decide quais
-//  critÃƒÆ’Ã‚Â©rios existem, qual condiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o cada um exige, quantos pontos vale e como o
-//  saldo se gasta. O NEXUS sÃƒÆ’Ã‚Â³ faz seis coisas, e nenhuma delas ÃƒÆ’Ã‚Â© opinar:
-//    1. lÃƒÆ’Ã‚Âª o evento real do funcionÃƒÆ’Ã‚Â¡rio (falta, meta, advertÃƒÆ’Ã‚Âªncia, treinoÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦);
-//    2. compara com a condiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o que A EMPRESA configurou;
+//  O NEXUS não tem opinião sobre quanto vale absenceiro. A EMPRESA decide quais
+//  critérios existem, qual condição cada um exige, quantos pontos vale e como o
+//  saldo se gasta. O NEXUS só faz seis coisas, e nenhuma delas é opinar:
+//    1. lê o evento real do funcionário (falta, meta, advertência, treino…);
+//    2. compara com a condição que A EMPRESA configurou;
 //    3. credita a quantidade de pontos que A EMPRESA configurou;
-//    4. guarda o histÃƒÆ’Ã‚Â³rico;
+//    4. guarda o histórico;
 //    5. calcula o saldo;
 //    6. deixa o saldo ser gasto nas recompensas que A EMPRESA cadastrou.
 //
-//  POR QUE NÃƒÆ’Ã†â€™O HÃƒÆ’Ã‚Â VALOR PADRÃƒÆ’Ã†â€™O NESTE ARQUIVO
+//  POR QUE NÃO HÁ VALOR PADRÃO NESTE ARQUIVO
 //  -------------------------------------------
-//  Um `pontos: 10` aqui seria uma polÃƒÆ’Ã‚Â­tica do NEXUS valendo para toda empresa
-//  que usa o sistema ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â exatamente o que este ciclo veio desfazer. Por isso os
-//  campos de valor e pontos sÃƒÆ’Ã‚Â£o obrigatÃƒÆ’Ã‚Â³rios na criaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o e a empresa nasce com
-//  ZERO critÃƒÆ’Ã‚Â©rios: sem configuraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, nada ÃƒÆ’Ã‚Â© creditado, e a tela diz isso.
+//  Um `pontos: 10` aqui seria uma política do NEXUS valendo para toda empresa
+//  que usa o sistema — exatamente o que este ciclo veio desfazer. Por isso os
+//  campos de valor e pontos são obrigatórios na criação e a empresa nasce com
+//  ZERO critérios: sem configuração, nada é creditado, e a tela diz isso.
 //
-//  A TABELA ÃƒÆ’Ã¢â‚¬Â° POR EMPRESA
+//  A TABELA É POR EMPRESA
 //  ---------------------
-//  `empresaId` estÃƒÆ’Ã‚Â¡ em todas as consultas, e os dois ÃƒÆ’Ã‚Â­ndices comeÃƒÆ’Ã‚Â§am por ele.
-//  Duas empresas podem ter exatamente os mesmos nomes de critÃƒÆ’Ã‚Â©rio com valores
-//  completamente diferentes ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e isso ÃƒÆ’Ã‚Â© o comportamento correto, nÃƒÆ’Ã‚Â£o um bug.
+//  `empresaId` está em todas as consultas, e os dois índices começam por ele.
+//  Duas empresas podem ter exatamente os mesmos nomes de critério com valores
+//  completamente diferentes — e isso é o comportamento correto, não um bug.
 //
-//  `AvaliacaoCriterio` ÃƒÆ’Ã‚Â© o que impede a pontuaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de inflar: um critÃƒÆ’Ã‚Â©rio sÃƒÆ’Ã‚Â³
-//  credita UMA vez por funcionÃƒÆ’Ã‚Â¡rio por perÃƒÆ’Ã‚Â­odo. Rodar a avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o dez vezes no
-//  mesmo mÃƒÆ’Ã‚Âªs continua valendo o mesmo ponto, e a evidÃƒÆ’Ã‚Âªncia do que foi medido
-//  fica congelada na linha ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â se a falta da empresa mudar depois, o histÃƒÆ’Ã‚Â³rico
-//  continua dizendo o que o NEXUS viu na apuraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o.
+//  `AvaliacaoCriterio` é o que impede a pontuação de inflar: um critério só
+//  credita UMA vez por funcionário por período. Rodar a avaliação dez vezes no
+//  mesmo mês continua valendo o mesmo ponto, e a evidência do que foi medido
+//  fica congelada na linha — se a falta da empresa mudar depois, o histórico
+//  continua dizendo o que o NEXUS viu na apuração.
 
-/// Eventos que o NEXUS consegue VERIFICAR no banco. NÃƒÆ’Ã‚Â£o sÃƒÆ’Ã‚Â£o uma lista de
-/// metas: sÃƒÆ’Ã‚Â£o as perguntas que os dados da empresa permitem responder.
+/// Eventos que o NEXUS consegue VERIFICAR no banco. Não são uma lista de
+/// metas: são as perguntas que os dados da empresa permitem responder.
 enum EventoPontuacao {
-  /// Nenhuma falta registrada no perÃƒÆ’Ã‚Â­odo.
+  /// Nenhuma falta registrada no período.
   SEM_FALTA
-  /// Nenhum atraso somado no perÃƒÆ’Ã‚Â­odo.
+  /// Nenhum atraso somado no período.
   SEM_ATRASO
-  /// Nenhuma advertÃƒÆ’Ã‚Âªncia no perÃƒÆ’Ã‚Â­odo.
+  /// Nenhuma advertência no período.
   SEM_ADVERTENCIA
   /// Percentual de uma `Meta` do tipo FUNCIONARIO atingiu o parametro.
   META_BATIDA
-  /// Quantos treinamentos o funcionÃƒÆ’Ã‚Â¡rio PRESENDEU no perÃƒÆ’Ã‚Â­odo. O enum
+  /// Quantos treinamentos o funcionário PRESENDEU no período. O enum
   /// `StatusParticipante` tem PRESENTE/AUSENTE, e nao "CONCLUIDO": o evento
   /// mede presenca, que e o dado que existe de fato.
   TREINAMENTO_PRESENTE
-  /// Horas extras somadas no perÃƒÆ’Ã‚Â­odo.
+  /// Horas extras somadas no período.
   HORAS_EXTRAS
-  /// Valor vendido no perÃƒÆ’Ã‚Â­odo.
+  /// Valor vendido no período.
   VENDAS_NO_PERIODO
 }
 
-/// Como a condiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o do critÃƒÆ’Ã‚Â©rio ÃƒÆ’Ã‚Â© comparada com o valor medido.
+/// Como a condição do critério é comparada com o valor medido.
 enum OperadorCriterio {
   /// medido == valor  (ex.: 0 faltas)
   IGUAL
   /// medido >= valor (ex.: 100% da meta)
   MAIOR_OU_IGUAL
-  /// medido <= valor (ex.: no mÃƒÆ’Ã‚Â¡ximo 2 atrasos)
+  /// medido <= valor (ex.: no máximo 2 atrasos)
   MENOR_OU_IGUAL
 }
 
-/// Janela em que o critÃƒÆ’Ã‚Â©rio ÃƒÆ’Ã‚Â© medido. Define tambÃƒÆ’Ã‚Â©m a chave de idempotÃƒÆ’Ã‚Âªncia.
+/// Janela em que o critério é medido. Define também a chave de idempotência.
 enum PeriodoCriterio {
   MENSAL
   TRIMESTRAL
@@ -2657,29 +2661,29 @@ model CriterioPontuacao {
   id          String           @id @default(cuid())
   empresaId   String
   empresa     Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  /// Nome que A EMPRESA dÃƒÆ’Ã‚Â¡ ao seu critÃƒÆ’Ã‚Â©rio. Texto livre: "Zero falta", "Bateu
-  /// a meta do trimestre", "Ajudou a equipe" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â o NEXUS nÃƒÆ’Ã‚Â£o padroniza a polÃƒÆ’Ã‚Â­tica.
+  /// Nome que A EMPRESA dá ao seu critério. Texto livre: "Zero falta", "Bateu
+  /// a meta do trimestre", "Ajudou a equipe" — o NEXUS não padroniza a política.
   nome        String
   descricao   String?
   evento      EventoPontuacao
   operador    OperadorCriterio @default(IGUAL)
   /// Limiar comparado com o valor medido. Significado conforme o evento:
-  /// 0 faltas, 100 (percentual), 2 treinamentos, 10 horasÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦
+  /// 0 faltas, 100 (percentual), 2 treinamentos, 10 horas…
   valor       Int              @default(0)
-  /// Quantos pontos A EMPRESA paga por este critÃƒÆ’Ã‚Â©rio. Pode ser NEGATIVO: ÃƒÆ’Ã‚Â©
-  /// assim que uma empresa pune atraso ou advertÃƒÆ’Ã‚Âªncia sem inventar um segundo
-  /// tipo de registro. Zero ÃƒÆ’Ã‚Â© vÃƒÆ’Ã‚Â¡lido e significa "criterio de observacao".
+  /// Quantos pontos A EMPRESA paga por este critério. Pode ser NEGATIVO: é
+  /// assim que uma empresa pune atraso ou advertência sem inventar um segundo
+  /// tipo de registro. Zero é válido e significa "criterio de observacao".
   pontos      Int
   periodo     PeriodoCriterio  @default(MENSAL)
-  /// `false` desliga o critÃƒÆ’Ã‚Â©rio sem apagar o histÃƒÆ’Ã‚Â³rico jÃƒÆ’Ã‚Â¡ creditado.
+  /// `false` desliga o critério sem apagar o histórico já creditado.
   ativo       Boolean          @default(true)
   observacoes String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
   avaliacoes AvaliacaoCriterio[]
-  /// Pontos que este critÃƒÆ’Ã‚Â©rio jÃƒÆ’Ã‚Â¡ creditou. `SetNull` no outro lado: apagar o
-  /// critÃƒÆ’Ã‚Â©rio nÃƒÆ’Ã‚Â£o pode apagar o saldo que ele gerou.
+  /// Pontos que este critério já creditou. `SetNull` no outro lado: apagar o
+  /// critério não pode apagar o saldo que ele gerou.
   registros  RegistroGamificacao[]
 
   @@index([empresaId, ativo])
@@ -2693,23 +2697,23 @@ model AvaliacaoCriterio {
   criterioId    String
   criterio      CriterioPontuacao @relation(fields: [criterioId], references: [id], onDelete: Cascade)
   funcionarioId String
-  /// O que o NEXUS mediu de fato ("faltas=0", "meta=104%"). ÃƒÆ’Ã¢â‚¬Â° a prova de que
-  /// o ponto veio de dado real e nÃƒÆ’Ã‚Â£o de um chute ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â e fica congelado.
+  /// O que o NEXUS mediu de fato ("faltas=0", "meta=104%"). É a prova de que
+  /// o ponto veio de dado real e não de um chute — e fica congelado.
   evidencia     String
-  /// Valor medido no momento da apuraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, para a tela mostrar o porquÃƒÆ’Ã‚Âª.
+  /// Valor medido no momento da apuração, para a tela mostrar o porquê.
   valorMedido   Int               @default(0)
-  /// Pontos creditados, congelados. Se a empresa mudar `pontos` no critÃƒÆ’Ã‚Â©rio
-  /// depois, o histÃƒÆ’Ã‚Â³rico continua dizendo quanto foi pago naquele dia.
+  /// Pontos creditados, congelados. Se a empresa mudar `pontos` no critério
+  /// depois, o histórico continua dizendo quanto foi pago naquele dia.
   pontos        Int
-  /// Identificador do perÃƒÆ’Ã‚Â­odo ("2026-09", "2026-Q1", "2026"). Entra na chave
-  /// de idempotÃƒÆ’Ã‚Âªncia, e ÃƒÆ’Ã‚Â© o que impede o mesmo mÃƒÆ’Ã‚Âªs de pagar duas vezes.
+  /// Identificador do período ("2026-09", "2026-Q1", "2026"). Entra na chave
+  /// de idempotência, e é o que impede o mesmo mês de pagar duas vezes.
   periodo       String
-  /// Registro de gamificaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o gerado por esta avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o, se houver.
+  /// Registro de gamificação gerado por esta avaliação, se houver.
   registroId    String?
   createdAt     DateTime          @default(now())
 
-  /// Um critÃƒÆ’Ã‚Â©rio credita UMA vez por funcionÃƒÆ’Ã‚Â¡rio por perÃƒÆ’Ã‚Â­odo. Rodar a
-  /// avaliaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de novo no mesmo mÃƒÆ’Ã‚Âªs nÃƒÆ’Ã‚Â£o soma o mesmo ponto duas vezes.
+  /// Um critério credita UMA vez por funcionário por período. Rodar a
+  /// avaliação de novo no mesmo mês não soma o mesmo ponto duas vezes.
   @@unique([criterioId, funcionarioId, periodo])
   @@index([empresaId, periodo])
   @@index([empresaId, funcionarioId])
@@ -2719,7 +2723,7 @@ model AcaoRadar {
   id            String       @id @default(cuid())
   empresaId     String
   empresa       Empresa      @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  /// Alerta de origem. Guardamos o cÃƒÆ’Ã‚Â³digo/tÃƒÆ’Ã‚Â­tulo para o plano nÃƒÆ’Ã‚Â£o quebrar se
+  /// Alerta de origem. Guardamos o código/título para o plano não quebrar se
   /// o alerta for reclassificado depois.
   alertaRef     String
   alertaTitulo  String
@@ -2738,33 +2742,33 @@ model AcaoRadar {
 }
 
 // ===========================================================================
-//  Ciclo 3 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â LideranÃƒÆ’Ã‚Â§a EmpÃƒÆ’Ã‚Â¡tica (registro de feedback)
+//  Ciclo 3 — Liderança Empática (registro de feedback)
 // ===========================================================================
-//  POR QUE UMA TABELA NOVA E NÃƒÆ’Ã†â€™O REAPROVEITAR `RegistroGamificacao`
+//  POR QUE UMA TABELA NOVA E NÃO REAPROVEITAR `RegistroGamificacao`
 //  ---------------------------------------------------------------------
-//  `RegistroGamificacao` ÃƒÆ’Ã‚Â© PLACAR: guarda pontos, a regra que gerou o ponto e o
+//  `RegistroGamificacao` é PLACAR: guarda pontos, a regra que gerou o ponto e o
 //  evento de origem. Ele responde "quantos pontos a pessoa tem".
 //
-//  Feedback de lideranÃƒÆ’Ã‚Â§a ÃƒÆ’Ã‚Â© CONVERSA: precisa guardar o que foi reconhecido, o
-//  que precisa desenvolver, o que ficou acordado e QUANDO serÃƒÆ’Ã‚Â¡ revisado. Nada
-//  disso cabe em `descricao String` + `pontos Int` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â forÃƒÆ’Ã‚Â§ar significaria
-//  transformar "o gestor conversou com a pessoa" em "+20 pontos", que ÃƒÆ’Ã‚Â© o
-//  oposto de lideranÃƒÆ’Ã‚Â§a empÃƒÆ’Ã‚Â¡tica.
+//  Feedback de liderança é CONVERSA: precisa guardar o que foi reconhecido, o
+//  que precisa desenvolver, o que ficou acordado e QUANDO será revisado. Nada
+//  disso cabe em `descricao String` + `pontos Int` — forçar significaria
+//  transformar "o gestor conversou com a pessoa" em "+20 pontos", que é o
+//  oposto de liderança empática.
 //
-//  A mesma lÃƒÆ’Ã‚Â³gica jÃƒÆ’Ã‚Â¡ valeu para `PlanoDesenvolvimento` e `Treinamento`: cada
-//  entidade nova ÃƒÆ’Ã‚Â© porque o DOMÃƒÆ’Ã‚ÂNIO ÃƒÆ’Ã‚Â© outro, nÃƒÆ’Ã‚Â£o porque a anterior estava
+//  A mesma lógica já valeu para `PlanoDesenvolvimento` e `Treinamento`: cada
+//  entidade nova é porque o DOMÍNIO é outro, não porque a anterior estava
 //  "ocupada".
 //
-//  QUEM ÃƒÆ’Ã¢â‚¬Â° "LÃƒÆ’Ã‚ÂDER" ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â DECIDIDO COM VOCÃƒÆ’Ã…Â 
+//  QUEM É "LÍDER" — DECIDIDO COM VOCÊ
 //  ---------------------------------
-//  NÃƒÆ’Ã‚Â£o existe campo `lideranca` no `Funcionario`, e nÃƒÆ’Ã‚Â£o foi criado um. A
-//  lideranÃƒÆ’Ã‚Â§a ÃƒÆ’Ã‚Â© inferida do CARGO, que jÃƒÆ’Ã‚Â¡ existe e jÃƒÆ’Ã‚Â¡ ÃƒÆ’Ã‚Â© do gestor. A lista de
-//  termos estÃƒÆ’Ã‚Â¡ em `src/modules/rh/lideranca.ts` (`TERMOS_LIDERANCA`) e ÃƒÆ’Ã‚Â©
-//  VISÃƒÆ’Ã‚ÂVEL na tela ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â se ninguÃƒÆ’Ã‚Â©m cadastrar o cargo como "LÃƒÆ’Ã‚Â­der", ninguÃƒÆ’Ã‚Â©m ÃƒÆ’Ã‚Â©
-//  considerado lÃƒÆ’Ã‚Â­der, e o sistema diz isso em vez de inventar.
+//  Não existe campo `lideranca` no `Funcionario`, e não foi criado um. A
+//  liderança é inferida do CARGO, que já existe e já é do gestor. A lista de
+//  termos está em `src/modules/rh/lideranca.ts` (`TERMOS_LIDERANCA`) e é
+//  VISÍVEL na tela — se ninguém cadastrar o cargo como "Líder", ninguém é
+//  considerado líder, e o sistema diz isso em vez de inventar.
 //
-//  `proximoAcompanhamento` ÃƒÆ’Ã‚Â© DATE e nÃƒÆ’Ã‚Â£o TIMESTAMP pelo mesmo motivo do resto
-//  do schema: ÃƒÆ’Ã‚Â© o dia do fato, sem hora e sem fuso.
+//  `proximoAcompanhamento` é DATE e não TIMESTAMP pelo mesmo motivo do resto
+//  do schema: é o dia do fato, sem hora e sem fuso.
 
 enum TipoFeedback {
   /// Reconhecimento do que foi bem feito.
@@ -2789,19 +2793,19 @@ model FeedbackLideranca {
   funcionarioId String
   funcionario   Funcionario  @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
   /// Quem deu o feedback. Coluna escalar, como `AcaoRadar.responsavelId`: o
-  /// aplicador ÃƒÆ’Ã‚Â© sempre um `Usuario` desta empresa.
+  /// aplicador é sempre um `Usuario` desta empresa.
   aplicadoPorId String
   data          DateTime     @db.Date
   tipo          TipoFeedback @default(POSITIVO)
 
-  /// Os trÃƒÆ’Ã‚Âªs blocos que o gestor escreve. `acordos` ÃƒÆ’Ã‚Â© o que ficou combinado
-  /// ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ÃƒÆ’Ã‚Â© o campo que diferencia um feedback de um registro de conversa.
+  /// Os três blocos que o gestor escreve. `acordos` é o que ficou combinado
+  /// — é o campo que diferencia um feedback de um registro de conversa.
   pontosPositivos    String
   pontosADesenvolver String
   acordos            String?
 
-  /// Quando a conversa volta. NULL significa "sem data marcada", que ÃƒÆ’Ã‚Â© uma
-  /// escolha do gestor ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â nÃƒÆ’Ã‚Â£o "esquecido pelo sistema".
+  /// Quando a conversa volta. NULL significa "sem data marcada", que é uma
+  /// escolha do gestor — não "esquecido pelo sistema".
   proximoAcompanhamento DateTime?            @db.Date
   status                StatusAcompanhamento @default(PENDENTE)
 
@@ -2814,7 +2818,7 @@ model FeedbackLideranca {
 
   @@index([empresaId, data])
   @@index([empresaId, funcionarioId])
-  /// A fila de acompanhamento: quem estÃƒÆ’Ã‚Â¡ devendo conversa.
+  /// A fila de acompanhamento: quem está devendo conversa.
   @@index([empresaId, status, proximoAcompanhamento])
 }
 
@@ -2920,12 +2924,12 @@ model DivergenciaCaixa {
 
 // --- Tentativas de login (rate limit persistente no banco) ---
 // Armazena cada tentativa de login para aplicar rate limit por IP e por email,
-// sobrevivendo a reinÃƒÆ’Ã‚Â­cios do servidor e funcionando corretamente atrÃƒÆ’Ã‚Â¡s de
-// proxies (Vercel etc.) graÃƒÆ’Ã‚Â§as ao `trustProxy: true` do Fastify.
+// sobrevivendo a reinícios do servidor e funcionando corretamente atrás de
+// proxies (Vercel etc.) graças ao `trustProxy: true` do Fastify.
 model LoginAttempt {
   id        String   @id @default(cuid())
-  ip        String // IP real do cliente (extraÃƒÆ’Ã‚Â­do de X-Forwarded-For com trustProxy)
-  email     String? // email informado no corpo da requisiÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o (pode ser null)
+  ip        String // IP real do cliente (extraído de X-Forwarded-For com trustProxy)
+  email     String? // email informado no corpo da requisição (pode ser null)
   sucesso   Boolean  @default(false)
   createdAt DateTime @default(now())
 
@@ -2933,7 +2937,7 @@ model LoginAttempt {
   @@index([email, createdAt])
 }
 
-// --- Se+ÃƒÂ¯Ã‚Â¿Ã‚Â½ÃƒÂ¯Ã‚Â¿Ã‚Â½o 17: NexusErpRecord ---
+// --- Se+ï¿½ï¿½o 17: NexusErpRecord ---
 // Modelo de registros empresariais do pacote Enterprise (aprovacoes, notas fiscais, etc.)
 model NexusErpRecord {
   id          String    @id @default(cuid())

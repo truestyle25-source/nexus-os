@@ -2,8 +2,9 @@ const { chromium } = require('playwright');
 
 const baseUrl = 'http://localhost:3000';
 const apiBase = 'http://localhost:3333';
-const loginEmail = 'admin@nexus.com';
-const loginPassword = '12345678';
+const loginEmail = process.env.NEXUS_AUDIT_EMAIL || '';
+const loginPassword = process.env.NEXUS_AUDIT_PASSWORD || '';
+if (!loginEmail || !loginPassword) throw new Error('Defina NEXUS_AUDIT_EMAIL e NEXUS_AUDIT_PASSWORD (conta exclusiva de teste).');
 const today = new Date().toISOString().slice(0, 10);
 
 async function sleep(ms) {

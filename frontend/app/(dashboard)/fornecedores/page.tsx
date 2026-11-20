@@ -6,17 +6,18 @@ import { Search, Plus, Sparkles, X, Download } from 'lucide-react';
 import api, { getToken } from '@/lib/api';
 // Respeita Moeda / Idioma / Formato de hora da aba Configuracoes.
 import { formatBRL } from '@/lib/format';
+import { maskCnpj } from '@/lib/cnpj';
 import { t as traduzir, tMenu } from '@/lib/i18n';
 
 /**
- * Aba /fornecedores â€” clone fiel do HTML "nexus-fornecedores-add-v2".
+ * Aba /fornecedores — clone fiel do HTML "nexus-fornecedores-add-v2".
  * Design system gravado: body #0a0a14, sidebar 260px #0f0f1e, main #0e0e1f,
- * cards #15152b, roxo #7c3aed â†’ #4f46e5, sem novas cores.
- * ConteÃºdo interno da aba. Sidebar e topbar sÃ£o renderizados uma Ãºnica vez
+ * cards #15152b, roxo #7c3aed → #4f46e5, sem novas cores.
+ * Conteúdo interno da aba. Sidebar e topbar são renderizados uma única vez
  * pelo layout compartilhado de app/(dashboard)/layout.tsx.
  */
 
-type StatusFornecedor = 'Ativo' | 'CrÃ­tico' | 'Inativo';
+type StatusFornecedor = 'Ativo' | 'Crítico' | 'Inativo';
 
 interface Fornecedor {
   id: string;
@@ -55,9 +56,9 @@ interface Insights {
   oportunidade: string;
 }
 
-const CATEGORIAS = ['Malharia', 'Jeans', 'BonÃ©s', 'AcessÃ³rios', 'CalÃ§ados', 'Outros'] as const;
-const CONDICOES = ['Ã€ vista', '30 dias', '30/60', '30/60/90'] as const;
-const TABS: Array<'todos' | StatusFornecedor> = ['todos', 'Ativo', 'Inativo', 'CrÃ­tico'];
+const CATEGORIAS = ['Malharia', 'Jeans', 'Bonés', 'Acessórios', 'Calçados', 'Outros'] as const;
+const CONDICOES = ['À vista', '30 dias', '30/60', '30/60/90'] as const;
+const TABS: Array<'todos' | StatusFornecedor> = ['todos', 'Ativo', 'Inativo', 'Crítico'];
 
 const FORM_VAZIO = {
   nome: '', cnpj: '', categoria: '', status: 'Ativo' as StatusFornecedor,
@@ -66,17 +67,7 @@ const FORM_VAZIO = {
 
 const brl = (v: number) => formatBRL(v);
 
-/** MÃ¡scara CNPJ 00.000.000/0000-00 */
-function maskCnpj(valor: string): string {
-  const d = valor.replace(/\D/g, '').slice(0, 14);
-  return d
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
-}
-
-/** MÃ¡scara WhatsApp (00) 00000-0000 */
+/** Máscara WhatsApp (00) 00000-0000 */
 function maskWhats(valor: string): string {
   const d = valor.replace(/\D/g, '').slice(0, 11);
   if (d.length <= 2) return d ? `(${d}` : '';
@@ -88,7 +79,7 @@ function maskWhats(valor: string): string {
 const iniciais = (nome: string) =>
   nome.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 
-/** base64 (do backend) â†’ Blob â†’ download nativo. */
+/** base64 (do backend) → Blob → download nativo. */
 function baixarBase64(base64: string, nome: string): void {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const blob = new Blob([bytes], { type: 'application/octet-stream' });
@@ -113,10 +104,10 @@ export default function FornecedoresPage() {
   const [tab, setTab] = useState<'todos' | StatusFornecedor>('todos');
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState(FORM_VAZIO);
-  // null = cadastro; preenchido = ediÃ§Ã£o. Sem isto, um fornecedor criado com
-  // status "CrÃ­tico"/"Inativo" ficava SEM REMÃ‰DIO: o mÃ³dulo Compras sÃ³ aceita
-  // fornecedor com status 'Ativo' (POST /compras), e esta aba nÃ£o tinha como
-  // mudar o status â€” nem corrigir um CNPJ digitado errado, jÃ¡ que
+  // null = cadastro; preenchido = edição. Sem isto, um fornecedor criado com
+  // status "Crítico"/"Inativo" ficava SEM REMÉDIO: o módulo Compras só aceita
+  // fornecedor com status 'Ativo' (POST /compras), e esta aba não tinha como
+  // mudar o status — nem corrigir um CNPJ digitado errado, já que
   // PUT /api/v1/fornecedores/:id existia no backend e nunca era chamado.
   const [editId, setEditId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -136,7 +127,7 @@ export default function FornecedoresPage() {
   function mostrarToast(msg: string) {
     setToast({ msg, show: false });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    // dobro de setTimeout: primeiro aplica o estado fechado, depois .show (transiÃ§Ã£o .3s)
+    // dobro de setTimeout: primeiro aplica o estado fechado, depois .show (transição .3s)
     setTimeout(() => setToast({ msg, show: true }), 30);
     toastTimer.current = setTimeout(() => setToast((t) => ({ ...t, show: false })), 4000);
   }
@@ -152,7 +143,7 @@ export default function FornecedoresPage() {
       setKpis(k);
       setInsights(ins);
     } catch (err: any) {
-      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel carregar os fornecedores.');
+      mostrarToast(err?.message || 'Não foi possível carregar os fornecedores.');
     } finally {
       setLoading(false);
     }
@@ -173,10 +164,10 @@ export default function FornecedoresPage() {
     return () => window.removeEventListener('keydown', aoTeclar);
   }, []);
 
-  // Chart.js: doughnut "gasto por fornecedor" + bar "histÃ³rico" (6 meses).
+  // Chart.js: doughnut "gasto por fornecedor" + bar "histórico" (6 meses).
   useEffect(() => {
     if (loading) return;
-    const labelsDoughnut = lista.slice(0, 6).map((f) => f.nome.length > 16 ? `${f.nome.slice(0, 16)}â€¦` : f.nome);
+    const labelsDoughnut = lista.slice(0, 6).map((f) => f.nome.length > 16 ? `${f.nome.slice(0, 16)}…` : f.nome);
     const valoresDoughnut = lista.slice(0, 6).map((f) => Number(f.totalComprado) || 0);
     const estiloTema = getComputedStyle(document.documentElement);
     const corAcento = estiloTema.getPropertyValue('--nx-accent').trim() || '#7c3aed';
@@ -221,7 +212,7 @@ export default function FornecedoresPage() {
         data: {
           labels: kpis?.historico.map((h) => h.mes) ?? [],
           datasets: [{
-            label: 'Gasto/mÃªs',
+            label: 'Gasto/mês',
             data: kpis?.historico.map((h) => h.valor) ?? [],
             backgroundColor: corAcento,
             hoverBackgroundColor: corAcentoSecundario,
@@ -336,18 +327,18 @@ export default function FornecedoresPage() {
   /** Normaliza status vindo do banco para os 3 valores que o <select> oferece.
  *  Registros legados podem ter 'ATIVO'/'INATIVO'/'ARQUIVADO' gravados pela rota
  *  antiga; sem isso o select ficaria em branco e o salvar enviaria um valor
- *  fora do enum (400), travando a ediÃ§Ã£o justamente do registro que precisa
+ *  fora do enum (400), travando a edição justamente do registro que precisa
  *  ser corrigido. */
 function statusParaForm(valor?: string): StatusFornecedor {
   const s = (valor ?? '').trim().toLowerCase();
-  if (s === 'crÃ­tico' || s === 'critico') return 'CrÃ­tico';
+  if (s === 'crítico' || s === 'critico') return 'Crítico';
   if (s === 'inativo' || s === 'arquivado') return 'Inativo';
   return 'Ativo';
 }
 
-/** Categoria fora da lista vigente (padrÃ£o antigo do schema) entra como
- *  opÃ§Ã£o extra, senÃ£o o select fica vazio e o campo obrigatÃ³rio trava o
- *  salvamento de um registro que o usuÃ¡rio sÃ³ queria editar. */
+/** Categoria fora da lista vigente (padrão antigo do schema) entra como
+ *  opção extra, senão o select fica vazio e o campo obrigatório trava o
+ *  salvamento de um registro que o usuário só queria editar. */
 function listaCategorias(valor?: string) {
   return valor && !CATEGORIAS.includes(valor as any) ? [...CATEGORIAS, valor] : CATEGORIAS;
 }
@@ -358,8 +349,8 @@ function listaCondicoes(valor?: string) {
 
   /**
    * openModal(): cadastro, com prefill opcional do nome (usado pela IA).
-   * openModal(f): EDIÃ‡ÃƒO â€” reaproveita exatamente o mesmo formulÃ¡rio, sem
-   * modal novo, para que o usuÃ¡rio consiga corrigir status/CNPJ.
+   * openModal(f): EDIÇÃO — reaproveita exatamente o mesmo formulário, sem
+   * modal novo, para que o usuário consiga corrigir status/CNPJ.
    */
   function openModal(alvo?: Fornecedor | string) {
     if (alvo && typeof alvo !== 'string') {
@@ -390,11 +381,11 @@ function listaCondicoes(valor?: string) {
     setForm(FORM_VAZIO);
   }
 
-  /** POST (cadastro) ou PUT (ediÃ§Ã£o) /api/v1/fornecedores â€” persiste e realinha a tela. */
+  /** POST (cadastro) ou PUT (edição) /api/v1/fornecedores — persiste e realinha a tela. */
   async function salvarFornecedor(e: React.FormEvent) {
     e.preventDefault();
     if (!form.nome.trim() || !form.categoria) {
-      mostrarToast('Preencha nome e categoria (obrigatÃ³rios).');
+      mostrarToast('Preencha nome e categoria (obrigatórios).');
       return;
     }
     setSalvando(true);
@@ -411,7 +402,7 @@ function listaCondicoes(valor?: string) {
         condicaoPagamento: form.cond || undefined,
         observacoes: form.obs || undefined,
       };
-      // `empresaId` NÃƒO vai no corpo: o escopo vem do JWT no backend. O
+      // `empresaId` NÃO vai no corpo: o escopo vem do JWT no backend. O
       // campo era ignorado pelo schema, mas sugeria falsamente que o
       // tenancy vinha do cliente.
       const { data: salvo } = editId
@@ -419,10 +410,10 @@ function listaCondicoes(valor?: string) {
         : await api.post<Fornecedor>('/api/v1/fornecedores', corpo);
 
       if (editId) {
-        // O PUT devolve a linha completa jÃ¡ com os totais calculados pelo servidor;
-        // ainda assim a linha Ã© mesclada sobre a anterior para nÃ£o piscar os
-        // campos que a tela nÃ£o conhece, e a substituiÃ§Ã£o Ã© feita no lugar â€”
-        // sem reordenar a tabela enquanto o usuÃ¡rio estÃ¡ lendo.
+        // O PUT devolve a linha completa já com os totais calculados pelo servidor;
+        // ainda assim a linha é mesclada sobre a anterior para não piscar os
+        // campos que a tela não conhece, e a substituição é feita no lugar —
+        // sem reordenar a tabela enquanto o usuário está lendo.
         setLista((atual) =>
           atual.map((f) =>
             f.id === editId
@@ -440,15 +431,15 @@ function listaCondicoes(valor?: string) {
       }
       void carregar(); // realinha lista/KPIs/insights com o banco
     } catch (err: any) {
-      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel salvar o fornecedor.');
+      mostrarToast(err?.message || 'Não foi possível salvar o fornecedor.');
     } finally {
       setSalvando(false);
     }
   }
 
   /**
-   * analisarIA(): "adicionar fornecedor X" â†’ openModal(X);
-   * "atraso/crÃ­tico" â†’ tab CrÃ­tico; demais â†’ POST /ia/analisar + toast.
+   * analisarIA(): "adicionar fornecedor X" → openModal(X);
+   * "atraso/crítico" → tab Crítico; demais → POST /ia/analisar + toast.
    */
   async function analisarIA() {
     const q = iaQ.trim();
@@ -459,13 +450,13 @@ function listaCondicoes(valor?: string) {
       const nome = q.replace(/.*fornecedor\s*/i, '').trim().replace(/[.!?]+$/, '');
       setIaQ('');
       openModal(nome || undefined);
-      mostrarToast(nome ? `Abrindo cadastro de "${nome}"â€¦` : 'Abrindo cadastro de fornecedorâ€¦');
+      mostrarToast(nome ? `Abrindo cadastro de "${nome}"…` : 'Abrindo cadastro de fornecedor…');
       return;
     }
-    if (p.includes('atraso') || p.includes('atrasa') || p.includes('atrasad') || p.includes('crÃ­tic') || p.includes('critic')) {
-      setTab('CrÃ­tico');
+    if (p.includes('atraso') || p.includes('atrasa') || p.includes('atrasad') || p.includes('crític') || p.includes('critic')) {
+      setTab('Crítico');
       setIaQ('');
-      mostrarToast('Filtro CrÃ­tico aplicado na lista.');
+      mostrarToast('Filtro Crítico aplicado na lista.');
       return;
     }
 
@@ -481,7 +472,7 @@ function listaCondicoes(valor?: string) {
       }
       setIaQ('');
     } catch (err: any) {
-      mostrarToast(err?.message || 'NÃ£o foi possÃ­vel analisar agora.');
+      mostrarToast(err?.message || 'Não foi possível analisar agora.');
     } finally {
       setIaAnalisando(false);
     }
@@ -500,9 +491,9 @@ function listaCondicoes(valor?: string) {
     return okTab && okBusca;
   });
 
-  /** CSV em blob local (mesmo recorte visÃ­vel da tabela). */
+  /** CSV em blob local (mesmo recorte visível da tabela). */
   function exportCSV() {
-    const cabecalho = ['Nome', 'CNPJ', 'Categoria', 'Status', 'Contato', 'WhatsApp', 'Email', 'CondiÃ§Ã£o', 'Produtos', 'Total Comprado', 'Pedidos'];
+    const cabecalho = ['Nome', 'CNPJ', 'Categoria', 'Status', 'Contato', 'WhatsApp', 'Email', 'Condição', 'Produtos', 'Total Comprado', 'Pedidos'];
     const linhas = filtrados.map((f) => [
       f.nome, f.cnpj ?? '', f.categoria, f.status, f.contato ?? '', f.whatsapp ?? '',
       f.email ?? '', f.condicaoPagamento ?? '', f.produtos ?? '', String(Number(f.totalComprado) || 0), String(f.totalPedidos),
@@ -522,7 +513,7 @@ function listaCondicoes(valor?: string) {
     mostrarToast('CSV exportado!');
   }
 
-  /** Excel real via POST /fornecedores/export (exceljs â†’ base64). */
+  /** Excel real via POST /fornecedores/export (exceljs → base64). */
   async function exportExcel() {
     try {
       const { data } = await api.post<{ base64: string; nome: string }>('/api/v1/fornecedores/export', { formato: 'excel' });
@@ -535,7 +526,7 @@ function listaCondicoes(valor?: string) {
 
   const badgeStatus = (s: string) => {
     if (s === 'Ativo') return { background: 'var(--nx-green)', color: 'var(--nx-green-contrast)', border: '1px solid var(--nx-green-border)' };
-    if (s === 'CrÃ­tico') return { background: 'var(--nx-red)', color: 'var(--nx-red-contrast)', border: '1px solid var(--nx-red-border)' };
+    if (s === 'Crítico') return { background: 'var(--nx-red)', color: 'var(--nx-red-contrast)', border: '1px solid var(--nx-red-border)' };
     return { background: 'var(--nx-surface)', color: 'var(--nx-ink-2)', border: '1px solid var(--nx-border)' };
   };
 
@@ -544,15 +535,15 @@ function listaCondicoes(valor?: string) {
       id: 'kpiTotal',
       label: 'FORNECEDORES',
       valor: String(kpis?.totalFornecedores ?? 0),
-      delta: `${kpis?.criadosNoMes ?? 0} novo(s) no mÃªs`,
+      delta: `${kpis?.criadosNoMes ?? 0} novo(s) no mês`,
       subiu: (kpis?.criadosNoMes ?? 0) > 0,
     },
     {
       id: 'kpiGasto',
-      label: 'GASTO NO MÃŠS',
+      label: 'GASTO NO MÊS',
       valor: brl(kpis?.gastoMes ?? 0),
       delta: kpis && kpis.gastoMesAnterior > 0
-        ? `${(((kpis.gastoMes - kpis.gastoMesAnterior) / kpis.gastoMesAnterior) * 100).toFixed(0)}% vs mÃªs ant.`
+        ? `${(((kpis.gastoMes - kpis.gastoMesAnterior) / kpis.gastoMesAnterior) * 100).toFixed(0)}% vs mês ant.`
         : 'base anterior zerada',
       subiu: (kpis?.gastoMes ?? 0) >= (kpis?.gastoMesAnterior ?? 0),
     },
@@ -565,9 +556,9 @@ function listaCondicoes(valor?: string) {
     },
     {
       id: 'kpiTicket',
-      label: 'TICKET MÃ‰DIO',
+      label: 'TICKET MÉDIO',
       valor: brl(kpis?.ticketMedio ?? 0),
-      delta: kpis && kpis.ticketGeral > 0 ? 'no mÃªs vs geral' : 'mÃ©dia por pedido',
+      delta: kpis && kpis.ticketGeral > 0 ? 'no mês vs geral' : 'média por pedido',
       subiu: (kpis?.ticketMedio ?? 0) >= (kpis?.ticketGeral ?? 0),
     },
   ];
@@ -578,7 +569,7 @@ function listaCondicoes(valor?: string) {
       style={{ minHeight: '100%', background: 'var(--nx-surface)', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
     >
       <style>{`
-        /* Design system "nexus-fornecedores-add-v2" â€” cores exatas do artefato. */
+        /* Design system "nexus-fornecedores-add-v2" — cores exatas do artefato. */
         @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .72; transform: scale(1.05); } }
         .nx-card { background: var(--nx-surface); border: 1px solid var(--nx-border); border-radius: 16px; padding: 18px; }
         .nx-input { background: var(--nx-surface-3); border: 1px solid var(--nx-border); border-radius: 8px; height: 42px; color: var(--nx-ink); font-size: 13px; padding: 0 12px; outline: none; width: 100%; transition: border-color .15s; box-sizing: border-box; }
@@ -619,13 +610,13 @@ function listaCondicoes(valor?: string) {
         @media (max-width: 760px) { .nx-form { grid-template-columns: 1fr; } }
       `}</style>
 
-      {/* Back pill â† Dashboard */}
-      <button type="button" className="nx-back" onClick={() => router.push('/')}>â† Dashboard</button>
+      {/* Back pill ← Dashboard */}
+      <button type="button" className="nx-back" onClick={() => router.push('/')}>← Dashboard</button>
 
-      {/* Identidade e busca da pÃ¡gina â€” nÃ£o constituem uma segunda topbar */}
+      {/* Identidade e busca da página — não constituem uma segunda topbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <div className="nx-label" style={{ marginBottom: 6 }}>GESTÃƒO</div>
+          <div className="nx-label" style={{ marginBottom: 6 }}>GESTÃO</div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--nx-ink)', lineHeight: 1.2, margin: 0 }}>{traduzir('fornecedores', "Fornecedores")}</h1>
           <p style={{ fontSize: 13, color: 'var(--nx-ink-2)', margin: '5px 0 0' }}>Parceiros, categorias e desempenho de compra</p>
         </div>
@@ -635,7 +626,7 @@ function listaCondicoes(valor?: string) {
             id="busca"
             className="nx-input"
             style={{ paddingLeft: 34 }}
-            placeholder="Buscar fornecedor, CNPJ, contatoâ€¦"
+            placeholder="Buscar fornecedor, CNPJ, contato…"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
@@ -650,25 +641,25 @@ function listaCondicoes(valor?: string) {
                 id="iaQ"
                 className="nx-input"
                 style={{ flex: 1, minWidth: 220 }}
-                placeholder='Ex.: "adicionar fornecedor Tecidos Brasil" ou "quem estÃ¡ atrasando?"'
+                placeholder='Ex.: "adicionar fornecedor Tecidos Brasil" ou "quem está atrasando?"'
                 value={iaQ}
                 onChange={(e) => setIaQ(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') void analisarIA(); }}
               />
               <button type="button" className="nx-btn nx-btn-roxo" onClick={() => void analisarIA()} disabled={iaAnalisando}>
-                {iaAnalisando ? 'ANALISANDOâ€¦' : 'ANALISAR'}
+                {iaAnalisando ? 'ANALISANDO…' : 'ANALISAR'}
               </button>
             </div>
           </div>
 
-          {/* KPIs â€” grid 4 col */}
+          {/* KPIs — grid 4 col */}
           <div className="nx-kpis">
             {kpiCards.map((k) => (
               <div className="nx-kpi" key={k.id} id={k.id}>
                 <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--nx-ink)' }}>{k.valor}</div>
                 <div className="nx-label" style={{ color: 'var(--nx-ink-2)', marginTop: 6 }}>{k.label}</div>
                 <div style={{ fontSize: 11, marginTop: 6, color: k.subiu ? 'var(--nx-green)' : 'var(--nx-red)' }}>
-                  {k.subiu ? 'â–²' : 'â–¼'} {k.delta}
+                  {k.subiu ? '▲' : '▼'} {k.delta}
                 </div>
               </div>
             ))}
@@ -719,7 +710,7 @@ function listaCondicoes(valor?: string) {
                   </thead>
                   <tbody id="tabelaFornecedores">
                     {loading && (
-                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Carregando fornecedoresâ€¦</td></tr>
+                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Carregando fornecedores…</td></tr>
                     )}
                     {!loading && filtrados.length === 0 && (
                       <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Nenhum fornecedor encontrado.</td></tr>
@@ -730,12 +721,12 @@ function listaCondicoes(valor?: string) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div className="nx-avatar">{iniciais(f.nome)}</div>
                             <div>
-                              {/* Nome vira o gatilho de ediÃ§Ã£o. MantÃ©m a mesma
+                              {/* Nome vira o gatilho de edição. Mantém a mesma
                                   cor/fonte do texto anterior (nada muda no
                                   layout) e resolve o impasse: fornecedor criado
-                                  como "CrÃ­tico"/"Inativo" Ã© rejeitado por
+                                  como "Crítico"/"Inativo" é rejeitado por
                                   POST /compras e, sem isto, nunca voltava a
-                                  "Ativo" â€” nem corrigia um CNPJ com erro. */}
+                                  "Ativo" — nem corrigia um CNPJ com erro. */}
                               <button
                                 type="button"
                                 onClick={() => openModal(f)}
@@ -744,12 +735,12 @@ function listaCondicoes(valor?: string) {
                               >
                                 {f.nome}
                               </button>
-                              <div style={{ fontSize: 10, color: 'var(--nx-ink-2)' }}>{f.cnpj || 'CNPJ nÃ£o informado'}</div>
+                              <div style={{ fontSize: 10, color: 'var(--nx-ink-2)' }}>{f.cnpj || 'CNPJ não informado'}</div>
                             </div>
                           </div>
                         </td>
                         <td className="nx-td"><span className="nx-tag">{f.categoria}</span></td>
-                        <td className="nx-td">{f.contato || f.whatsapp || f.email || 'â€”'}</td>
+                        <td className="nx-td">{f.contato || f.whatsapp || f.email || '—'}</td>
                         <td className="nx-td"><span className="nx-badge" style={badgeStatus(f.status)}>{f.status}</span></td>
                         <td className="nx-td" style={{ textAlign: 'right', color: 'var(--nx-ink)', fontWeight: 600 }}>{brl(Number(f.totalComprado))}</td>
                         <td className="nx-td" style={{ textAlign: 'right' }}>{f.totalPedidos}</td>
@@ -760,23 +751,23 @@ function listaCondicoes(valor?: string) {
               </div>
             </section>
 
-            {/* Card Insights + grÃ¡ficos */}
+            {/* Card Insights + gráficos */}
             <section className="nx-card">
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--nx-ink)', marginBottom: 4 }}>Insights</div>
-              <div style={{ fontSize: 12, color: 'var(--nx-ink-2)', marginBottom: 14 }}>AnÃ¡lise automÃ¡tica dos seus fornecedores</div>
+              <div style={{ fontSize: 12, color: 'var(--nx-ink-2)', marginBottom: 14 }}>Análise automática dos seus fornecedores</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ background: 'var(--nx-surface-2)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: '10px 12px' }}>
-                  <div className="nx-label" style={{ color: 'var(--nx-accent)', marginBottom: 4 }}>MELHOR NEGOCIAÃ‡ÃƒO</div>
-                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.melhorNegociacao ?? 'Carregandoâ€¦'}</div>
+                  <div className="nx-label" style={{ color: 'var(--nx-accent)', marginBottom: 4 }}>MELHOR NEGOCIAÇÃO</div>
+                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.melhorNegociacao ?? 'Carregando…'}</div>
                 </div>
                 <div style={{ background: 'var(--nx-surface-2)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: '10px 12px' }}>
-                  <div className="nx-label" style={{ color: 'var(--nx-amber)', marginBottom: 4 }}>ATRASO CRÃTICO</div>
-                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.atrasoCritico ?? 'Carregandoâ€¦'}</div>
+                  <div className="nx-label" style={{ color: 'var(--nx-amber)', marginBottom: 4 }}>ATRASO CRÍTICO</div>
+                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.atrasoCritico ?? 'Carregando…'}</div>
                 </div>
                 <div style={{ background: 'var(--nx-surface-2)', border: '1px solid var(--nx-border)', borderRadius: 10, padding: '10px 12px' }}>
                   <div className="nx-label" style={{ color: 'var(--nx-green)', marginBottom: 4 }}>OPORTUNIDADE</div>
-                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.oportunidade ?? 'Carregandoâ€¦'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--nx-ink)' }}>{insights?.oportunidade ?? 'Carregando…'}</div>
                 </div>
               </div>
 
@@ -785,7 +776,7 @@ function listaCondicoes(valor?: string) {
                 <div style={{ height: 200 }}><canvas id="chartFornecedores" ref={doughnutRef} /></div>
               </div>
               <div style={{ marginTop: 16 }}>
-                <div className="nx-label" style={{ marginBottom: 8 }}>HISTÃ“RICO (6 MESES)</div>
+                <div className="nx-label" style={{ marginBottom: 8 }}>HISTÓRICO (6 MESES)</div>
                 <div style={{ height: 180 }}><canvas id="chart2" ref={barRef} /></div>
               </div>
             </section>
@@ -810,7 +801,7 @@ function listaCondicoes(valor?: string) {
 
           <form id="formFornecedor" className="nx-form" onSubmit={(e) => void salvarFornecedor(e)}>
             <div>
-              <label className="nx-flabel" htmlFor="fNome">Nome / RazÃ£o Social *</label>
+              <label className="nx-flabel" htmlFor="fNome">Nome / Razão Social *</label>
               <input id="fNome" className="nx-input" required value={form.nome} onChange={(e) => setCampo('nome', e.target.value)} />
             </div>
             <div>
@@ -820,7 +811,7 @@ function listaCondicoes(valor?: string) {
             <div>
               <label className="nx-flabel" htmlFor="fCategoria">Categoria *</label>
               <select id="fCategoria" className="nx-input" required value={form.categoria} onChange={(e) => setCampo('categoria', e.target.value)}>
-                <option value="">{traduzir('selecione', "Selecioneâ€¦")}</option>
+                <option value="">{traduzir('selecione', "Selecione…")}</option>
                 {listaCategorias(form.categoria).map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -828,7 +819,7 @@ function listaCondicoes(valor?: string) {
               <label className="nx-flabel" htmlFor="fStatus">{traduzir('status', "Status")}</label>
               <select id="fStatus" className="nx-input" value={form.status} onChange={(e) => setCampo('status', e.target.value)}>
                 <option value="Ativo">{traduzir('ativo', "Ativo")}</option>
-                <option value="CrÃ­tico">CrÃ­tico</option>
+                <option value="Crítico">Crítico</option>
                 <option value="Inativo">{traduzir('inativo', "Inativo")}</option>
               </select>
             </div>
@@ -845,18 +836,18 @@ function listaCondicoes(valor?: string) {
               <input id="fEmail" type="email" className="nx-input" value={form.email} onChange={(e) => setCampo('email', e.target.value)} />
             </div>
             <div>
-              <label className="nx-flabel" htmlFor="fCond">CondiÃ§Ã£o de Pagamento</label>
+              <label className="nx-flabel" htmlFor="fCond">Condição de Pagamento</label>
               <select id="fCond" className="nx-input" value={form.cond} onChange={(e) => setCampo('cond', e.target.value)}>
-                <option value="">{traduzir('selecione', "Selecioneâ€¦")}</option>
+                <option value="">{traduzir('selecione', "Selecione…")}</option>
                 {listaCondicoes(form.cond).map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label className="nx-flabel" htmlFor="fProdutos">Produtos Fornecidos</label>
-              <input id="fProdutos" className="nx-input" placeholder="Camisa, BonÃ©, CalÃ§a" value={form.produtos} onChange={(e) => setCampo('produtos', e.target.value)} />
+              <input id="fProdutos" className="nx-input" placeholder="Camisa, Boné, Calça" value={form.produtos} onChange={(e) => setCampo('produtos', e.target.value)} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label className="nx-flabel" htmlFor="fObs">{traduzir('observacoes', "ObservaÃ§Ãµes")}</label>
+              <label className="nx-flabel" htmlFor="fObs">{traduzir('observacoes', "Observações")}</label>
               <textarea id="fObs" className="nx-input" value={form.obs} onChange={(e) => setCampo('obs', e.target.value)} />
             </div>
             <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
@@ -864,7 +855,7 @@ function listaCondicoes(valor?: string) {
                 style={{ background: 'var(--nx-surface-2)', border: '1px solid var(--nx-border)', color: 'var(--nx-ink-2)', padding: '10px 18px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>{traduzir('cancelar', "Cancelar")}</button>
               <button type="submit" disabled={salvando}
                 style={{ background: 'var(--nx-accent)', border: 'none', color: '#fff', padding: '10px 22px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: salvando ? 0.7 : 1 }}>
-                {salvando ? 'Salvandoâ€¦' : 'Salvar'}
+                {salvando ? 'Salvando…' : 'Salvar'}
               </button>
             </div>
           </form>
