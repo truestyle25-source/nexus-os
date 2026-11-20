@@ -120,6 +120,8 @@ test("FGTS e multa ficam null: sem saldo depositado nao se estima", () => {
   assert.ok(r.fgtsPendente.length > 0, "deve explicar o que falta para apurar");
   // O total nao pode conter FGTS: seria numero inventado.
   assert.equal(cents(r.liquido), cents(r.totalProventos - r.totalDescontos));
+});
+
 // ============================================================================
 //  Benefícios (VA e VR)
 //
@@ -192,8 +194,6 @@ test("beneficios: INSS incide sobre o provento do beneficio", () => {
   // O beneficio integra a remuneracao, entao o INSS sobe junto.
   const inss = comBeneficio.lancamentos.find((l) => l.codigo === "INSS");
   assert.equal(inss?.valor, calcularInss(4000));
-});
-
 });
 
 test("salario zero ou nulo nao quebra e nao gera lancamento", () => {
