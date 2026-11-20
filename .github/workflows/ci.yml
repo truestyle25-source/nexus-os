@@ -80,7 +80,11 @@ jobs:
           sudo apt-get install -y -qq postgresql-client >/dev/null
           APP_PWD=$(openssl rand -hex 24); echo "::add-mask::$APP_PWD"
           MIG_PWD=$(openssl rand -hex 24); echo "::add-mask::$MIG_PWD"
+          # Simula o Supabase: papéis anon/authenticated e o schema public SEM o
+          # USAGE padrão para PUBLIC (no Postgres puro todo papel herda esse acesso;
+          # no Supabase não — medido em produção: anon sem USAGE em public).
           psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -c "create role anon nologin" -c "create role authenticated nologin" || true
+          psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -c "REVOKE ALL ON SCHEMA public FROM PUBLIC"
           psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -f prisma/seguranca/01_rls_policies.sql
           psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -v senha_app="$APP_PWD" -v senha_migrator="$MIG_PWD" -f prisma/seguranca/02_papeis.sql
           psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 -c "GRANT nexus_app TO postgres"
