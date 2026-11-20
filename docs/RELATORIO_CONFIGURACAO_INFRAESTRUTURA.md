@@ -126,3 +126,31 @@ Nenhuma variável secreta tem prefixo `NEXT_PUBLIC_`, portanto **nenhuma vai par
 | Vercel | ✅ no ar, configuração correta; 🔴 segredos sem uso no projeto |
 | Render | ✅ no ar com a `main` atual, CORS do domínio corrigido, health check ativo; 🔴 métodos de CORS (PR #7) e 🔴 ainda como `postgres` |
 | Supabase | ✅ RLS, papéis e posse prontos; aguardando o backend usar `nexus_app` |
+
+
+## 11. Ativação do nexus_app em produção (2026-11-20, 19:35 UTC)
+Valores secretos colados por você no Render (Environment) e conferidos por hash, sem exibição, antes do deploy:
+| Variável | Conferência |
+|---|---|
+|  | 178 caracteres, usuário **nexus_app**, hash idêntico ao arquivo local |
+|  | 163 caracteres, usuário nexus_migrator, hash idêntico |
+|  | 64 caracteres, impressão sha256  |
+| removidas antes de salvar |  e  (coladas por engano; desnecessárias) |
+
+Duas tentativas anteriores com erro de cópia (DATABASE_URL renomeada; chave com caractere a mais) foram **canceladas antes de salvar**; a produção não foi afetada.
+
+**Evidências após o deploy (Live):**
+| Teste | Resultado |
+|---|---|
+| Conexões no banco | **nexus_app: 2 (19:36 UTC)**; postgres só a interna  |
+|  | 200 |
+| Login com e-mail inexistente (lê Usuario e grava LoginAttempt em escopo de sistema) | 401 "Credenciais inválidas" ✅ |
+| Rotas protegidas sem token / token falso | 401 |
+| CORS do domínio de produção | liberado ✅ |
+| CORS PUT/PATCH/DELETE | ❌ ainda bloqueado: depende do merge do PR #7 |
+| Logs após a troca | 0 erros de permissão, RLS ou conexão; único erro = ZodError do teste com corpo inválido (400 esperado) |
+
+**Estado: a proteção RLS está ATIVA em produção.**
+Rollback: voltar a  do Render para o valor do  local (hash ) e salvar.
+Recifragem: 0 credenciais cifradas em produção, nada a converter.
+Observação: os testes de produção gravaram 1 registro de tentativa de login falha (comportamento normal do sistema).
