@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { ErroDeNegocio, NaoEncontrado } from '../../lib/erros.js';
+import { definirSistemaDaRequisicao } from '../../lib/tenant-context.js';
 import {
   obterConfiguracoes,
   iniciarCadastroOauth,
@@ -198,6 +199,8 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
    * com detalhe interno: sempre redireciona para a Central com o motivo.
    */
   app.get('/integracoes/mercadolivre/callback', async (req: any, reply: any) => {
+    // Callback OAuth público: a empresa é resolvida pelo `state` assinado no servidor.
+    definirSistemaDaRequisicao('mercadolivre:callback');
     const base =
       (process.env.FRONTEND_URLS || '').split(',')[0]?.trim() || 'http://localhost:3000';
     const ir = (resultado: 'conectado' | 'erro', motivo?: string) =>
@@ -549,6 +552,8 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
   // Webhook público: Mercado Livre não assina as notificações tradicionais.
   // A aplicação e a conta são conferidas; ponteiro é persistido antes do 200.
   app.post('/integracoes/mercadolivre/webhook', async (req: any, reply: any) => {
+    // Webhook público: a empresa é resolvida pela conexão (seller id) no servidor.
+    definirSistemaDaRequisicao('mercadolivre:webhook');
     const parseado = z
       .object({
         resource: z.string().min(1).max(200),

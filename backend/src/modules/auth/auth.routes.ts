@@ -11,6 +11,7 @@ import { clean } from '../../lib/format.js';
 import { enviarEmailRecuperacaoSenha } from '../../lib/email.js';
 import { isValidCnpj } from '../../domain/cnpj.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
+import { comoSistema, definirSistemaDaRequisicao } from '../../lib/tenant-context.js';
 
 // Tempo de validade de um token de recuperação de senha (Seção 5).
 const VALIDADE_TOKEN_RECUPERACAO_MS = 60 * 60 * 1000; // 1 hora
@@ -23,6 +24,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   const recuperacaoLimiter = createRateLimiter(5, 60_000);
 
   app.post('/auth/register-company', { preHandler: registerLimiter }, async (req: FastifyRequest, reply: FastifyReply) => {
+    definirSistemaDaRequisicao('auth:register-company');
     const schema = z.object({
       nomeEmpresa: z.string().min(2),
       razaoSocial: z.string().optional(),
@@ -121,6 +123,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/auth/login', { preHandler: loginLimiter }, async (req: FastifyRequest, reply: FastifyReply) => {
+    definirSistemaDaRequisicao('auth:login');
     const { email, senha } = z.object({ email: z.string().email(), senha: z.string().min(6) }).parse(req.body);
     const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } });
     if (!usuario || usuario.status !== 'ATIVO' || !(await verificarSenha(senha, usuario.senhaHash))) {
@@ -168,6 +171,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   // quando o envio falha, para não vazar esse detalhe a quem está testando
   // e-mails ao acaso.
   app.post('/auth/recuperar-senha', { preHandler: recuperacaoLimiter }, async (req: FastifyRequest) => {
+    definirSistemaDaRequisicao('auth:recuperar-senha');
     const { email } = z.object({ email: z.string().email() }).parse(req.body);
     const usuario = await prisma.usuario.findUnique({ where: { email: email.toLowerCase().trim() } });
     if (usuario && usuario.status === 'ATIVO') {
@@ -199,6 +203,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
   // Seção 5: recuperação de senha, parte 2 — consome o token e troca a senha.
   app.post('/auth/redefinir-senha', { preHandler: recuperacaoLimiter }, async (req: FastifyRequest, reply: FastifyReply) => {
+    definirSistemaDaRequisicao('auth:redefinir-senha');
     const { token, novaSenha } = z.object({ token: z.string().min(10), novaSenha: z.string().min(8) }).parse(req.body);
     const registro = await prisma.tokenRecuperacaoSenha.findUnique({ where: { tokenHash: hashToken(token) } });
     if (!registro || registro.usadoEm || registro.expiraEm < new Date()) {
@@ -268,7 +273,10 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     if (dados.email !== undefined) {
       const email = dados.email.toLowerCase().trim();
       if (email !== anterior.email) {
-        const dono = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
+        // E-mail é único no sistema inteiro: checagem em escopo de sistema (RLS).
+        const dono = await comoSistema('auth:email-unico', () =>
+          prisma.usuario.findUnique({ where: { email }, select: { id: true } }),
+        );
         if (dono && dono.id !== usuarioId) {
           return reply.status(409).send({ error: 'Este e-mail já está em uso por outra conta.' });
         }

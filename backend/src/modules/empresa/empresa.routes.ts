@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma.js';
 import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { NaoAutorizado, NaoEncontrado, Conflito } from '../../lib/erros.js';
+import { comoSistema } from '../../lib/tenant-context.js';
 import { criarEstoqueParaFilial } from '../estoque/estoque.service.js';
 import { isValidCnpj } from '../../domain/cnpj.js';
 
@@ -108,7 +109,11 @@ export async function empresaRoutes(app: FastifyInstance): Promise<void> {
       const cnpj = digitosOuNulo(corpo.cnpj);
       if (cnpj) {
         if (!isValidCnpj(cnpj)) throw new Error('CNPJ inválido — confira os dígitos verificadores.');
-        const dono = await prisma.empresa.findUnique({ where: { cnpj }, select: { id: true } });
+        // CNPJ é único no sistema inteiro: a checagem precisa enxergar outras
+        // empresas (RLS). Só o id é lido, para saber se já existe.
+        const dono = await comoSistema('empresa:cnpj-unico', () =>
+          prisma.empresa.findUnique({ where: { cnpj }, select: { id: true } }),
+        );
         if (dono && dono.id !== req.user.empresaId) throw Conflito('Este CNPJ já pertence a outra empresa.');
       }
       if (corpo.estado !== undefined && corpo.estado !== null && !/^[A-Za-z]{2}$/.test(corpo.estado.trim())) {
