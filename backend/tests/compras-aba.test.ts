@@ -84,17 +84,16 @@ const senhaHash = await hashSenha('senha12345');
   const req = (m: any, url: string, payload?: unknown, headers = H) => app.inject({ method: m, url, headers, payload });
 
   // Criar unidade base para o produto (necessário para FK constraint na migration)
-  const unidadeBase = await prisma.unidade.create({
-    data: { empresa: {
-      connect: {
-        id: "cmvqxpm200000xtrshfs6aehu"
-      }
-    },
-    simbolo: 'UN',
-    fatorCanonico: 1,
-    dimensaoId: null,
-          nome: "Unidade Padrão" },
+  // Unidade base criada NA PRÓPRIA empresa do teste, com dimensão (dimensaoId é
+  // obrigatório desde a migração unidades_tipos_produtos). A versão anterior
+  // ligava a unidade a um id de empresa fixo de um banco de desenvolvimento.
+  const dimensaoBase = await prisma.dimensao.create({
+    data: { empresaId: empresa.id, nome: 'Contagem', codigo: 'CONTAGEM' },
   });
+  const unidadeBase = await prisma.unidade.create({
+    data: { empresaId: empresa.id, dimensaoId: dimensaoBase.id, nome: 'Unidade Padrão', simbolo: 'UN', fatorCanonico: 1 },
+  });
+  void unidadeBase;
 
   const produto = await prisma.produto.create({
     data: {
@@ -281,6 +280,8 @@ console.log('\n7. Persistencia apos recarregar');
     await prisma.estoque.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.fornecedor.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.produto.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
+    await prisma.unidade.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
+    await prisma.dimensao.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.permissao.deleteMany({ where: { usuarioId: { in: [usuario.id, semPermissao.id, usuario2.id] } } });
     await prisma.usuario.deleteMany({ where: { id: { in: [usuario.id, semPermissao.id, usuario2.id] } } });
     await prisma.filial.deleteMany({ where: { id: { in: [filial.id, filialB.id] } } });

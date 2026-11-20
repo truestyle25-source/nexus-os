@@ -236,6 +236,23 @@ try {
     data: { usuarioId: usuario.id, modulo: 'integracoes', acao: 'editar', permitido: true },
   });
 
+  // Usuário REAL da empresa sem conta do Mercado Livre (com permissão de
+  // leitura): é assim que se testa "empresa sem conta conectada". Assinar um
+  // token com o empresaId de outra empresa NÃO serve: o middleware ignora o
+  // empresaId do token e usa o do banco (proteção contra token forjado).
+  const usuarioSemML = await prisma.usuario.create({
+    data: {
+      nome: 'Usuário Empresa Sem ML',
+      email: `semml_${SUFIXO}@exemplo.com.br`,
+      senhaHash: await hashSenha('senha12345'),
+      empresaId: empresaSemML.id,
+      status: 'ATIVO',
+    },
+  });
+  await prisma.permissao.create({
+    data: { usuarioId: usuarioSemML.id, modulo: 'integracoes', acao: 'visualizar', permitido: true },
+  });
+
   // Usuário da MESMA empresa SEM nenhuma linha de permissão: prova que o PUT
   // devolve 403. O token é assinado com `id` (formato de produção) para que a
   // checagem de permissão seja determinística.
@@ -287,10 +304,16 @@ try {
 
   console.log('\n2. GET /users/{userId} — empresa sem conta conectada (400)');
   {
-    const tokenB = app.jwt.sign({ id: usuario.id, email: usuario.email, empresaId: empresaSemML.id });
+    const tokenB = app.jwt.sign({ id: usuarioSemML.id, email: usuarioSemML.email, empresaId: empresaSemML.id });
     const HB = { authorization: `Bearer ${tokenB}` };
     const r = await app.inject({ method: 'GET', url: `/integracoes/mercadolivre/users/${estado.usuario.id}`, headers: HB });
     ok('status 400 para conta não conectada', r.statusCode === 400, `status=${r.statusCode}`);
+
+    // Token com empresaId FORJADO (usuário da empresa A dizendo ser da empresa
+    // sem ML): o empresaId do token é ignorado e vale o do banco.
+    const forjado = app.jwt.sign({ id: usuario.id, email: usuario.email, empresaId: empresaSemML.id });
+    const rf = await app.inject({ method: 'GET', url: `/integracoes/mercadolivre/users/${estado.usuario.id}`, headers: { authorization: `Bearer ${forjado}` } });
+    ok('empresaId forjado no token é ignorado (vale o do banco)', rf.statusCode === 200, `status=${rf.statusCode}`);
   }
 
   console.log('\n3. PUT /users/me — atualizar dados do usuário logado (sucesso)');
@@ -598,7 +621,7 @@ try {
       if (valor === undefined) delete process.env[chave];
       else process.env[chave] = valor;
     }
-    const ids = [usuario.id, usuarioSemPermissao.id];
+    const ids = [usuario.id, usuarioSemPermissao.id, usuarioSemML.id];
     await prisma.idempotencyKey.deleteMany({ where: { empresaId: { in: [empresa.id, empresaSemML.id] } } });
     await prisma.integracaoExterno.deleteMany({ where: { empresaId: { in: [empresa.id, empresaSemML.id] } } });
     await prisma.permissao.deleteMany({ where: { usuarioId: { in: ids } } });
