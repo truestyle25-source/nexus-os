@@ -79,20 +79,33 @@ async function carregarSessao(empresaId: string, id: string) {
   });
 }
 
+/**
+ * As quantidades são `Decimal` no banco (migração estoque_quantidades_fracionarias).
+ * Converter para número ANTES de comparar: `Decimal` comparado com `>`/`<` é
+ * comparado como TEXTO ("9" > "27") e dois `Decimal` iguais nunca são `===`,
+ * o que classificava divergências errado (BATEU nunca, SOBROU/FALTOU trocados).
+ * O contrato da API (e o tipo do frontend) é número.
+ */
+function quantidadesNumericas(c: { quantidadeSistema: unknown; quantidadeContada: unknown }) {
+  return {
+    quantidadeSistema: Number(c.quantidadeSistema),
+    quantidadeContada: c.quantidadeContada === null || c.quantidadeContada === undefined ? null : Number(c.quantidadeContada),
+  };
+}
+
 function paraSessaoDTO(s: any) {
   const contagens = (s.contagens ?? []).map((c: any) => ({
+    ...quantidadesNumericas(c),
     id: c.id,
     estoqueId: c.estoqueId,
     produtoId: c.produtoId,
     produtoNome: c.produtoNome,
     unidade: c.unidade,
     local: c.local,
-    quantidadeSistema: c.quantidadeSistema,
-    quantidadeContada: c.quantidadeContada,
     contadoPor: c.contadoPor?.nome ?? null,
     contadoEm: c.contadoEm ? c.contadoEm.toISOString() : null,
     observacoes: c.observacoes,
-    divergencia: classificarDivergencia(c.quantidadeSistema, c.quantidadeContada),
+    divergencia: classificarDivergencia(quantidadesNumericas(c).quantidadeSistema, quantidadesNumericas(c).quantidadeContada),
   }));
   return {
     id: s.id,
@@ -106,7 +119,7 @@ function paraSessaoDTO(s: any) {
     concluidoEm: s.concluidoEm ? s.concluidoEm.toISOString() : null,
     observacoes: s.observacoes,
     contagens,
-    resumo: resumirSessao(s.contagens ?? []),
+    resumo: resumirSessao((s.contagens ?? []).map(quantidadesNumericas)),
   };
 }
 
@@ -147,7 +160,7 @@ export async function inventarioRoutes(app: FastifyInstance): Promise<void> {
         concluidoPor: s.concluidoPor?.nome ?? null,
         concluidoEm: s.concluidoEm ? s.concluidoEm.toISOString() : null,
         observacoes: s.observacoes,
-        resumo: resumirSessao(s.contagens ?? []),
+        resumo: resumirSessao((s.contagens ?? []).map(quantidadesNumericas)),
       })),
       abertas: sessoes.filter((s: any) => s.status === 'ABERTA').length,
     };

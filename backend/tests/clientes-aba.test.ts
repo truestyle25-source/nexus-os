@@ -100,6 +100,10 @@ async function main() {
   const req = (m: any, url: string, payload?: unknown, headers = H) => app.inject({ method: m, url, headers, payload });
 
   const CNPJ = `55${Date.now()}`.slice(0, 14).padEnd(14, '0');
+  // Documentos derivados com o último dígito SEMPRE diferente do CNPJ principal.
+  // (Antes os sufixos eram fixos, '8' e '7': quando o CNPJ já terminava em 8 ou
+  // 7 — 1 vez em 10 — o documento repetia e a API, corretamente, devolvia 409.)
+  const docDerivado = (n: number) => `${CNPJ.slice(0, 13)}${(Number(CNPJ[13]) + n) % 10}`;
   /** Lê o cliente do banco (fonte da verdade), sem passar pela listagem. */
   const linha = (id: string) => prisma.cliente.findUnique({ where: { id } });
   /**
@@ -143,7 +147,7 @@ async function main() {
     // Cenário do bug: `criar` sem `editar`. Antes, o POST criava ATIVO e o PATCH
     // de status era rejeitado com 403 — cadastro gravado + erro na tela + modal
     // aberto + retry duplicando o cliente.
-    const docBeta = `${CNPJ.slice(0, 13)}8`;
+    const docBeta = docDerivado(1);
     const inativo = await req('POST', '/clientes', {
       nome: `Cliente Beta ${SUFIXO}`, documento: docBeta, status: 'INATIVO',
     }, Hcriar);
@@ -332,7 +336,7 @@ console.log('\n8. Detalhe (histórico de vendas) e fluxo completo');
     // FLUXO COMPLETO: cadastrar -> vender -> conferir na listagem -> editar ->
     // arquivar -> desarquivar, sempre relendo do banco.
     const fimAFim = await req('POST', '/clientes', {
-      nome: `Fluxo Completo ${SUFIXO}`, documento: `${CNPJ.slice(0, 13)}7`, status: 'ATIVO',
+      nome: `Fluxo Completo ${SUFIXO}`, documento: docDerivado(2), status: 'ATIVO',
     });
     const novo = fimAFim.json();
     const vendaNovo = await req('POST', '/vendas', {

@@ -200,7 +200,8 @@ async function main() {
     const duasLinhas = await prisma.estoqueMovimentacao.findMany({ where: { documento: doc } });
     ok('foram gravadas DUAS linhas de movimentacao', duasLinhas.length === 2, `linhas=${duasLinhas.length}`);
     ok('uma com delta negativo (saida da origem) e outra positivo',
-      duasLinhas.some((m) => m.quantidade === -20) && duasLinhas.some((m) => m.quantidade === 20),
+      // `quantidade` é Decimal no banco (quantidades fracionárias): compara o valor numérico.
+      duasLinhas.some((m) => Number(m.quantidade) === -20) && duasLinhas.some((m) => Number(m.quantidade) === 20),
       `deltas=${duasLinhas.map((m) => m.quantidade).join(',')}`);
     const semSaldo = await req('POST', '/estoque/transferir', {
       produtoId: produto.id, filialOrigemId: filial.id, filialDestinoId: filial2.id, quantidade: 9999, origem: 'MANUAL',
@@ -232,8 +233,11 @@ async function main() {
     ok('PUT /contagens -> 200', contar.statusCode === 200, `status=${contar.statusCode} corpo=${contar.body.slice(0, 180)}`);
     const comContagem = contar.json().sessao.contagens.find((c: any) => c.id === item.id);
     ok('a contagem foi gravada', comContagem?.quantidadeContada === 27, `contada=${comContagem?.quantidadeContada}`);
-    ok('a divergencia foi CLASSIFICADA (SOBROU/FALTOU)',
-      ['SOBROU', 'FALTOU'].includes(comContagem?.divergencia), `divergencia=${comContagem?.divergencia}`);
+    // Contou 27 com saldo de sistema maior (saldoFixo): tem de ser FALTOU. A versão
+    // anterior aceitava SOBROU ou FALTOU e não pegava a comparação de Decimal
+    // como texto ("27" > "42" é falso, mas "9" > "27" é verdadeiro).
+    ok('a divergencia foi CLASSIFICADA corretamente (FALTOU)',
+      comContagem?.divergencia === (27 < saldoFixo ? 'FALTOU' : 27 > saldoFixo ? 'SOBROU' : 'BATEU'), `divergencia=${comContagem?.divergencia} sistema=${saldoFixo}`);
     ok('guarda QUEM contou', !!comContagem?.contadoPor, `por=${comContagem?.contadoPor}`);
     const segunda = await req('POST', '/estoque/inventarios', {
       nome: `Contagem duplicada ${SUFIXO}`, filialId: filial.id, cegas: false,

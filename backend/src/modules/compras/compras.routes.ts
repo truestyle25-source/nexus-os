@@ -393,6 +393,11 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
       const compraAtualizada = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // Trava a linha da compra até o fim da transação. Sem isto, recebimentos
+        // simultâneos (duplo clique, dois operadores) liam o status ao mesmo tempo,
+        // todos passavam na checagem e cada um gravava movimentação de estoque e
+        // lançamento financeiro — 5 cliques = 5 contas a pagar.
+        await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} AND "empresaId" = ${req.user.empresaId} FOR UPDATE`;
         const compra = await tx.compra.findFirst({ where: { id, empresaId: req.user.empresaId }, include: { itens: true } });
         if (!compra) throw NaoEncontrado('Compra não encontrada.');
         if (compra.status === 'RECEBIDA') throw new ErroDeNegocio('Compra já recebida.', 409);
@@ -401,6 +406,16 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         for (const item of compra.itens) {
           const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId } });
           if (!produto) throw NaoEncontrado('Produto da compra não pertence à empresa.');
+          // Saldo e valor ANTES do movimento: são a base do custo médio ponderado.
+          // (Antes esta leitura era feita DEPOIS de aplicarMovimento, que já soma a
+          // quantidade — o recebimento somava de novo e DOBRAVA o estoque, e o custo
+          // médio saía errado.)
+          // FOR UPDATE: duas compras DIFERENTES do mesmo produto recebidas juntas
+          // não podem ler o mesmo saldo e sobrescrever o custo uma da outra.
+          const [estoqueAntes] = await tx.$queryRaw<Array<{ quantidade: Prisma.Decimal; valorTotal: Prisma.Decimal }>>`
+            SELECT "quantidade", "valorTotal" FROM "Estoque"
+            WHERE "filialId" = ${compra.filialId} AND "produtoId" = ${produto.id}
+            FOR UPDATE`;
           await aplicarMovimento(tx, {
             empresaId: req.user.empresaId,
             filialId: compra.filialId,
@@ -417,24 +432,20 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
           const fator = item.fatorAplicado && Number(item.fatorAplicado) > 0 ? Number(item.fatorAplicado) : 1;
           const precoUnitarioBase = Number(item.valorUnit) / fator;
 
-          const estoqueAtual = await tx.estoque.findUnique({
-            where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
-            select: { quantidade: true, valorTotal: true },
-          });
-          const qtdAtual = Number(estoqueAtual?.quantidade ?? 0);
-          const valorAtual = Number(estoqueAtual?.valorTotal ?? 0);
+          const qtdAtual = Number(estoqueAntes?.quantidade ?? 0);
+          const valorAtual = Number(estoqueAntes?.valorTotal ?? 0);
 
           const novaQtd = qtdAtual + Number(item.quantidadeBase ?? item.quantidade);
           const novoValorTotal = valorAtual + (Number(item.quantidadeBase ?? item.quantidade) * precoUnitarioBase);
           const novoCusto = novaQtd > 0 ? novoValorTotal / novaQtd : precoUnitarioBase;
 
           await tx.produto.update({ where: { id: produto.id }, data: { custo: novoCusto } });
-          if (estoqueAtual) {
-            await tx.estoque.update({
-              where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
-              data: { quantidade: novaQtd, valorTotal: novoValorTotal },
-            });
-          }
+          // aplicarMovimento já gravou a quantidade (= novaQtd) e garantiu que a
+          // linha de estoque existe; aqui só se corrige o valor pelo custo médio.
+          await tx.estoque.update({
+            where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
+            data: { quantidade: novaQtd, valorTotal: novoValorTotal },
+          });
         }
 
         const atualizada = await tx.compra.update({ where: { id }, data: { status: 'RECEBIDA', dataRecebimento: new Date() } });
