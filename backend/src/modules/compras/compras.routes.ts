@@ -393,6 +393,11 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
       const compraAtualizada = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // Trava a linha da compra até o fim da transação. Sem isto, recebimentos
+        // simultâneos (duplo clique, dois operadores) liam o status ao mesmo tempo,
+        // todos passavam na checagem e cada um gravava movimentação de estoque e
+        // lançamento financeiro — 5 cliques = 5 contas a pagar.
+        await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} AND "empresaId" = ${req.user.empresaId} FOR UPDATE`;
         const compra = await tx.compra.findFirst({ where: { id, empresaId: req.user.empresaId }, include: { itens: true } });
         if (!compra) throw NaoEncontrado('Compra não encontrada.');
         if (compra.status === 'RECEBIDA') throw new ErroDeNegocio('Compra já recebida.', 409);
@@ -405,10 +410,12 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
           // (Antes esta leitura era feita DEPOIS de aplicarMovimento, que já soma a
           // quantidade — o recebimento somava de novo e DOBRAVA o estoque, e o custo
           // médio saía errado.)
-          const estoqueAntes = await tx.estoque.findUnique({
-            where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
-            select: { quantidade: true, valorTotal: true },
-          });
+          // FOR UPDATE: duas compras DIFERENTES do mesmo produto recebidas juntas
+          // não podem ler o mesmo saldo e sobrescrever o custo uma da outra.
+          const [estoqueAntes] = await tx.$queryRaw<Array<{ quantidade: Prisma.Decimal; valorTotal: Prisma.Decimal }>>`
+            SELECT "quantidade", "valorTotal" FROM "Estoque"
+            WHERE "filialId" = ${compra.filialId} AND "produtoId" = ${produto.id}
+            FOR UPDATE`;
           await aplicarMovimento(tx, {
             empresaId: req.user.empresaId,
             filialId: compra.filialId,
