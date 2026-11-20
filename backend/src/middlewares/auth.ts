@@ -1,5 +1,6 @@
 ﻿import fp from 'fastify-plugin'
 import { prisma } from '../lib/prisma.js'
+import { abrirContextoRequisicao, comoSistema, definirTenantDaRequisicao } from '../lib/tenant-context.js'
 
 /**
  * Valida o identificador do usuário extraído do JWT.
@@ -27,10 +28,14 @@ async function validarUsuarioId(user: { id?: unknown } | null | undefined): Prom
   }
 
   // 3. Verificar se o usuário existe no banco de dados
-  const usuarioExistente = await prisma.usuario.findFirst({
-    where: { id },
-    select: { id: true, status: true, empresaId: true },
-  })
+  // Escopo de sistema: a empresa ainda não é conhecida (é justamente o que
+  // estamos validando). A busca é por `id` vindo de um JWT com assinatura válida.
+  const usuarioExistente = await comoSistema('auth:validar-usuario', () =>
+    prisma.usuario.findFirst({
+      where: { id },
+      select: { id: true, status: true, empresaId: true },
+    }),
+  )
 
   if (!usuarioExistente) {
     return null
@@ -49,6 +54,12 @@ async function validarUsuarioId(user: { id?: unknown } | null | undefined): Prom
 }
 
 export const registerAuthentication = fp(async (app: any) => {
+  // Contexto de empresa por requisição (RLS). Estilo callback de propósito: o
+  // contexto aberto aqui se propaga por todo o ciclo da requisição.
+  app.addHook('onRequest', (_request: any, _reply: any, done: () => void) => {
+    abrirContextoRequisicao(done)
+  })
+
   app.decorate('authenticate', async function (request: any, reply: any) {
     try {
       await request.jwtVerify()
@@ -81,6 +92,10 @@ export const registerAuthentication = fp(async (app: any) => {
     // com uma empresaId diferente (ex.: JWT_SECRET comprometido). Todas as
     // rotas que leem req.user.empresaId passam a usar o valor do banco.
     request.user.empresaId = usuarioValidado.empresaId
+
+    // A partir daqui todas as consultas desta requisição rodam no contexto da
+    // empresa validada no banco (set_config por transação, ver lib/prisma.ts).
+    definirTenantDaRequisicao(usuarioValidado.empresaId, usuarioValidado.id)
 
     // Revogacao de token (Seção 5 — "Alterar senha").
     //

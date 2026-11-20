@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ErroDeNegocio } from '../../../lib/erros.js';
+import { definirSistemaDaRequisicao } from '../../../lib/tenant-context.js';
 import { permissaoMiddleware } from '../../../middlewares/auth.js';
 import {
   concluirAutorizacaoShopee,
@@ -21,6 +22,8 @@ function statusCentral(status: string): 'CONECTADO' | 'ERRO' | 'NAO_CONFIGURADO'
 
 export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/integracoes/shopee/callback', async (req: any, reply: any) => {
+    // Callback OAuth público: a empresa é resolvida pelo `state` salvo no servidor.
+    definirSistemaDaRequisicao('shopee:callback');
     const query = z.object({ state: z.string().min(32).max(128), code: z.string().min(1).max(512), shop_id: z.union([z.string(), z.number()]), main_account_id: z.union([z.string(), z.number()]).optional(), error: z.string().optional() }).safeParse(req.query);
     const frontend = (process.env.FRONTEND_URLS || 'http://localhost:3000').split(',')[0]?.trim() || 'http://localhost:3000';
     if (!query.success || query.data.error) {

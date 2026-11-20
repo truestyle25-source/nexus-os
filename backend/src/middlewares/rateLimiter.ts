@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
+import { comoSistema } from '../lib/tenant-context.js';
 
 interface Bucket { count: number; resetAt: number; }
 
@@ -46,7 +47,19 @@ export function createLoginRateLimiter(
   windowMs: number,
   prismaClient: typeof prisma = prisma,
 ) {
-  return async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+  // LoginAttempt não pertence a uma empresa: acesso em escopo de sistema (RLS).
+  return (req: FastifyRequest, reply: FastifyReply): Promise<void> =>
+    comoSistema('auth:rate-limit', () => verificarLimiteLogin(req, reply, maxRequests, windowMs, prismaClient));
+}
+
+async function verificarLimiteLogin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  maxRequests: number,
+  windowMs: number,
+  prismaClient: typeof prisma,
+): Promise<void> {
+  {
     const ip = req.ip || 'unknown';
     const body = req.body as { email?: string } | undefined;
     const email = body?.email ? String(body.email).toLowerCase().trim() : null;
@@ -128,7 +141,7 @@ export function createLoginRateLimiter(
         sucesso: false,
       },
     });
-  };
+  }
 }
 
 /**
@@ -142,13 +155,13 @@ export async function registrarLoginSucesso(
   prismaClient: typeof prisma = prisma,
 ): Promise<void> {
   if (!email) return;
-  await prismaClient.loginAttempt.create({
+  await comoSistema('auth:registrar-login', () => prismaClient.loginAttempt.create({
     data: {
       ip,
       email: email.toLowerCase().trim(),
       sucesso: true,
     },
-  });
+  }));
 }
 
 /**
@@ -157,8 +170,8 @@ export async function registrarLoginSucesso(
  */
 export async function limparLoginAttemptsAntigos(olderThanMs: number = 7 * 24 * 60 * 60 * 1000): Promise<void> {
   const cutoff = new Date(Date.now() - olderThanMs);
-  await prisma.loginAttempt.deleteMany({
+  await comoSistema('auth:limpar-tentativas', () => prisma.loginAttempt.deleteMany({
     where: { createdAt: { lt: cutoff } },
-  });
+  }));
 }
 

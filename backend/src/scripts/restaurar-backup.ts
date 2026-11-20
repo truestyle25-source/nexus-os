@@ -22,7 +22,8 @@ function executar(comando: string, args: string[]): Promise<void> {
 
 async function main(): Promise<void> {
   const arquivo = process.argv[2];
-  const databaseUrl = process.env.DATABASE_URL;
+  // Restauração exige o papel dono das tabelas (DIRECT_URL / nexus_migrator).
+  const databaseUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
   if (!arquivo) {
     console.error('[restaurar] uso: npm run backup:restaurar -- <caminho-do-dump>');
     process.exitCode = 1;
