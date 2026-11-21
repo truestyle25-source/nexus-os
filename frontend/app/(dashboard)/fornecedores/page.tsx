@@ -17,10 +17,14 @@ import { t as traduzir, tMenu } from '@/lib/i18n';
  * pelo layout compartilhado de app/(dashboard)/layout.tsx.
  */
 
-type StatusFornecedor = 'Ativo' | 'Crítico' | 'Inativo';
+type StatusFornecedor = 'Ativo' | 'Crítico' | 'Inativo' | 'Bloqueado';
 
 interface Fornecedor {
   id: string;
+  codigoExibido?: string | null;
+  nomeFantasia?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
   nome: string;
   cnpj: string | null;
   categoria: string;
@@ -40,6 +44,7 @@ interface Fornecedor {
 
 interface Kpis {
   totalFornecedores: number;
+  porStatus?: { ativos: number; inativos: number; bloqueados: number; criticos: number };
   gastoMes: number;
   pedidosPendentes: number;
   ticketMedio: number;
@@ -58,7 +63,8 @@ interface Insights {
 
 const CATEGORIAS = ['Malharia', 'Jeans', 'Bonés', 'Acessórios', 'Calçados', 'Outros'] as const;
 const CONDICOES = ['À vista', '30 dias', '30/60', '30/60/90'] as const;
-const TABS: Array<'todos' | StatusFornecedor> = ['todos', 'Ativo', 'Inativo', 'Crítico'];
+const TABS: Array<'todos' | StatusFornecedor> = ['todos', 'Ativo', 'Inativo', 'Bloqueado', 'Crítico'];
+const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 
 const FORM_VAZIO = {
   nome: '', cnpj: '', categoria: '', status: 'Ativo' as StatusFornecedor,
@@ -102,6 +108,7 @@ export default function FornecedoresPage() {
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState('');
   const [tab, setTab] = useState<'todos' | StatusFornecedor>('todos');
+  const [ufFiltro, setUfFiltro] = useState('');
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState(FORM_VAZIO);
   // null = cadastro; preenchido = edição. Sem isto, um fornecedor criado com
@@ -449,7 +456,7 @@ function listaCondicoes(valor?: string) {
     if (p.includes('adicionar fornecedor') || p.includes('criar fornecedor') || p.includes('cadastrar fornecedor')) {
       const nome = q.replace(/.*fornecedor\s*/i, '').trim().replace(/[.!?]+$/, '');
       setIaQ('');
-      openModal(nome || undefined);
+      router.push(nome ? `/fornecedores/novo?nome=${encodeURIComponent(nome)}` : '/fornecedores/novo');
       mostrarToast(nome ? `Abrindo cadastro de "${nome}"…` : 'Abrindo cadastro de fornecedor…');
       return;
     }
@@ -481,15 +488,32 @@ function listaCondicoes(valor?: string) {
   /** Filtra a tbody por tab (data-filter) + busca id="busca". */
   const filtrados = lista.filter((f) => {
     const okTab = tab === 'todos' || f.status === tab;
+    const okUf = !ufFiltro || (f.uf ?? '').toUpperCase() === ufFiltro;
     const t = busca.trim().toLowerCase();
     const okBusca =
       !t ||
       f.nome.toLowerCase().includes(t) ||
+      (f.codigoExibido ?? '').toLowerCase().includes(t) ||
+      (f.nomeFantasia ?? '').toLowerCase().includes(t) ||
+      (f.cidade ?? '').toLowerCase().includes(t) ||
       (f.cnpj ?? '').toLowerCase().includes(t) ||
       (f.contato ?? '').toLowerCase().includes(t) ||
       f.categoria.toLowerCase().includes(t);
-    return okTab && okBusca;
+    return okTab && okUf && okBusca;
   });
+
+  /** Bloqueia/desbloqueia (Bloqueado não recebe novos pedidos de compra). */
+  async function alternarBloqueio(f: Fornecedor) {
+    const novo = f.status === 'Bloqueado' ? 'Ativo' : 'Bloqueado';
+    if (novo === 'Bloqueado' && !window.confirm(`Bloquear ${f.nome}? Ele deixa de receber novos pedidos de compra.`)) return;
+    try {
+      await api.patch(`/fornecedores/${f.id}/status`, { status: novo });
+      setLista((l) => l.map((x) => (x.id === f.id ? { ...x, status: novo } : x)));
+      mostrarToast(novo === 'Bloqueado' ? 'Fornecedor bloqueado.' : 'Fornecedor desbloqueado.');
+    } catch (err: any) {
+      mostrarToast(err?.message || 'Não foi possível alterar o status.');
+    }
+  }
 
   /** CSV em blob local (mesmo recorte visível da tabela). */
   function exportCSV() {
@@ -527,6 +551,7 @@ function listaCondicoes(valor?: string) {
   const badgeStatus = (s: string) => {
     if (s === 'Ativo') return { background: 'var(--nx-green)', color: 'var(--nx-green-contrast)', border: '1px solid var(--nx-green-border)' };
     if (s === 'Crítico') return { background: 'var(--nx-red)', color: 'var(--nx-red-contrast)', border: '1px solid var(--nx-red-border)' };
+    if (s === 'Bloqueado') return { background: 'var(--nx-surface)', color: 'var(--nx-red)', border: '1px solid var(--nx-red-border)' };
     return { background: 'var(--nx-surface)', color: 'var(--nx-ink-2)', border: '1px solid var(--nx-border)' };
   };
 
@@ -665,6 +690,17 @@ function listaCondicoes(valor?: string) {
             ))}
           </div>
 
+          {/* Contadores por status */}
+          {kpis?.porStatus && (
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '-6px 0 16px', fontSize: 12, color: 'var(--nx-ink-2)' }}>
+              <span>Total <strong style={{ color: 'var(--nx-ink)' }}>{kpis.totalFornecedores}</strong></span>
+              <span>Ativos <strong style={{ color: 'var(--nx-green)' }}>{kpis.porStatus.ativos}</strong></span>
+              <span>Inativos <strong style={{ color: 'var(--nx-ink)' }}>{kpis.porStatus.inativos}</strong></span>
+              <span>Bloqueados <strong style={{ color: 'var(--nx-red)' }}>{kpis.porStatus.bloqueados}</strong></span>
+              <span>Críticos <strong style={{ color: 'var(--nx-amber)' }}>{kpis.porStatus.criticos}</strong></span>
+            </div>
+          )}
+
           {/* Tabs (data-filter) */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
             {TABS.map((t) => (
@@ -678,6 +714,10 @@ function listaCondicoes(valor?: string) {
                 {t === 'todos' ? 'Todos' : t}
               </button>
             ))}
+            <select className="nx-input" style={{ width: 120, height: 34 }} value={ufFiltro} onChange={(e) => setUfFiltro(e.target.value)} aria-label="Filtrar por UF">
+              <option value="">Todas as UF</option>
+              {UFS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
           </div>
 
           {/* Grid principal 1.6fr + 1fr */}
@@ -692,7 +732,7 @@ function listaCondicoes(valor?: string) {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button type="button" className="nx-btn nx-btn-ghost" onClick={exportCSV}><Download size={13} /> CSV</button>
                   <button type="button" className="nx-btn nx-btn-ghost" onClick={() => void exportExcel()}><Download size={13} /> Excel</button>
-                  <button type="button" className="nx-btn nx-btn-roxo" id="btnNovo" onClick={() => openModal()}><Plus size={14} /> Novo Fornecedor</button>
+                  <button type="button" className="nx-btn nx-btn-roxo" id="btnNovo" onClick={() => router.push('/fornecedores/novo')}><Plus size={14} /> Novo Fornecedor</button>
                 </div>
               </div>
 
@@ -700,23 +740,28 @@ function listaCondicoes(valor?: string) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
+                      <th className="nx-th">Código</th>
                       <th className="nx-th">{traduzir('fornecedor', "Fornecedor")}</th>
+                      <th className="nx-th">Cidade/UF</th>
                       <th className="nx-th">{traduzir('categoria', "Categoria")}</th>
                       <th className="nx-th">Contato</th>
                       <th className="nx-th">{traduzir('status', "Status")}</th>
+                      <th className="nx-th">Última compra</th>
                       <th className="nx-th" style={{ textAlign: 'right' }}>Total Comprado</th>
                       <th className="nx-th" style={{ textAlign: 'right' }}>Pedidos</th>
+                      <th className="nx-th">Ações</th>
                     </tr>
                   </thead>
                   <tbody id="tabelaFornecedores">
                     {loading && (
-                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Carregando fornecedores…</td></tr>
+                      <tr><td className="nx-td" colSpan={10} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Carregando fornecedores…</td></tr>
                     )}
                     {!loading && filtrados.length === 0 && (
-                      <tr><td className="nx-td" colSpan={6} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Nenhum fornecedor encontrado.</td></tr>
+                      <tr><td className="nx-td" colSpan={10} style={{ textAlign: 'center', color: 'var(--nx-ink-2)' }}>Nenhum fornecedor encontrado.</td></tr>
                     )}
                     {!loading && filtrados.map((f) => (
                       <tr key={f.id}>
+                        <td className="nx-td" style={{ whiteSpace: 'nowrap' }}>{f.codigoExibido ?? '—'}</td>
                         <td className="nx-td">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div className="nx-avatar">{iniciais(f.nome)}</div>
@@ -729,21 +774,30 @@ function listaCondicoes(valor?: string) {
                                   "Ativo" — nem corrigia um CNPJ com erro. */}
                               <button
                                 type="button"
-                                onClick={() => openModal(f)}
-                                title="Editar fornecedor"
+                                onClick={() => router.push(`/fornecedores/${f.id}`)}
+                                title="Abrir cadastro do fornecedor"
                                 style={{ background: 'none', border: 'none', padding: 0, color: 'var(--nx-ink)', fontWeight: 600, fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left' }}
                               >
                                 {f.nome}
                               </button>
-                              <div style={{ fontSize: 10, color: 'var(--nx-ink-2)' }}>{f.cnpj || 'CNPJ não informado'}</div>
+                              <div style={{ fontSize: 10, color: 'var(--nx-ink-2)' }}>{[f.nomeFantasia, f.cnpj || 'CNPJ não informado'].filter(Boolean).join(' · ')}</div>
                             </div>
                           </div>
                         </td>
+                        <td className="nx-td" style={{ whiteSpace: 'nowrap' }}>{f.cidade ? `${f.cidade}/${f.uf ?? ''}` : '—'}</td>
                         <td className="nx-td"><span className="nx-tag">{f.categoria}</span></td>
                         <td className="nx-td">{f.contato || f.whatsapp || f.email || '—'}</td>
                         <td className="nx-td"><span className="nx-badge" style={badgeStatus(f.status)}>{f.status}</span></td>
+                        <td className="nx-td" style={{ whiteSpace: 'nowrap' }}>{f.ultimoPedidoAt ? new Date(f.ultimoPedidoAt).toLocaleDateString('pt-BR') : '—'}</td>
                         <td className="nx-td" style={{ textAlign: 'right', color: 'var(--nx-ink)', fontWeight: 600 }}>{brl(Number(f.totalComprado))}</td>
                         <td className="nx-td" style={{ textAlign: 'right' }}>{f.totalPedidos}</td>
+                        <td className="nx-td">
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button type="button" className="nx-btn nx-btn-ghost" style={{ padding: '4px 8px' }} title="Visualizar" onClick={() => router.push(`/fornecedores/${f.id}`)}>Ver</button>
+                            <button type="button" className="nx-btn nx-btn-ghost" style={{ padding: '4px 8px' }} title="Editar" onClick={() => router.push(`/fornecedores/${f.id}?editar=1`)}>Editar</button>
+                            <button type="button" className="nx-btn nx-btn-ghost" style={{ padding: '4px 8px', color: f.status === 'Bloqueado' ? 'var(--nx-green)' : 'var(--nx-red)' }} title={f.status === 'Bloqueado' ? 'Desbloquear' : 'Bloquear'} onClick={() => void alternarBloqueio(f)}>{f.status === 'Bloqueado' ? 'Desbloquear' : 'Bloquear'}</button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

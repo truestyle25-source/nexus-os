@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { NaoEncontrado, Conflito } from '../../lib/erros.js';
 import { clean } from '../../lib/format.js';
+import { codigoExibido, mascararBancario, proximoCodigo } from './fornecedor-ficha.service.js';
 
 /**
  * Serviço da aba /fornecedores (Seção 11 v2 — artefato
@@ -9,8 +10,8 @@ import { clean } from '../../lib/format.js';
  * (multi-tenant): o escopo NUNCA vem do corpo da request, sempre do JWT.
  */
 
-export type StatusFornecedor = 'Ativo' | 'Crítico' | 'Inativo';
-export const STATUS_FORNECEDORES: StatusFornecedor[] = ['Ativo', 'Crítico', 'Inativo'];
+export type StatusFornecedor = 'Ativo' | 'Crítico' | 'Inativo' | 'Bloqueado';
+export const STATUS_FORNECEDORES: StatusFornecedor[] = ['Ativo', 'Crítico', 'Inativo', 'Bloqueado'];
 
 export const CATEGORIAS_FORNECEDOR = [
   'Malharia', 'Jeans', 'Bonés', 'Acessórios', 'Calçados', 'Outros',
@@ -38,6 +39,7 @@ export interface FiltroListagemFornecedores {
   status?: string;
   categoria?: string;
   busca?: string;
+  uf?: string;
 }
 
 function normalizarStatus(status?: string): StatusFornecedor {
@@ -48,6 +50,7 @@ function normalizarStatus(status?: string): StatusFornecedor {
   // gravou). Sem o caso 'arquivado' aqui, o legado caía no `return 'Ativo'`
   // do fim e um fornecedor arquivado era filtrado como ATIVO.
   if (s === 'inativo' || s === 'arquivado') return 'Inativo';
+  if (s === 'bloqueado') return 'Bloqueado';
   return 'Ativo';
 }
 
@@ -64,9 +67,10 @@ async function checarCnpjDuplicado(empresaId: string, cnpj: string | undefined, 
 
 export async function create(input: CriarFornecedorInput) {
   await checarCnpjDuplicado(input.empresaId, input.cnpj);
-  return prisma.fornecedor.create({
+  return prisma.$transaction(async (tx) => tx.fornecedor.create({
     data: {
       empresaId: input.empresaId,
+      codigo: await proximoCodigo(tx, input.empresaId),
       nome: input.nome.trim(),
       cnpj: clean(input.cnpj) ?? null,
       categoria: input.categoria,
@@ -80,7 +84,7 @@ export async function create(input: CriarFornecedorInput) {
       observacoes: input.observacoes?.trim() || null,
       origem: 'MANUAL',
     },
-  });
+  }));
 }
 
 // ===== Pedidos do fornecedor ==================================================
@@ -192,12 +196,20 @@ export async function list(filtro: FiltroListagemFornecedores) {
   const where: Prisma.FornecedorWhereInput = { empresaId: filtro.empresaId };
   if (filtro.status) where.status = normalizarStatus(filtro.status);
   if (filtro.categoria) where.categoria = filtro.categoria;
+  if (filtro.uf) where.uf = filtro.uf.toUpperCase();
   if (filtro.busca?.trim()) {
     const termo = filtro.busca.trim();
+    const digitos = termo.replace(/\D/g, '');
+    // Código do fornecedor (F000123 ou 123): até 9 dígitos. Um CNPJ de 14 dígitos não é código
+    // (e estouraria o inteiro da coluna).
+    const codigo = /^f?0*(\d{1,9})$/i.exec(termo)?.[1];
     where.OR = [
       { nome: { contains: termo, mode: 'insensitive' } },
-      { cnpj: { contains: termo, mode: 'insensitive' } },
+      { nomeFantasia: { contains: termo, mode: 'insensitive' } },
+      { cnpj: { contains: digitos || termo, mode: 'insensitive' } },
       { contato: { contains: termo, mode: 'insensitive' } },
+      { cidade: { contains: termo, mode: 'insensitive' } },
+      ...(codigo ? [{ codigo: Number(codigo) }] : []),
     ];
   }
   const [fornecedores, resumo] = await Promise.all([
@@ -208,7 +220,8 @@ export async function list(filtro: FiltroListagemFornecedores) {
   const comTotais = fornecedores.map((f) => {
     const r = resumo.get(f.id);
     return {
-      ...f,
+      ...mascararBancario(f, false),
+      codigoExibido: codigoExibido(f.codigo),
       totalComprado: r?.total ?? 0,
       totalPedidos: r?.pedidos ?? 0,
       ultimoPedidoAt: r?.ultimo ?? null,
@@ -292,6 +305,7 @@ export async function update(id: string, empresaId: string, dados: AtualizarForn
 
 export interface KpiFornecedores {
   totalFornecedores: number;
+  porStatus: { ativos: number; inativos: number; bloqueados: number; criticos: number };
   gastoMes: number;
   pedidosPendentes: number;
   ticketMedio: number;
@@ -326,7 +340,7 @@ export async function getKPIs(empresaId: string): Promise<KpiFornecedores> {
   const inicioAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
   const inicio6Meses = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
 
-  const [totalFornecedores, criadosNoMes, compras] = await Promise.all([
+  const [totalFornecedores, criadosNoMes, compras, statusAgrupado] = await Promise.all([
     prisma.fornecedor.count({ where: { empresaId } }),
     prisma.fornecedor.count({ where: { empresaId, createdAt: { gte: inicio } } }),
     prisma.compra.findMany({
@@ -334,7 +348,9 @@ export async function getKPIs(empresaId: string): Promise<KpiFornecedores> {
       select: { valorTotal: true, status: true, dataCompra: true },
       orderBy: { dataCompra: 'desc' },
     }),
+    prisma.fornecedor.groupBy({ by: ['status'], where: { empresaId }, _count: { _all: true } }),
   ]);
+  const contaStatus = (s: string) => statusAgrupado.find((g) => g.status === s)?._count._all ?? 0;
 
   let gastoMes = 0;
   let gastoMesAnterior = 0;
@@ -383,6 +399,7 @@ export async function getKPIs(empresaId: string): Promise<KpiFornecedores> {
 
   return {
     totalFornecedores,
+    porStatus: { ativos: contaStatus('Ativo'), inativos: contaStatus('Inativo'), bloqueados: contaStatus('Bloqueado'), criticos: contaStatus('Crítico') },
     gastoMes,
     pedidosPendentes,
     ticketMedio,

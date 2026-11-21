@@ -1,0 +1,39 @@
+/*
+ * Ficha do fornecedor: só o que a ficha de produto (components/produto/ficha.module.css) não tem.
+ * Usa os mesmos tokens (--pf-*) — a raiz da página aplica a classe .ficha do produto.
+ */
+
+/* Três cartões lado a lado na aba Dados (como a referência); empilham em telas menores. */
+.tresColunas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pf-4); align-items: stretch; }
+.tresColunas > section { height: 100%; }
+@media (max-width: 1180px) { .tresColunas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .tresColunas { grid-template-columns: minmax(0, 1fr); } }
+
+/* Cabeçalho fixo do fornecedor (fica visível em todas as abas). */
+.cabecalhoFixo { background: var(--nx-surface); border: var(--pf-borda); border-radius: var(--pf-raio-secao); padding: var(--pf-4) var(--pf-5); }
+@media (max-width: 760px) { .cabecalhoFixo { padding: var(--pf-4); } }
+
+/* Grupo de opções (tipo de pessoa) na altura de um campo. */
+.opcoes { display: flex; gap: var(--pf-2); min-height: var(--pf-campo-altura); align-items: center; flex-wrap: wrap; }
+.opcoes .opcao { flex: 1 1 0; justify-content: center; min-width: 0; }
+.opcao {
+  display: inline-flex; align-items: center; gap: var(--pf-2); height: var(--pf-campo-altura); padding: 0 var(--pf-3);
+  border: 1px solid var(--nx-border-strong); border-radius: var(--pf-raio); background: var(--nx-surface-2); color: var(--nx-ink-2);
+  font-size: var(--pf-fonte-campo); font-weight: 600; cursor: pointer;
+}
+.opcao input { accent-color: var(--nx-accent); margin: 0; }
+.opcaoAtiva { color: var(--nx-ink); border-color: var(--nx-accent); }
+.opcao:has(input:disabled) { cursor: not-allowed; opacity: 0.7; }
+
+/* Ponto de cor do status. */
+.ponto { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+
+/* Rodapé de auditoria. */
+.rodape { display: flex; flex-wrap: wrap; gap: var(--pf-2) var(--pf-5); color: var(--nx-ink-3); font-size: 12px; padding: var(--pf-1) var(--pf-1) 0; }
+.rodape strong { color: var(--nx-ink-2); font-weight: 600; }
+
+/* Estrelas da nota. */
+.estrelas { color: var(--nx-amber); letter-spacing: 2px; font-size: 13px; }
+
+/* Botão de ação compacto dentro da linha de tabela. */
+.acoesLinha { display: flex; gap: var(--pf-1); flex-wrap: nowrap; }

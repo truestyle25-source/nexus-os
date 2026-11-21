@@ -60,10 +60,10 @@ enum StatusCompra {
 }
 
 model Empresa {
-  id                       String                    @id @default(cuid())
+  id                       String                     @id @default(cuid())
   nome                     String
   razaoSocial              String?
-  cnpj                     String?                   @unique
+  cnpj                     String?                    @unique
   inscricaoEstadual        String?
   responsavelCpf           String?
   responsavelRg            String?
@@ -76,16 +76,21 @@ model Empresa {
   // Fuso IANA da empresa. O registro de ponto usa para decidir a que DIA
   // pertence uma marcação: às 23h30 em São Paulo a batida é do dia 27, e o
   // mesmo instante em UTC seria do dia 28. Ausente => `America/Sao_Paulo`.
-  fusoHorario              String?                   @default("America/Sao_Paulo")
-  status                   StatusGeral               @default(ATIVO)
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  origem                   Origem                    @default(MANUAL)
+  fusoHorario              String?                    @default("America/Sao_Paulo")
+  status                   StatusGeral                @default(ATIVO)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  origem                   Origem                     @default(MANUAL)
   filiais                  Filial[]
   usuarios                 Usuario[]
   setores                  Setor[]
   produtos                 Produto[]
   fornecedores             Fornecedor[]
+  fornecedorContatos       FornecedorContato[]
+  fornecedorProdutos       FornecedorProduto[]
+  fornecedorPrecos         FornecedorPrecoHistorico[]
+  fornecedorDocumentos     FornecedorDocumento[]
+  fornecedorAvaliacoes     FornecedorAvaliacao[]
   clientes                 Cliente[]
   assinatura               Assinatura?
   importacoes              Importacao[]
@@ -218,6 +223,7 @@ model Filial {
   sessoesInventario    SessaoInventario[]
   produtosConfig       ProdutoFilial[]
   historicoPrecos      ProdutoPrecoHistorico[]
+  fornecedores         Fornecedor[]
 
   @@index([empresaId])
 }
@@ -240,20 +246,20 @@ model Setor {
 }
 
 model Usuario {
-  id                        String                  @id @default(cuid())
+  id                        String                     @id @default(cuid())
   empresaId                 String
   filialId                  String?
   setorId                   String?
-  empresa                   Empresa                 @relation(fields: [empresaId], references: [id])
-  filial                    Filial?                 @relation(fields: [filialId], references: [id])
-  setor                     Setor?                  @relation(fields: [setorId], references: [id])
+  empresa                   Empresa                    @relation(fields: [empresaId], references: [id])
+  filial                    Filial?                    @relation(fields: [filialId], references: [id])
+  setor                     Setor?                     @relation(fields: [setorId], references: [id])
   nome                      String
-  email                     String                  @unique
+  email                     String                     @unique
   senhaHash                 String
   // Tokens emitidos ANTES deste instante são recusados (troca/redefinição de senha encerra todas as sessões).
   sessoesValidasDesde       DateTime?
-  status                    StatusGeral             @default(ATIVO)
-  origem                    Origem                  @default(MANUAL)
+  status                    StatusGeral                @default(ATIVO)
+  origem                    Origem                     @default(MANUAL)
   ultimoLogin               DateTime?
   permissoes                Permissao[]
   caixas                    Caixa[]
@@ -263,17 +269,23 @@ model Usuario {
   movimentacoes             EstoqueMovimentacao[]
   tokensRecuperacao         TokenRecuperacaoSenha[]
   fichaFuncionario          Funcionario[]
-  createdAt                 DateTime                @default(now())
-  updatedAt                 DateTime                @updatedAt
-  sessoesInventarioCriou    SessaoInventario[]      @relation("SessaoInventarioCriador")
-  sessoesInventarioFechou   SessaoInventario[]      @relation("SessaoInventarioConclusor")
-  contagensInventarioFeitas ContagemInventario[]    @relation("ContagemInventarioAutor")
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
+  sessoesInventarioCriou    SessaoInventario[]         @relation("SessaoInventarioCriador")
+  sessoesInventarioFechou   SessaoInventario[]         @relation("SessaoInventarioConclusor")
+  contagensInventarioFeitas ContagemInventario[]       @relation("ContagemInventarioAutor")
   importacoes               Importacao[]
   shopeeAutorizacoes        ShopeeOAuthState[]
   producoesKit              ProducaoKit[]
   consumosInternos          ConsumoInterno[]
-  consumosInternosAprovou   ConsumoInterno[]        @relation("ConsumoInternoAprovador")
+  consumosInternosAprovou   ConsumoInterno[]           @relation("ConsumoInternoAprovador")
   alteracoesPreco           ProdutoPrecoHistorico[]
+  fornecedoresComprador     Fornecedor[]               @relation("FornecedorComprador")
+  fornecedoresCriados       Fornecedor[]               @relation("FornecedorCriadoPor")
+  fornecedoresAlterados     Fornecedor[]               @relation("FornecedorAtualizadoPor")
+  fornecedorPrecosAlterados FornecedorPrecoHistorico[] @relation("FornecedorPrecoUsuario")
+  fornecedorDocumentos      FornecedorDocumento[]      @relation("FornecedorDocumentoEnviadoPor")
+  fornecedorAvaliacoes      FornecedorAvaliacao[]      @relation("FornecedorAvaliacaoUsuario")
 
   @@index([empresaId])
 }
@@ -350,103 +362,105 @@ model Categoria {
 }
 
 model Produto {
-  id                           String                  @id @default(cuid())
+  id                           String                     @id @default(cuid())
   empresaId                    String
-  empresa                      Empresa                 @relation(fields: [empresaId], references: [id])
+  empresa                      Empresa                    @relation(fields: [empresaId], references: [id])
   categoriaId                  String?
-  categoria                    Categoria?              @relation(fields: [categoriaId], references: [id])
+  categoria                    Categoria?                 @relation(fields: [categoriaId], references: [id])
   fornecedorId                 String?
-  fornecedor                   Fornecedor?             @relation(fields: [fornecedorId], references: [id])
+  fornecedor                   Fornecedor?                @relation(fields: [fornecedorId], references: [id])
   tipoProdutoId                String?
-  tipoProduto                  TipoProduto?            @relation(fields: [tipoProdutoId], references: [id])
+  tipoProduto                  TipoProduto?               @relation(fields: [tipoProdutoId], references: [id])
   unidadeBaseId                String?
-  unidadeBase                  Unidade?                @relation("ProdutoUnidadeBase", fields: [unidadeBaseId], references: [id])
-  politicaCusto                PoliticaCusto           @default(MEDIO_PONDERADO)
+  unidadeBase                  Unidade?                   @relation("ProdutoUnidadeBase", fields: [unidadeBaseId], references: [id])
+  politicaCusto                PoliticaCusto              @default(MEDIO_PONDERADO)
   nome                         String
   marca                        String?
   sku                          String?
   codigoBarras                 String?
-  custo                        Decimal                 @db.Decimal(14, 6)
-  precoVenda                   Decimal                 @db.Decimal(10, 2)
-  margem                       Decimal?                @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
-  unidade                      String                  @default("UN") // unidade legado — mantida para compatibilidade de leitura antiga
-  estoqueMinimo                Decimal                 @default(5) @db.Decimal(14, 3)
-  estoqueMaximo                Decimal                 @default(100) @db.Decimal(14, 3)
-  pontoPedido                  Decimal                 @default(0) @db.Decimal(14, 3)
+  custo                        Decimal                    @db.Decimal(14, 6)
+  precoVenda                   Decimal                    @db.Decimal(10, 2)
+  margem                       Decimal?                   @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
+  unidade                      String                     @default("UN") // unidade legado — mantida para compatibilidade de leitura antiga
+  estoqueMinimo                Decimal                    @default(5) @db.Decimal(14, 3)
+  estoqueMaximo                Decimal                    @default(100) @db.Decimal(14, 3)
+  pontoPedido                  Decimal                    @default(0) @db.Decimal(14, 3)
   peso                         String?
   ncm                          String?
-  precoPromocional             Decimal?                @db.Decimal(10, 2)
+  precoPromocional             Decimal?                   @db.Decimal(10, 2)
   promocaoInicio               DateTime?
   promocaoFim                  DateTime?
   promocaoLimite               Int?
   validade                     DateTime?
   imagem                       String?
   descricao                    String?
-  status                       StatusGeral             @default(ATIVO)
-  ehKit                        Boolean                 @default(false)
+  status                       StatusGeral                @default(ATIVO)
+  ehKit                        Boolean                    @default(false)
   // ---- Cadastro ERP (2026-11-21). Todos opcionais ou com padrão: nenhum dado existente muda. ----
   referencia                   String?
   descricaoResumida            String?
   fabricante                   String?
   codigoExterno                String?
   unidadeCompraId              String?
-  unidadeCompra                Unidade?                @relation("ProdutoUnidadeCompra", fields: [unidadeCompraId], references: [id])
+  unidadeCompra                Unidade?                   @relation("ProdutoUnidadeCompra", fields: [unidadeCompraId], references: [id])
   unidadeVendaId               String?
-  unidadeVenda                 Unidade?                @relation("ProdutoUnidadeVenda", fields: [unidadeVendaId], references: [id])
+  unidadeVenda                 Unidade?                   @relation("ProdutoUnidadeVenda", fields: [unidadeVendaId], references: [id])
   unidadeTributavelId          String?
-  unidadeTributavel            Unidade?                @relation("ProdutoUnidadeTributavel", fields: [unidadeTributavelId], references: [id])
+  unidadeTributavel            Unidade?                   @relation("ProdutoUnidadeTributavel", fields: [unidadeTributavelId], references: [id])
   centroCustoVenda             String?
   centroCustoContabil          String?
-  quantidadeEmbalagem          Decimal?                @db.Decimal(14, 3)
+  quantidadeEmbalagem          Decimal?                   @db.Decimal(14, 3)
   diasValidade                 Int?
   // Parâmetros
-  embalagem                    Boolean                 @default(false)
-  vendaFracionada              Boolean                 @default(false)
-  controlaBalanca              Boolean                 @default(false)
-  enviaCozinha                 Boolean                 @default(false)
-  produtoGlp                   Boolean                 @default(false)
-  imprimeFichaExpedicao        Boolean                 @default(false)
+  embalagem                    Boolean                    @default(false)
+  vendaFracionada              Boolean                    @default(false)
+  controlaBalanca              Boolean                    @default(false)
+  enviaCozinha                 Boolean                    @default(false)
+  produtoGlp                   Boolean                    @default(false)
+  imprimeFichaExpedicao        Boolean                    @default(false)
   // Estoque
-  controlaEstoque              Boolean                 @default(true)
-  permiteEstoqueNegativo       Boolean                 @default(false)
-  permiteTransferenciaNegativa Boolean                 @default(false)
-  controlaValidade             Boolean                 @default(false)
-  controlaLote                 Boolean                 @default(false)
-  estoqueSeguranca             Decimal                 @default(0) @db.Decimal(14, 3)
-  estoqueIdeal                 Decimal?                @db.Decimal(14, 3)
-  densidade                    Decimal?                @db.Decimal(14, 6)
-  pesoEmbalagem                Decimal?                @db.Decimal(14, 3)
+  controlaEstoque              Boolean                    @default(true)
+  permiteEstoqueNegativo       Boolean                    @default(false)
+  permiteTransferenciaNegativa Boolean                    @default(false)
+  controlaValidade             Boolean                    @default(false)
+  controlaLote                 Boolean                    @default(false)
+  estoqueSeguranca             Decimal                    @default(0) @db.Decimal(14, 3)
+  estoqueIdeal                 Decimal?                   @db.Decimal(14, 3)
+  densidade                    Decimal?                   @db.Decimal(14, 6)
+  pesoEmbalagem                Decimal?                   @db.Decimal(14, 3)
   // Preços (custo = custo médio/política; os demais são informativos ou tabelas)
-  precoCompra                  Decimal?                @db.Decimal(14, 6)
-  ultimoCustoAquisicao         Decimal?                @db.Decimal(14, 6)
-  precoTabelaA                 Decimal?                @db.Decimal(10, 2)
-  precoTabelaB                 Decimal?                @db.Decimal(10, 2)
-  precoTabelaC                 Decimal?                @db.Decimal(10, 2)
-  descontoMaximoPercentual     Decimal?                @db.Decimal(5, 2)
-  comissaoPercentual           Decimal?                @db.Decimal(5, 2)
-  despesasPercentual           Decimal?                @db.Decimal(5, 2)
+  precoCompra                  Decimal?                   @db.Decimal(14, 6)
+  ultimoCustoAquisicao         Decimal?                   @db.Decimal(14, 6)
+  precoTabelaA                 Decimal?                   @db.Decimal(10, 2)
+  precoTabelaB                 Decimal?                   @db.Decimal(10, 2)
+  precoTabelaC                 Decimal?                   @db.Decimal(10, 2)
+  descontoMaximoPercentual     Decimal?                   @db.Decimal(5, 2)
+  comissaoPercentual           Decimal?                   @db.Decimal(5, 2)
+  despesasPercentual           Decimal?                   @db.Decimal(5, 2)
   // Premiação (vigência opcional)
-  premiacaoPercentual          Decimal?                @db.Decimal(5, 2)
+  premiacaoPercentual          Decimal?                   @db.Decimal(5, 2)
   premiacaoInicio              DateTime?
   premiacaoFim                 DateTime?
   premiacaoRegra               String?
   // PDV (só o que o PDV atual de fato usa)
-  disponivelPdv                Boolean                 @default(true)
+  disponivelPdv                Boolean                    @default(true)
   posicaoPdv                   Int?
   fiscal                       ProdutoFiscal?
   codigosBarras                ProdutoCodigoBarras[]
   historicoPrecos              ProdutoPrecoHistorico[]
   filiaisConfig                ProdutoFilial[]
-  origem                       Origem                  @default(MANUAL)
-  createdAt                    DateTime                @default(now())
-  updatedAt                    DateTime                @updatedAt
+  origem                       Origem                     @default(MANUAL)
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime                   @updatedAt
   estoques                     Estoque[]
   movimentacoes                EstoqueMovimentacao[]
   snapshotsEstoque             EstoqueSnapshotDiario[]
   comprasItens                 CompraItem[]
-  composicaoComoKit            ComposicaoKit[]         @relation("KitProduto")
-  composicaoComoIngrediente    ComposicaoKit[]         @relation("IngredienteProduto")
-  movimentacoesComoKit         EstoqueMovimentacao[]   @relation("MovimentacaoKit")
+  composicaoComoKit            ComposicaoKit[]            @relation("KitProduto")
+  composicaoComoIngrediente    ComposicaoKit[]            @relation("IngredienteProduto")
+  movimentacoesComoKit         EstoqueMovimentacao[]      @relation("MovimentacaoKit")
+  fornecedoresVinculo          FornecedorProduto[]
+  fornecedorPrecos             FornecedorPrecoHistorico[]
   producoesKit                 ProducaoKit[]
   consumosInternos             ConsumoInterno[]
   fatoresConversao             FatorConversao[]
@@ -720,35 +734,241 @@ model Fornecedor {
   //   `produtos` do CSV textual ("Camisa, Boné") exigido pelo modal ADD.
   // - categoria com default "Outros" para o POST legado (tela de Compras)
   //   continuar gravando sem enviar a coluna.
-  id                 String             @id @default(cuid())
-  empresaId          String
-  empresa            Empresa            @relation(fields: [empresaId], references: [id])
-  nome               String
-  cnpj               String?
-  categoria          String             @default("Outros") // Malharia, Jeans, Bonés, Acessórios, Calçados, Outros
-  status             String             @default("Ativo") // Ativo, Crítico, Inativo
-  contato            String?
-  whatsapp           String?
-  telefone           String?
-  email              String?
-  endereco           String?
-  produtos           String? // CSV "Camisa, Boné" — o que o fornecedor fornece
-  condicaoPagamento  String? // À vista, 30 dias, 30/60, 30/60/90
-  observacoes        String?
-  totalComprado      Decimal            @default(0) @db.Decimal(12, 2) // soma de CompraFornecedor.valor
-  totalPedidos       Int                @default(0)
-  ultimoPedidoAt     DateTime?
-  origem             Origem             @default(MANUAL)
-  produtosVinculados Produto[]
-  compras            Compra[]
-  comprasFornecedor  CompraFornecedor[]
-  fatoresConversao   FatorConversao[]
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                     String                     @id @default(cuid())
+  empresaId              String
+  empresa                Empresa                    @relation(fields: [empresaId], references: [id])
+  nome                   String
+  cnpj                   String?
+  categoria              String                     @default("Outros") // Malharia, Jeans, Bonés, Acessórios, Calçados, Outros
+  status                 String                     @default("Ativo") // Ativo, Crítico, Inativo
+  contato                String?
+  whatsapp               String?
+  telefone               String?
+  email                  String?
+  endereco               String?
+  produtos               String? // CSV "Camisa, Boné" — o que o fornecedor fornece
+  condicaoPagamento      String? // À vista, 30 dias, 30/60, 30/60/90
+  observacoes            String?
+  // ---- Cadastro completo (2026-11-21). Todos opcionais ou com padrão: nenhum dado existente muda. ----
+  // status (TEXT) passa a aceitar também "Bloqueado" (não recebe pedidos). nome = razão social / nome.
+  codigo                 Int? // sequencial por empresa (exibido como F000001), gerado pelo backend
+  filialId               String?
+  filial                 Filial?                    @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  tipoPessoa             String                     @default("JURIDICA") // JURIDICA | FISICA
+  nomeFantasia           String?
+  inscricaoEstadual      String?
+  ieIsento               Boolean                    @default(false)
+  inscricaoMunicipal     String?
+  cnae                   String?
+  dataAbertura           DateTime?
+  regimeTributario       String?
+  segmento               String?
+  // Endereço estruturado (o campo legado "endereco" continua como texto livre)
+  cep                    String?
+  logradouro             String?
+  numero                 String?
+  complemento            String?
+  bairro                 String?
+  cidade                 String?
+  uf                     String?
+  pais                   String                     @default("Brasil")
+  codigoIbge             String?
+  enderecoCobranca       Json? // { cep, logradouro, numero, complemento, bairro, cidade, uf, codigoIbge }
+  enderecoAlternativo    Json?
+  site                   String?
+  emailPedidos           String?
+  emailNfe               String?
+  // Financeiro (dados bancários: só com fornecedores.administrar)
+  formaPagamento         String? // BOLETO | PIX | TRANSFERENCIA | CARTAO
+  chavePix               String?
+  tipoChavePix           String?
+  banco                  String?
+  codigoBanco            String?
+  agencia                String?
+  conta                  String?
+  contaDigito            String?
+  tipoConta              String? // CORRENTE | POUPANCA | PAGAMENTO
+  titular                String?
+  titularDocumento       String?
+  limiteCredito          Decimal?                   @db.Decimal(14, 2)
+  naturezaFinanceira     String?
+  planoContas            String?
+  centroCusto            String?
+  // Fiscal (informativo: nenhum cálculo é feito a partir destes campos)
+  contribuinteIcms       Boolean?
+  optanteSimples         Boolean?
+  retemIrrf              Boolean                    @default(false)
+  retemPis               Boolean                    @default(false)
+  retemCofins            Boolean                    @default(false)
+  retemCsll              Boolean                    @default(false)
+  retemIss               Boolean                    @default(false)
+  retemInss              Boolean                    @default(false)
+  cfopEntrada            String?
+  observacoesFiscais     String?
+  // Compras e logística
+  prazoEntregaDias       Int?
+  pedidoMinimo           Decimal?                   @db.Decimal(14, 2)
+  modalidadeFrete        String? // CIF | FOB
+  transportadora         String?
+  compradorId            String?
+  comprador              Usuario?                   @relation("FornecedorComprador", fields: [compradorId], references: [id], onDelete: SetNull)
+  condicoesComerciais    String?
+  observacoesLogisticas  String?
+  // Qualidade / homologação
+  homologado             Boolean                    @default(false)
+  dataHomologacao        DateTime?
+  homologadoPor          String?
+  validadeCndFederal     DateTime?
+  validadeFgts           DateTime?
+  validadeCndt           DateTime?
+  // Observações internas (nunca enviadas ao fornecedor)
+  infoComerciais         String?
+  restricoesAtendimento  String?
+  orientacoesCompradores String?
+  // Auditoria do cadastro (preenchida só pelo backend)
+  criadoPorId            String?
+  criadoPor              Usuario?                   @relation("FornecedorCriadoPor", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  atualizadoPorId        String?
+  atualizadoPor          Usuario?                   @relation("FornecedorAtualizadoPor", fields: [atualizadoPorId], references: [id], onDelete: SetNull)
+  contatos               FornecedorContato[]
+  produtosFornecidos     FornecedorProduto[]
+  historicoPrecos        FornecedorPrecoHistorico[]
+  documentos             FornecedorDocumento[]
+  avaliacoes             FornecedorAvaliacao[]
+  totalComprado          Decimal                    @default(0) @db.Decimal(12, 2) // soma de CompraFornecedor.valor
+  totalPedidos           Int                        @default(0)
+  ultimoPedidoAt         DateTime?
+  origem                 Origem                     @default(MANUAL)
+  produtosVinculados     Produto[]
+  compras                Compra[]
+  comprasFornecedor      CompraFornecedor[]
+  fatoresConversao       FatorConversao[]
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
 
+  @@unique([empresaId, codigo])
   @@index([empresaId])
   @@index([empresaId, status])
   @@index([empresaId, categoria])
+  @@index([empresaId, uf])
+}
+
+// ===== Fornecedores — cadastro completo (2026-11-21) =====
+
+// Vários contatos por fornecedor; no máximo um principal (garantido pelo backend).
+model FornecedorContato {
+  id           String     @id @default(cuid())
+  empresaId    String
+  empresa      Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  nome         String
+  cargo        String?
+  departamento String?
+  telefone     String?
+  celular      String?
+  whatsapp     String?
+  email        String?
+  principal    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([empresaId, fornecedorId])
+}
+
+//
+// Produto fornecido (N:N com o catálogo central de Produtos — nenhum produto é duplicado).
+// Cada fornecedor tem a própria referência, código e preço para o mesmo produto.
+// Remover o vínculo nunca exclui o produto; o histórico de preços fica em FornecedorPrecoHistorico.
+// /
+model FornecedorProduto {
+  id                 String     @id @default(cuid())
+  empresaId          String
+  empresa            Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  fornecedorId       String
+  fornecedor         Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  produtoId          String
+  produto            Produto    @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  referencia         String?
+  codigoFornecedor   String?
+  descricaoComercial String?
+  preco              Decimal?   @db.Decimal(14, 6) // preço de custo praticado por este fornecedor
+  ultimoPrecoCompra  Decimal?   @db.Decimal(14, 6) // atualizado pelo recebimento de compra
+  precoAtualizadoEm  DateTime?
+  prazoEntregaDias   Int?
+  pedidoMinimo       Decimal?   @db.Decimal(14, 3)
+  status             String     @default("ATIVO") // ATIVO | SUSPENSO
+  principal          Boolean    @default(false) // espelhado em Produto.fornecedorId
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@unique([fornecedorId, produtoId])
+  @@index([empresaId, produtoId])
+  @@index([empresaId, fornecedorId])
+}
+
+// Histórico de preço por fornecedor e produto (sobrevive à remoção do vínculo).
+model FornecedorPrecoHistorico {
+  id            String     @id @default(cuid())
+  empresaId     String
+  empresa       Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  fornecedorId  String
+  fornecedor    Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto    @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  campo         String // PRECO | ULTIMA_COMPRA
+  valorAnterior Decimal?   @db.Decimal(14, 6)
+  valorNovo     Decimal?   @db.Decimal(14, 6)
+  origem        String     @default("MANUAL") // MANUAL | COMPRA
+  documento     String?
+  usuarioId     String?
+  usuario       Usuario?   @relation("FornecedorPrecoUsuario", fields: [usuarioId], references: [id], onDelete: SetNull)
+  createdAt     DateTime   @default(now())
+
+  @@index([empresaId, fornecedorId, produtoId, createdAt])
+}
+
+// Documento do fornecedor: metadados aqui, arquivo no storage privado (lib/storage.ts).
+model FornecedorDocumento {
+  id           String     @id @default(cuid())
+  empresaId    String
+  empresa      Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  tipo         String // CARTAO_CNPJ | CONTRATO_SOCIAL | CERTIDAO | CONTRATO | TABELA_PRECOS | OUTRO
+  nome         String
+  arquivoChave String?
+  arquivoNome  String?
+  contentType  String?
+  tamanhoBytes Int?
+  validade     DateTime?
+  ativo        Boolean    @default(true) // substituído/removido = false (histórico preservado)
+  enviadoPorId String?
+  enviadoPor   Usuario?   @relation("FornecedorDocumentoEnviadoPor", fields: [enviadoPorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([empresaId, fornecedorId])
+  @@index([empresaId, validade])
+}
+
+// Avaliações ao longo do tempo (notas de 1 a 5).
+model FornecedorAvaliacao {
+  id           String     @id @default(cuid())
+  empresaId    String
+  empresa      Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  notaGeral    Int
+  pontualidade Int?
+  qualidade    Int?
+  preco        Int?
+  comentario   String?
+  usuarioId    String?
+  usuario      Usuario?   @relation("FornecedorAvaliacaoUsuario", fields: [usuarioId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+
+  @@index([empresaId, fornecedorId, createdAt])
 }
 
 // ===== Fornecedores — pedidos de compra por fornecedor (Seção 11 v2) =====
@@ -3060,14 +3280,14 @@ model RateLimitJanela {
 // Garante que uma tarefa diária (snapshot de estoque, fechamento de expediente)
 // rode uma única vez por dia mesmo com várias instâncias do backend.
 model TarefaAgendada {
-  nome              String    @id
-  ultimoDia         String? // AAAA-MM-DD (UTC) da última execução reivindicada
-  leaseExpiraEm     DateTime?
-  instancia         String?
-  ultimaExecucaoEm  DateTime?
-  ultimoSucessoEm   DateTime?
-  ultimoErro        String?
-  updatedAt         DateTime  @updatedAt
+  nome             String    @id
+  ultimoDia        String? // AAAA-MM-DD (UTC) da última execução reivindicada
+  leaseExpiraEm    DateTime?
+  instancia        String?
+  ultimaExecucaoEm DateTime?
+  ultimoSucessoEm  DateTime?
+  ultimoErro       String?
+  updatedAt        DateTime  @updatedAt
 }
 
 // --- Se+ï¿½ï¿½o 17: NexusErpRecord ---
