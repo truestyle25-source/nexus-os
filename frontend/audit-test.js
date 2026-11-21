@@ -4,7 +4,7 @@ const path = require('node:path');
 
 // Use environment variables set in the system
 const email = process.env.NEXUS_AUDIT_EMAIL || 'audit@nexus.test';
-const password = process.env.NEXUS_AUDIT_PASSWORD || 'audittest123';
+const password = process.env.NEXUS_AUDIT_PASSWORD;
 
 const routes = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'auditoria-rotas.json'), 'utf8'));
 

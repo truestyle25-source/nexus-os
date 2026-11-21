@@ -13,12 +13,12 @@ import { dataNoFuso, dataOperacionalDate } from '../../lib/fuso.js';
 import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado } from '../payments/pixProvider.js';
 
 // ============================================================================
-// ARREDONDAMENTO MONETÃRIO (integridade financeira â€” Regra 4.3).
+// ARREDONDAMENTO MONETÁRIO (integridade financeira — Regra 4.3).
 //
-// CÃ¡lculos em ponto flutuante puro (preÃ§o * qtd, soma de itens) acumulam ruÃ­do
-// binÃ¡rio: 0.1*3 = 0.30000000000000004, 29.9*3 = 89.69999999999999. Esse ruÃ­do
-// (a) distorce o total/subtotal gravados e (b) pode reprovar uma venda legÃ­tima
-// na conferÃªncia do pagamento. Toda grandeza monetÃ¡ria Ã© normalizada para 2
+// Cálculos em ponto flutuante puro (preço * qtd, soma de itens) acumulam ruído
+// binário: 0.1*3 = 0.30000000000000004, 29.9*3 = 89.69999999999999. Esse ruído
+// (a) distorce o total/subtotal gravados e (b) pode reprovar uma venda legítima
+// na conferência do pagamento. Toda grandeza monetária é normalizada para 2
 // casas DECIMAIS antes de comparar ou persistir.
 // ============================================================================
 const EPSILON_MONETARIO = 1e-9;
@@ -30,17 +30,17 @@ function difere(a: number, b: number): boolean {
 }
 
 // ============================================================================
-// FASE 2 PDV PRO â€” AlÃ§adas de desconto (regra de negÃ³cio NO BACKEND).
+// FASE 2 PDV PRO — Alçadas de desconto (regra de negócio NO BACKEND).
 //
-// Os limites NÃƒO ficam no frontend. O PDV pode exibir as faixas, mas quem
-// decide Ã© esta tabela, aplicada na transaÃ§Ã£o da venda. Um desconto acima da
-// alÃ§ada do operador Ã© rejeitado com 403 antes de gravar qualquer coisa.
+// Os limites NÃO ficam no frontend. O PDV pode exibir as faixas, mas quem
+// decide é esta tabela, aplicada na transação da venda. Um desconto acima da
+// alçada do operador é rejeitado com 403 antes de gravar qualquer coisa.
 //
-// percentual Ã© sobre o SUBTOTAL (soma dos itens). O valor exige a permissÃ£o
-// listada; a primeira faixa casada Ã© a aplicada. `qualquer` = perfil de
-// terminal (vendas/pdv criar) jÃ¡ passa â€” Ã© o operador de caixa comum.
+// percentual é sobre o SUBTOTAL (soma dos itens). O valor exige a permissão
+// listada; a primeira faixa casada é a aplicada. `qualquer` = perfil de
+// terminal (vendas/pdv criar) já passa — é o operador de caixa comum.
 //
-// Ajuste aqui para refletir a polÃ­tica da empresa; isto Ã© fonte Ãºnica.
+// Ajuste aqui para refletir a política da empresa; isto é fonte única.
 // ============================================================================
 const ALCADAS_DESCONTO: Array<{ ate: number; permissoes: Array<{ modulo: string; acao: string }>; rotulo: string }> = [
   { ate: 10, permissoes: [{ modulo: 'vendas', acao: 'criar' }, { modulo: 'pdv', acao: 'criar' }], rotulo: 'operador' },
@@ -48,7 +48,7 @@ const ALCADAS_DESCONTO: Array<{ ate: number; permissoes: Array<{ modulo: string;
   { ate: 100, permissoes: [{ modulo: 'vendas', acao: 'desconto' }, { modulo: 'vendas', acao: 'gerente' }, { modulo: 'pdv', acao: 'editar' }], rotulo: 'gerente' },
 ];
 
-/** Descobre a alÃ§ada necessÃ¡ria e valida se o usuÃ¡rio a possui. */
+/** Descobre a alçada necessária e valida se o usuário a possui. */
 async function validarAlcadaDesconto(
   usuarioId: string,
   desconto: number,
@@ -66,7 +66,7 @@ async function validarAlcadaDesconto(
   });
   if (!concedida) {
     throw new ErroDeNegocio(
-      `Desconto de ${pct.toFixed(1)}% exige autorizaÃ§Ã£o de ${rotulo}. Solicite a um responsÃ¡vel.`,
+      `Desconto de ${pct.toFixed(1)}% exige autorização de ${rotulo}. Solicite a um responsável.`,
       403,
     );
   }
@@ -84,12 +84,12 @@ import {
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO', 'PDV', 'PONTO', 'INTEGRACAO', 'IA']);
 const formaPagamentoSchema = z.enum(FORMAS_PAGAMENTO);
 
-// SeÃ§Ã£o 6: "pode acessar vendas sem ver custos" â€” VendaItem guarda
-// custoUnitario (Ã© dado de custo, igual ao Produto.custo). Sem
-// custos.visualizar, o campo some da resposta â€” mesmo padrÃ£o jÃ¡ usado em
-// produtos.routes.ts (ocultarCusto), sÃ³ que nunca tinha sido aplicado
+// Seção 6: "pode acessar vendas sem ver custos" — VendaItem guarda
+// custoUnitario (é dado de custo, igual ao Produto.custo). Sem
+// custos.visualizar, o campo some da resposta — mesmo padrão já usado em
+// produtos.routes.ts (ocultarCusto), só que nunca tinha sido aplicado
 // aqui. Isso fecha um vazamento real: antes desta rodada, qualquer
-// usuÃ¡rio com vendas.visualizar via o custo de cada item vendido.
+// usuário com vendas.visualizar via o custo de cada item vendido.
 function ocultarCustoDosItens<T extends { itens: Array<Record<string, unknown>> }>(venda: T, podeVerCusto: boolean): T {
   if (podeVerCusto) return venda;
   return {
@@ -100,10 +100,10 @@ function ocultarCustoDosItens<T extends { itens: Array<Record<string, unknown>> 
     }),
   };
 }
-// `Venda.funcionarioId` Ã© apenas o id do usuÃ¡rio que vendeu (nÃ£o existe
-// relaÃ§Ã£o declarada no schema), entÃ£o o nome do vendedor Ã© resolvido numa
-// consulta extra â€” mesmo padrÃ£o jÃ¡ usado em pdv.routes.ts para os nomes de
-// produto. Ã‰ isso que permite a coluna "Vendedor" e o filtro por vendedor da
+// `Venda.funcionarioId` é apenas o id do usuário que vendeu (não existe
+// relação declarada no schema), então o nome do vendedor é resolvido numa
+// consulta extra — mesmo padrão já usado em pdv.routes.ts para os nomes de
+// produto. É isso que permite a coluna "Vendedor" e o filtro por vendedor da
 // aba Vendas existirem sem inventar nome.
 async function nomesDeVendedores(
   empresaId: string,
@@ -169,7 +169,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         where: { empresaId: user.empresaId, operadorId: user.id, key },
         select: { status: true, vendaId: true, responseStatus: true, updatedAt: true },
       });
-      if (!registro) return reply.status(404).send({ error: 'Chave de idempotÃªncia nÃ£o encontrada.' });
+      if (!registro) return reply.status(404).send({ error: 'Chave de idempotência não encontrada.' });
       return registro;
     },
   );
@@ -181,10 +181,10 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const user = (req as any).user;
       const venda = await prisma.venda.findFirst({ where: { id, empresaId: user.empresaId }, include: { itens: true, cliente: true } });
-      if (!venda) throw NaoEncontrado('Venda nÃ£o encontrada nesta empresa.');
+      if (!venda) throw NaoEncontrado('Venda não encontrada nesta empresa.');
       const podeVerCusto = await temPermissao(user.id, 'custos', 'visualizar');
       // Mesmo enriquecimento do GET /vendas: o detalhe da venda (drawer) mostra
-      // o vendedor, e `funcionarioId` sozinho nÃ£o Ã© legÃ­vel para o usuÃ¡rio.
+      // o vendedor, e `funcionarioId` sozinho não é legível para o usuário.
       const vendedores = await nomesDeVendedores(user.empresaId, [venda.funcionarioId]);
       return {
         ...ocultarCustoDosItens(venda, podeVerCusto),
@@ -199,16 +199,16 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/vendas',
-    // `pdv:criar` entra na lista porque o PDV Ã© um TERMINAL DE VENDA: quem
-    // opera o balcÃ£o precisa registrar a venda, e Ã© isso que esta rota faz.
-    // Antes ela exigia sÃ³ `vendas:criar`, entÃ£o o perfil correto do PDV â€” o
-    // caixa, que recebe permissÃµes granulares de `pdv:*` â€” recebia 403 em
-    // toda venda: o mÃ³dulo inteiro era inÃºtil para quem deveria usÃ¡-lo.
+    // `pdv:criar` entra na lista porque o PDV é um TERMINAL DE VENDA: quem
+    // opera o balcão precisa registrar a venda, e é isso que esta rota faz.
+    // Antes ela exigia só `vendas:criar`, então o perfil correto do PDV — o
+    // caixa, que recebe permissões granulares de `pdv:*` — recebia 403 em
+    // toda venda: o módulo inteiro era inútil para quem deveria usá-lo.
     //
-    // Isto NÃƒO amplia poder: `pdv:criar` jÃ¡ permite vender pelo PDV, e esta
-    // rota Ã© exatamente o que o PDV chama. A diferenÃ§a Ã© sÃ³ que agora o
-    // caminho existe para quem tem a permissÃ£o do terminal, em vez de exigir
-    // tambÃ©m a do mÃ³dulo de vendas.
+    // Isto NÃO amplia poder: `pdv:criar` já permite vender pelo PDV, e esta
+    // rota é exatamente o que o PDV chama. A diferença é só que agora o
+    // caminho existe para quem tem a permissão do terminal, em vez de exigir
+    // também a do módulo de vendas.
     { preHandler: [(app as any).authenticate, await permissaoQualquerDas([{ modulo: 'vendas', acao: 'criar' }, { modulo: 'pdv', acao: 'criar' }])] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const user = (req as any).user;
@@ -219,18 +219,18 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           clienteId: z.string().optional(),
           formaPagamento: formaPagamentoSchema.default('DINHEIRO'),
           // Quantas parcelas o cliente combinou. O PDV oferece 1x a 6x no
-          // cartÃ£o de crÃ©dito e o cupom impresso jÃ¡ mostrava "3x" â€” mas o
-          // nÃºmero nunca era enviado nem gravado, entÃ£o o comprovando do
+          // cartão de crédito e o cupom impresso já mostrava "3x" — mas o
+          // número nunca era enviado nem gravado, então o comprovando do
           // cliente afirmava um parcelamento inexistente. Limitado a 1..12
-          // porque acima disso Ã© sempre erro de digitaÃ§Ã£o.
+          // porque acima disso é sempre erro de digitação.
           parcelas: z.number().int().min(1).max(12).default(1),
           desconto: z.number().min(0).default(0),
           itens: itensSchema,
           origem: origemSchema.default('MANUAL'),
           pdvId: z.string().optional(),
           caixaId: z.string().optional(), // PDV: turno de caixa que fecha a venda
-          // FASE 2 â€” pagamento misto (ex.: parte dinheiro + parte PIX). Quando
-          // ausente, a venda segue com forma Ãºnica (compatÃ­vel com o PDV atual
+          // FASE 2 — pagamento misto (ex.: parte dinheiro + parte PIX). Quando
+          // ausente, a venda segue com forma única (compatível com o PDV atual
           // e com a aba Vendas). A soma precisa bater EXATAMENTE com o total.
           pagamentos: z
             .array(z.object({ forma: formaPagamentoSchema, valor: z.number().positive(), referencia: z.string().optional() }))
@@ -244,11 +244,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         throw new ErroDeNegocio(mensagemPixProviderIndisponivel, 503);
       }
       if (!tefProviderConfigurado && formasPagamentoSolicitadas.some((forma) => forma === 'CARTAO_CREDITO' || forma === 'CARTAO_DEBITO')) {
-        throw new ErroDeNegocio('CartÃ£o indisponÃ­vel: nenhum provider TEF oficial estÃ¡ configurado.', 503);
+        throw new ErroDeNegocio('Cartão indisponível: nenhum provider TEF oficial está configurado.', 503);
       }
 
-      // FASA 2 â€” IdempotÃªncia. A chave Ã© criada UMA vez no cliente e mantida
-      // em todos os retries (offline â†’ sync). Mesma chave = mesma operaÃ§Ã£o:
+      // FASA 2 — Idempotência. A chave é criada UMA vez no cliente e mantida
+      // em todos os retries (offline → sync). Mesma chave = mesma operação:
       // um retry devolve o resultado original, nunca uma segunda venda.
       const idemKey = (req.headers['x-idempotency-key'] as string | undefined) ?? (req.body as any)?.idempotencyKey;
       let idemId: string | null = null;
@@ -261,9 +261,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           operadorId: user.id,
         });
         if (aquisicao.duplicada) {
-          // JÃ¡ processada: devolve o desfecho registrado sem regravar nada.
-          // FASE 1 PDV PRO â€” replay fiel: reproduz o status HTTP ORIGINAL.
-          // Sem isso, uma rejeiÃ§Ã£o 422/403 era reexibida como 200 e o
+          // Já processada: devolve o desfecho registrado sem regravar nada.
+          // FASE 1 PDV PRO — replay fiel: reproduz o status HTTP ORIGINAL.
+          // Sem isso, uma rejeição 422/403 era reexibida como 200 e o
           // consumidor tratava erro como sucesso.
           const statusOriginal = aquisicao.responseStatus ?? (aquisicao.status === 'CONFIRMADA' ? 201 : 409);
           return reply.status(statusOriginal).send(aquisicao.responseBody ?? { duplicada: true, status: aquisicao.status });
@@ -276,27 +276,27 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       try {
       const transacao = await prisma.$transaction(async (tx) => {
         const filial = await tx.filial.findFirst({ where: { id: data.filialId, empresaId: user.empresaId } });
-        if (!filial) throw NaoEncontrado('Filial invÃ¡lida para esta empresa.');
-        // O instante UTC vem do PostgreSQL; o dia operacional Ã© derivado
+        if (!filial) throw NaoEncontrado('Filial inválida para esta empresa.');
+        // O instante UTC vem do PostgreSQL; o dia operacional é derivado
         // desse mesmo instante e do fuso configurado para a filial.
         const [{ agoraUtc }] = await tx.$queryRaw<Array<{ agoraUtc: Date }>>`SELECT CURRENT_TIMESTAMP AS "agoraUtc"`;
         const diaOperacional = dataNoFuso(agoraUtc, filial.fusoHorario);
         const dataOperacional = dataOperacionalDate(agoraUtc, filial.fusoHorario);
         if (data.setorId) {
           const setor = await tx.setor.findFirst({ where: { id: data.setorId, empresaId: user.empresaId } });
-          if (!setor) throw NaoEncontrado('Setor invÃ¡lido para esta empresa.');
+          if (!setor) throw NaoEncontrado('Setor inválido para esta empresa.');
         }
         if (data.clienteId) {
           const cliente = await tx.cliente.findFirst({ where: { id: data.clienteId, empresaId: user.empresaId } });
-          if (!cliente) throw NaoEncontrado('Cliente invÃ¡lido para esta empresa.');
+          if (!cliente) throw NaoEncontrado('Cliente inválido para esta empresa.');
         }
 
         let caixaTurno: { id: string } | null = null;
         if (data.caixaId) {
           // Serializa a venda do PDV com POST /pdv/caixa/fechar. O bloqueio
           // precisa ser adquirido antes de gravar a venda; se o fechamento
-          // vencer, a condiÃ§Ã£o status='ABERTO' deixa de casar e a transaÃ§Ã£o
-          // inteira da venda Ã© revertida.
+          // vencer, a condição status='ABERTO' deixa de casar e a transação
+          // inteira da venda é revertida.
           const caixas = await tx.$queryRaw<Array<{ id: string }>>`
             SELECT "id" FROM "Caixa"
             WHERE "id" = ${data.caixaId}
@@ -306,7 +306,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             FOR UPDATE
           `;
           caixaTurno = caixas[0] ?? null;
-          if (!caixaTurno) throw new ErroDeNegocio('Caixa informado nÃ£o estÃ¡ aberto para este usuÃ¡rio.', 422);
+          if (!caixaTurno) throw new ErroDeNegocio('Caixa informado não está aberto para este usuário.', 422);
         }
 
         const itensCalculados: Array<{
@@ -327,14 +327,14 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         }> = [];
         let subtotal = 0;
         // Base BRUTA (sem descontos) e total de desconto aplicado (itens + venda).
-        // A alÃ§ada Ã© calculada sobre esta base e sobre este desconto TOTAL: sem
-        // isso, um desconto por item escapava de qualquer autorizaÃ§Ã£o (bypass) e
-        // o percentual da alÃ§ada era medido sobre base jÃ¡ lÃ­quida.
+        // A alçada é calculada sobre esta base e sobre este desconto TOTAL: sem
+        // isso, um desconto por item escapava de qualquer autorização (bypass) e
+        // o percentual da alçada era medido sobre base já líquida.
         let subtotalBruto = 0;
         let descontoTotal = 0;
         for (const item of data.itens) {
           const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true } });
-          if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} nÃ£o encontrado.`);
+          if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} não encontrado.`);
           const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
           const qtdAtual = Number(estoque?.quantidade ?? 0);
           if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
@@ -345,26 +345,26 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           const descontoItem = arred2(item.desconto);
           const brutoItem = arred2(preco * item.quantidade);
           const totalItem = arred2(brutoItem - descontoItem);
-          if (totalItem < 0) throw new ErroDeNegocio('Desconto do item nÃ£o pode superar o valor do item.', 422);
+          if (totalItem < 0) throw new ErroDeNegocio('Desconto do item não pode superar o valor do item.', 422);
           subtotalBruto = arred2(subtotalBruto + brutoItem);
           descontoTotal = arred2(descontoTotal + descontoItem);
           subtotal = arred2(subtotal + totalItem);
           itensCalculados.push({ produto, quantidade: item.quantidade, preco, desconto: descontoItem, total: totalItem });
         }
         const total = arred2(subtotal - data.desconto);
-        if (total < 0) throw new ErroDeNegocio('Desconto da venda nÃ£o pode superar o subtotal.', 422);
+        if (total < 0) throw new ErroDeNegocio('Desconto da venda não pode superar o subtotal.', 422);
 
-        // FASA 2 â€” alÃ§ada de desconto validada NO BACKEND (nÃ£o confia no front).
+        // FASA 2 — alçada de desconto validada NO BACKEND (não confia no front).
         // Avalia o desconto TOTAL (itens + venda) sobre a base BRUTA: impede que
-        // um desconto por item contorne a alÃ§ada e mede o percentual correto.
+        // um desconto por item contorne a alçada e mede o percentual correto.
         await validarAlcadaDesconto(user.id, arred2(descontoTotal + data.desconto), subtotalBruto, tx);
 
-        // FASA 2 â€” pagamento misto: a soma precisa bater EXATAMENTE com o total.
+        // FASA 2 — pagamento misto: a soma precisa bater EXATAMENTE com o total.
         if (data.pagamentos) {
           const somaPagamentos = arred2(data.pagamentos.reduce((s, p) => s + p.valor, 0));
           if (difere(somaPagamentos, total)) {
             throw new ErroDeNegocio(
-              `Soma dos pagamentos (R$ ${somaPagamentos.toFixed(2)}) nÃ£o confere com o total da venda (R$ ${total.toFixed(2)}).`,
+              `Soma dos pagamentos (R$ ${somaPagamentos.toFixed(2)}) não confere com o total da venda (R$ ${total.toFixed(2)}).`,
               422,
             );
           }
@@ -394,14 +394,14 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           include: { itens: true },
         });
 
-        // FASA 2 â€” pagamento misto: registra cada parcela. A primeira linha
-        // espelha a forma principal (compatibilidade), as demais sÃ³ entram
+        // FASA 2 — pagamento misto: registra cada parcela. A primeira linha
+        // espelha a forma principal (compatibilidade), as demais só entram
         // quando o PDV envia `pagamentos`. `total` grava o valor recebido.
         const linhasPagamento: Array<{ forma: FormaPagamento; valor: number; ordem: number; referencia: string | null }> = [];
         if (data.pagamentos) {
           data.pagamentos.forEach((p, i) => linhasPagamento.push({ forma: p.forma, valor: arred2(p.valor), ordem: i + 1, referencia: p.referencia ?? null }));
         }
-        // Valor efetivamente recebido em DINHEIRO â€” sÃ³ isso entra na gaveta.
+        // Valor efetivamente recebido em DINHEIRO — só isso entra na gaveta.
         const dinheiroRecebido = data.pagamentos
           ? data.pagamentos.filter((p) => p.forma === 'DINHEIRO').reduce((s, p) => s + arred2(p.valor), 0)
           : data.formaPagamento === 'DINHEIRO' ? total : 0;
@@ -417,13 +417,13 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         // Baixa de estoque via service compartilhado (Fase 3): a mesma
-        // lÃ³gica de concorrÃªncia segura jÃ¡ vive em estoque.service.ts e
-        // Ã© usada por Estoque/Compras â€” elimina duplicaÃ§Ã£o que existia
+        // lógica de concorrência segura já vive em estoque.service.ts e
+        // é usada por Estoque/Compras — elimina duplicação que existia
         // aqui antes.
 
         for (const item of itensCalculados) {
           const produto = await tx.produto.findFirst({ where: { id: item.produto.id, empresaId: user.empresaId } });
-          if (!produto) throw NaoEncontrado('Produto nÃ£o encontrado nesta empresa.');
+          if (!produto) throw NaoEncontrado('Produto não encontrado nesta empresa.');
 
           const unidadeBase = produto.unidadeBaseId
             ? await tx.unidade.findFirst({
@@ -482,8 +482,8 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           // A conversao e a quantidade-base foram persistidas em VendaItem.
 
           // Tratar produto fabricado e kits
-          // Se produto fabricado (tipo = 'PRODUzido'): apenas o acabado Ã© baixado
-          // (jÃ¡ feito acima - sÃ³ decrementamos o produto atual, nÃ£o os ingredientes)
+          // Se produto fabricado (tipo = 'PRODUzido'): apenas o acabado é baixado
+          // (já feito acima - só decrementamos o produto atual, não os ingredientes)
           // Se kit virtual: baixar componentes na venda
           if (produto.ehKit) {
             const componentes = await tx.composicaoKit.findMany({
@@ -492,11 +492,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             });
 
             for (const comp of componentes) {
-              // Verificar se o ingrediente tem unidade diferente da base e converter se necessÃ¡rio
+              // Verificar se o ingrediente tem unidade diferente da base e converter se necessário
               const ingrediente = await tx.produto.findFirst({
                 where: { id: comp.ingredienteProdutoId, empresaId: user.empresaId },
               });
-              if (!ingrediente) throw NaoEncontrado('Ingrediente do kit nÃ£o encontrado.');
+              if (!ingrediente) throw NaoEncontrado('Ingrediente do kit não encontrado.');
 
               const unidadeBaseIng = ingrediente.unidadeBaseId
                 ? await tx.unidade.findFirst({
@@ -533,8 +533,8 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             }
           } else {
             // Produto fabricado: garantir que apenas o acabado foi baixado
-            // (jÃ¡ que aplicarMovimento jÃ¡ chamou pelo produto acabado)
-            // NÃ£o fazer nada adicional - os ingredientes jÃ¡ foram consumidos na produÃ§Ã£o
+            // (já que aplicarMovimento já chamou pelo produto acabado)
+            // Não fazer nada adicional - os ingredientes já foram consumidos na produção
           }
         }
 
@@ -594,9 +594,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         };
         const permissaoCusto = await tx.permissao.findFirst({ where: { usuarioId: user.id, modulo: 'custos', acao: 'visualizar', permitido: true }, select: { id: true } });
         const resposta = { ...resultado, venda: ocultarCustoDosItens(resultado.venda, Boolean(permissaoCusto)) };
-        // Resultado e venda sÃ£o confirmados no mesmo commit. Uma queda do
-        // processo depois do COMMIT nÃ£o pode deixar chave PROCESSANDO sem
-        // vÃ­nculo com a venda jÃ¡ gravada.
+        // Resultado e venda são confirmados no mesmo commit. Uma queda do
+        // processo depois do COMMIT não pode deixar chave PROCESSANDO sem
+        // vínculo com a venda já gravada.
         if (idemId) {
           await tx.idempotencyKey.update({
             where: { id: idemId },
@@ -609,17 +609,17 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       result = transacao.resultado;
 
       await registrarAuditoria({ usuarioId: user.id, empresaId: user.empresaId, acao: 'CRIAR', entidade: 'Venda', entidadeId: result.venda.id, valorNovo: result.venda, origem: result.venda.origem, ip: req.ip });
-      // FASE 1 PDV PRO â€” 201 Created na criaÃ§Ã£o. O helper de envio do PDV
-      // (enviarOperacaoPdv) valida o corpo e aceita 2xx, entÃ£o 201 nÃ£o quebra
+      // FASE 1 PDV PRO — 201 Created na criação. O helper de envio do PDV
+      // (enviarOperacaoPdv) valida o corpo e aceita 2xx, então 201 não quebra
       // o terminal nem a aba Vendas.
       return reply.status(201).send(transacao.resposta);
     } catch (e) {
-      // FASA 2 â€” falha: marca a chave como rejeitada para que um retry com a
-      // mesma chave devolva o erro original em vez de duplicar a operaÃ§Ã£o.
+      // FASA 2 — falha: marca a chave como rejeitada para que um retry com a
+      // mesma chave devolva o erro original em vez de duplicar a operação.
       if (idemId && !transacaoConfirmada) {
-        // FASE 1 PDV PRO â€” ErroDeNegocio carrega `status` (nÃ£o `statusCode`,
-        // que sÃ³ existe em erros do Fastify). Sem este fallback, 403/422/503
-        // eram persistidos como 500 na chave e o replay/reconciliaÃ§Ã£o
+        // FASE 1 PDV PRO — ErroDeNegocio carrega `status` (não `statusCode`,
+        // que só existe em erros do Fastify). Sem este fallback, 403/422/503
+        // eram persistidos como 500 na chave e o replay/reconciliação
         // exibiam "HTTP 500" incorreto.
         const statusReal = (e as any)?.status ?? (e as any)?.statusCode ?? 500;
         await concluirIdempotencia(idemId, { status: 'REJEITADA', responseStatus: statusReal, responseBody: { error: (e as any)?.message ?? 'Falha ao processar a venda.' } });
@@ -635,9 +635,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
       const user = (req as any).user;
-      // Corpo opcional â€” Ã© o que o modal de estorno da aba Vendas envia
-      // (motivo obrigatÃ³rio + escolha de estornar estoque/financeiro). Body
-      // vazio/ausente continua valendo: Ã© o que o PDV manda hoje, e o
+      // Corpo opcional — é o que o modal de estorno da aba Vendas envia
+      // (motivo obrigatório + escolha de estornar estoque/financeiro). Body
+      // vazio/ausente continua valendo: é o que o PDV manda hoje, e o
       // comportamento permanece exatamente o de antes (estorna tudo).
       const body = z
         .object({
@@ -656,17 +656,17 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           WHERE "id" = ${id} AND "empresaId" = ${user.empresaId}
           FOR UPDATE
         `;
-        if (bloqueios.length === 0) throw NaoEncontrado('Venda nÃ£o encontrada nesta empresa.');
+        if (bloqueios.length === 0) throw NaoEncontrado('Venda não encontrada nesta empresa.');
         const venda = await tx.venda.findUnique({ where: { id }, include: { itens: true, pagamentos: true } });
-        if (!venda) throw NaoEncontrado('Venda nÃ£o encontrada nesta empresa.');
-        if (venda.status !== 'FINALIZADA') throw Conflito(`Venda com status ${venda.status} nÃ£o pode ser estornada novamente.`);
+        if (!venda) throw NaoEncontrado('Venda não encontrada nesta empresa.');
+        if (venda.status !== 'FINALIZADA') throw Conflito(`Venda com status ${venda.status} não pode ser estornada novamente.`);
 
-        // O status vira CANCELADA AQUI, antes de qualquer recÃ¡lculo derivado.
-        // Este era um defeito real: o bloco do cliente lÃ¡ embaixo filtra
-        // `status: 'FINALIZADA'` â€” e como a venda AINDA era FINALIZADA naquele
+        // O status vira CANCELADA AQUI, antes de qualquer recálculo derivado.
+        // Este era um defeito real: o bloco do cliente lá embaixo filtra
+        // `status: 'FINALIZADA'` — e como a venda AINDA era FINALIZADA naquele
         // instante, ela continuava contada, e estornar nunca reduzia
         // valorTotalComprado/frequencia/ticketMedio. Como tudo roda numa
-        // transaÃ§Ã£o, se algo falhar depois o rollback desfaz esta escrita.
+        // transação, se algo falhar depois o rollback desfaz esta escrita.
         const vendaJaCancelada = await tx.venda.update({ where: { id }, data: { status: 'CANCELADA' } });
 
         for (const item of body.estornarEstoque ? venda.itens : []) {
@@ -720,9 +720,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           : venda.formaPagamento === 'DINHEIRO' ? Number(venda.total) : 0;
         if (body.estornarFinanceiro && venda.caixaId && dinheiroEstornado > 0) {
           // Estorna apenas a parcela em dinheiro. Em pagamento misto, subtrair
-          // o total da venda da gaveta inventaria um valor que nÃ£o entrou nela.
-          // REGRESSÃƒO: sÃ³ estorna se o caixa estiver ABERTO. Caixa fechado nÃ£o
-          // deve ter saldo alterado nem receber movimentaÃ§Ã£o SANGRIA automÃ¡tica.
+          // o total da venda da gaveta inventaria um valor que não entrou nela.
+          // REGRESSÃO: só estorna se o caixa estiver ABERTO. Caixa fechado não
+          // deve ter saldo alterado nem receber movimentação SANGRIA automática.
           const caixaVenda = await tx.caixa.findUnique({ where: { id: venda.caixaId }, select: { status: true } });
           if (caixaVenda?.status === 'ABERTO') {
             await tx.caixa.update({ where: { id: venda.caixaId }, data: { saldo: { decrement: dinheiroEstornado } } });
@@ -736,7 +736,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       await registrarAuditoria({
         usuarioId: user.id, empresaId: user.empresaId, acao: 'EDITAR', entidade: 'Venda', entidadeId: id,
         valorNovo: vendaCancelada, origem: 'MANUAL', ip: req.ip,
-        contexto: `Cancelamento transacional (${motivoCancelamento}). Estorno de estoque: ${body.estornarEstoque ? 'sim' : 'nÃ£o'}; estorno financeiro (financeiro, indicadores, metas, cliente e caixa): ${body.estornarFinanceiro ? 'sim' : 'nÃ£o'}.`,
+        contexto: `Cancelamento transacional (${motivoCancelamento}). Estorno de estoque: ${body.estornarEstoque ? 'sim' : 'não'}; estorno financeiro (financeiro, indicadores, metas, cliente e caixa): ${body.estornarFinanceiro ? 'sim' : 'não'}.`,
       });
       return vendaCancelada;
     },
@@ -748,9 +748,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest) => {
       const user = req.usuarioValidado || req.user;
       // `dias` alimenta o seletor Hoje / 7 dias / 30 dias do layout de
-      // referÃªncia. Os campos antigos (faturamento/qtdVendas/ticketMedio/
-      // indicadores/crescimento) continuam vindo exatamente iguais â€” a
-      // resposta sÃ³ GANHOU campos, nunca perdeu.
+      // referência. Os campos antigos (faturamento/qtdVendas/ticketMedio/
+      // indicadores/crescimento) continuam vindo exatamente iguais — a
+      // resposta só GANHOU campos, nunca perdeu.
       const { dias } = z
         .object({
           dias: z.coerce.number().int().refine((v) => [1, 7, 30].includes(v), 'Use 1, 7 ou 30 dias.').default(30),
@@ -771,8 +771,8 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       const inicioPeriodo = new Date(hojeUtc);
       inicioPeriodo.setUTCDate(inicioPeriodo.getUTCDate() - (dias - 1));
       // Janela anterior de mesmo tamanho: base real para os deltas dos KPIs.
-      // A data do indicador Ã© gravada em UTC (meia-noite no banco), entÃ£o a
-      // comparaÃ§Ã£o tambÃ©m precisa usar fronteira UTC â€” senÃ£o o dia local fica
+      // A data do indicador é gravada em UTC (meia-noite no banco), então a
+      // comparação também precisa usar fronteira UTC — senão o dia local fica
       // deslocado por 3h/4h e o dashboard perde a venda do dia atual.
       const inicioAnterior = new Date(inicioPeriodo);
       inicioAnterior.setUTCDate(inicioAnterior.getUTCDate() - dias);

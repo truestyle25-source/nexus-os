@@ -19,7 +19,7 @@ export interface ConfiguracoesAmbiente {
   redirectUri: string | undefined;
 }
 
-/** LÃª as variÃ¡veis de ambiente do provedor. Nenhum valor padrÃ£o Ã© adivinhado aqui â€” o padrÃ£o sÃ³ Ã© aplicado nas URLs de rede, que o mercado define. */
+/** Lê as variáveis de ambiente do provedor. Nenhum valor padrão é adivinhado aqui — o padrão só é aplicado nas URLs de rede, que o mercado define. */
 export function obterConfiguracoes(): ConfiguracoesAmbiente {
   return {
     clientId: process.env.MERCADOLIVRE_CLIENT_ID,
@@ -235,8 +235,8 @@ export async function finalizarOAuth({ empresaId, usuarioId, state, code }: Dado
     clientSecret: cfg.clientSecret,
   });
   if (!tokenStatus || tokenStatus >= 400 || !tokenData.access_token) {
-    await marcarExpirado(registro, `Falha ao trocar cÃ³digo por token (HTTP ${tokenStatus}).`);
-    throw new ErroDeNegocio('Falha ao concluir a autenticaÃ§Ã£o com Mercado Livre. Verifique suas credenciais e tente novamente.', 502);
+    await marcarExpirado(registro, `Falha ao trocar código por token (HTTP ${tokenStatus}).`);
+    throw new ErroDeNegocio('Falha ao concluir a autenticação com Mercado Livre. Verifique suas credenciais e tente novamente.', 502);
   }
   const accessToken = tokenData.access_token as string;
   const refreshToken = typeof tokenData.refresh_token === 'string' && tokenData.refresh_token ? tokenData.refresh_token : '';
@@ -246,8 +246,8 @@ export async function finalizarOAuth({ empresaId, usuarioId, state, code }: Dado
   try {
     conta = await validarConta(accessToken);
   } catch (err) {
-    await marcarExpirado(registro, (err as ErroDeNegocio).message ?? 'Conta nÃ£o validada.');
-    throw new ErroDeNegocio('Sua conta no Mercado Livre nÃ£o pÃ´de ser validada. Reinicie a conexÃ£o.', 401);
+    await marcarExpirado(registro, (err as ErroDeNegocio).message ?? 'Conta não validada.');
+    throw new ErroDeNegocio('Sua conta no Mercado Livre não pôde ser validada. Reinicie a conexão.', 401);
   }
   const atualizado = await prisma.integracaoExterno.update({
     where: { id: registro.id },
@@ -386,7 +386,7 @@ export async function obterCadastro(empresaId: string, id: string) {
   const registro = await prisma.integracaoExterno.findFirst({
     where: { id, empresaId },
   });
-  if (!registro) throw NaoEncontrado('Cadastro nÃ£o encontrado nesta empresa.');
+  if (!registro) throw NaoEncontrado('Cadastro não encontrado nesta empresa.');
   return registro;
 }
 
@@ -446,7 +446,7 @@ export async function testarConectividade(empresaId: string, id: string) {
       where: { id },
       data: { status: 'ERRO', erros: { message: `API retornou HTTP ${resp.status}.` }, ultimoTesteEm: new Date() },
     });
-    throw new ErroDeNegocio(`Falha na validaÃ§Ã£o da conta no Mercado Livre (HTTP ${resp.status}).`, 502);
+    throw new ErroDeNegocio(`Falha na validação da conta no Mercado Livre (HTTP ${resp.status}).`, 502);
   }
   const data = (await resp.json()) as { id: string | number; nickname: string };
   const atualizado = await prisma.integracaoExterno.update({
@@ -456,8 +456,8 @@ export async function testarConectividade(empresaId: string, id: string) {
   return { ok: true, accountId: String(data.id), accountName: data.nickname || null, ultimoTesteEm: atualizado.ultimoTesteEm };
 }
 
-/** RevogaÃ§Ã£o local + tentativa de notificaÃ§Ã£o ao Mercado Livre.
- * O registro Ã© sempre removido; a chamada externa Ã© best-effort e nÃ£o falha a rota.
+/** Revogação local + tentativa de notificação ao Mercado Livre.
+ * O registro é sempre removido; a chamada externa é best-effort e não falha a rota.
  */
 export async function revogarCadastro(empresaId: string, id: string) {
   const registro = await obterCadastro(empresaId, id);

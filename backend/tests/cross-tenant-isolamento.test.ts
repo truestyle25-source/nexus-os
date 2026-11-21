@@ -66,12 +66,12 @@ async function main() {
   ok('B2-a: A cria venda -> 201', !!idA);
 
   const pB = await app.inject({ method: 'GET', url: `/vendas/${idA}`, headers: bearer(tokB) });
-  ok('B2-b: B NÃO lÃª venda de A -> 404', pB.statusCode === 404, `status=${pB.statusCode}`);
+  ok('B2-b: B NÃO lê venda de A -> 404', pB.statusCode === 404, `status=${pB.statusCode}`);
 
   const listB = await app.inject({ method: 'GET', url: '/vendas', headers: bearer(tokB) });
   const idsB = listB.json().vendas?.map((v: any) => v.id) ?? [];
   ok('B3-a: B listagem -> 200', listB.statusCode === 200, `status=${listB.statusCode}`);
-  ok('B3-b: B nÃ£o enxerga venda de A na listagem', !idsB.includes(idA), `ids=${JSON.stringify(idsB).slice(0, 80)}`);
+  ok('B3-b: B não enxerga venda de A na listagem', !idsB.includes(idA), `ids=${JSON.stringify(idsB).slice(0, 80)}`);
 
   const cruzada = await app.inject({ method: 'POST', url: '/vendas', headers: bearer(tokB), payload: { filialId: filA.id, formaPagamento: 'DINHEIRO', itens: [{ produtoId: prodA, quantidade: 1, desconto: 0 }], pagamentos: [{ forma: 'DINHEIRO', valor: 100 }] } });
   ok('B4-a: B NÃO cria venda com filial/produto de A -> 404', cruzada.statusCode === 404, `status=${cruzada.statusCode}`);

@@ -12,3 +12,15 @@ backend/backups/
 backend/audit_query.js
 .env.*
 !.env.example
+
+# Resíduos locais (limpeza técnica 2026-11-20): saídas de build/teste e cópias de segurança
+*.tsbuildinfo
+test-results/
+playwright-report/
+*.bak
+*.bak-*
+/backup-*
+/backups/
+
+# Saída do script de auditoria enterprise (scripts/auditoria-enterprise)
+relatorios-auditoria/

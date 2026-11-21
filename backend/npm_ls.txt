@@ -1,3 +1,0 @@
-nexus-os-backend@1.0.0 c:\Users\samue\OneDrive\Documentos\GitHub\nexus-os\backend
-`-- tsx@4.23.13
-

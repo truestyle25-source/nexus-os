@@ -1,161 +1,78 @@
-# NEXUS OS - Technical Documentation
+# NEXUS OS
 
-## Overview
+Sistema de gestão empresarial multiempresa (SaaS): PDV, vendas, produtos, estoque, compras, fornecedores,
+clientes, financeiro, fluxo de caixa, DRE, RH e ponto, metas, indicadores, relatórios, IA (Google Gemini) e
+integrações (Mercado Livre, Shopee, PIX, API pública).
 
-**NEXUS OS** is a comprehensive business management platform designed for medium to large enterprises needing integrated operations across sales, inventory, financials, HR, and supply chain. The system is built on a modern full-stack architecture with a Fastify backend and a Next.js 14 frontend.
+## Estrutura do repositório
 
-This is **not** a generic CRUD application. It is a mission-critical business system with:
+| Pasta | Conteúdo |
+|---|---|
+| `backend/` | API Fastify 5 + Prisma 5 (PostgreSQL 17 no Supabase). Publicado no Render (Docker). |
+| `frontend/` | Next.js 14 (App Router) + React 18. Publicado na Vercel (pasta raiz do projeto: `frontend`). |
+| `docs/` | Documentação viva: segurança/RLS, deploy, drift do schema, integrações, débito técnico. |
+| `docs/relatorios/` | Relatórios de auditoria e execução mais recentes. |
+| `docs/historico/` | Relatórios e auditorias antigos, mantidos só como registro. |
+| `dominio/` | Pacote isolado de regras de negócio puras (sem banco), com testes próprios. Ainda **não** ligado ao app. |
+| `Nexus-OS-Enterprise-Pack/` | Módulos complementares entregues à parte. Ainda **não** integrados ao backend. |
+| `.github/workflows/ci.yml` | CI: tipos, build, migrações, testes (como `postgres` e como `nexus_app` com RLS) e busca de segredos. |
 
-- **85 Prisma models** covering every business domain
-- **38 route modules** in the backend
-- **PWA capabilities** with offline data persistence via IndexedDB
-- **Complex HR & payroll modules** with scoring, rewards, and attendance tracking
-- **External integrations** (Shopee, Mercado Livre, PDV, PIX, APIs)
-- **Financial reporting** (DRE, indicators, daily tickets)
+## Backend (`backend/`)
 
-## Architecture
+- **Framework:** Fastify 5, TypeScript, Zod.
+- **Banco:** Prisma 5.22, 85 modelos, 51 migrações em `prisma/migrations/`.
+- **Multiempresa:** isolamento por RLS no Postgres (`prisma/seguranca/`), com o contexto da empresa enviado em cada
+  transação (`src/lib/tenant-context.ts` e `src/lib/prisma.ts`). Em produção o backend conecta como `nexus_app`
+  (sem BYPASSRLS). Ver `docs/SEGURANCA_RLS_RUNBOOK.md`.
+- **Autenticação:** JWT (`@fastify/jwt`), revogação por `jti` e permissões por módulo e ação.
+- **Módulos (`src/modules/`):** `api-publica`, `assinatura`, `auditoria`, `auth`, `compras`, `dashboard`, `empresa`,
+  `estoque`, `fiscal`, `fornecedores`, `gestao`, `ia`, `importacao`, `integracoes`, `lgpd`, `payments`, `pdv`,
+  `produtos`, `radar`, `relatorios`, `rh`, `tts`, `usuarios`, `vendas`.
 
-### Backend (`backend/`)
-
-**Framework:** Fastify (Node.js) with Prisma ORM  
-**Database:** PostgreSQL  
-**Authentication:** JWT @fastify/jwt with cookie-based session management  
-**Structure:** Modular route system under `backend/src/modules/` and `backend/src/auth/`
-
-**Key Modules:**
-
-| Module | Description |
-|--------|-------------|
-| `auth` | JWT authentication, cookie sessions, password recovery |
-| `usuarios` | User management, profiles, permissions |
-| `empresa` | Company config, filiais (branches), responsible persons |
-| `produtos` | Product catalog, kits (production formulas), conversion factors |
-| `estoque` | Stock tracking, inventory movements, loss/avaria control |
-| `compras` | Purchase orders, suppliers, receipt workflow |
-| `vendas` | Sales orders, customer management, invoice generation |
-| `pdv` | Point-of-Sale integration, PDV connections, sync status |
-| `rh` | **Extensive HR module** with 6 sub-cycles:
-| | - `plano-desenvolvimento` - Employee development plans
-| | - `treinamentos` - Training courses and participants
-| | - `lideranca` - Empathetic leadership & feedback
-| | - `gestao-tempo` - Point reading (NOT time recording)
-| | - `loja` - Rewards shop (points calculated, never written)
-| | - `inventario` - Inventory counts, frozen system snapshot
-| | - `pontuacao` - Configurable scoring criteria per company
-| | - `folha` - Payroll, separate from RH prefix
-| `ia` | AI integration module |
-| `importacao` | CSV/API data import with error tracking |
-| `assinatura` | Subscription management |
-| `integracoes` | Shopee, Mercado Livre external connections |
-| `pix` | PIX payments instant settlement |
-| `lgpd` | LGPD compliance, data protection |
-| `api-publica` | Public API endpoints |
-| `relatorios` | Business reports and analytics |
-| `fornecedores` | Supplier management |
-| `fiscal` | Fiscal/tax module |
-| `radar` | Organizational radar — single `/radar/resumo` feeds the dashboard |
-
-**Critical Conventions:**
+| Script | O que faz |
+|---|---|
+| `npm run dev` | Servidor com recarga automática (`http://localhost:3333`) |
+| `npm run build` / `npm start` | Compila para `dist/` e inicia |
+| `npm test` | Testes (`tsx --test`); exigem o banco local `localhost:5432/nexus_os_test` |
+| `npm run db:migrate` | `prisma migrate deploy` (use a `DIRECT_URL`, do dono das tabelas) |
+| `npm run estoque:snapshot` | Snapshot diário de estoque manual |
+| `npm run backup` / `npm run backup:restaurar` | Backup e restauração com `pg_dump`/`pg_restore` |
 
 ## Frontend (`frontend/`)
 
-**Framework:** Next.js 14 (App Router) with React 18  
-**Language:** TypeScript  
-**Styling:** Tailwind CSS 3.4  
-**State:** Zustand  
-**DB (PWA):** Dexie.js (IndexedDB) for offline-first experience  
-**Charts:** Chart.js 4 + Recharts 2  
-**HTTP:** Axios  
-**Forms:** Zod validation
+- **Framework:** Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS 3.4.
+- **Gráficos:** Chart.js 4 e Recharts 2. **Ícones:** lucide-react.
+- **PDV offline:** fila e persistência em IndexedDB com Dexie 4.
+- **API:** cliente próprio em `lib/api.ts` (`fetch`), apontando para `NEXT_PUBLIC_API_URL`.
 
-**Key Features:**
+| Script | O que faz |
+|---|---|
+| `npm run dev` | `http://localhost:3000` |
+| `npm run build` / `npm start` | Build e servidor de produção |
+| `npm test` | Testes unitários (`tsx --test`) |
+| `npx playwright test` | Testes de navegador (`tests/e2e/`); exigem `NEXUS_AUDIT_EMAIL` e `NEXUS_AUDIT_PASSWORD` de uma conta **exclusiva de teste** |
 
-- **Theme system** with persistent localStorage preference (theme, density, primary color) — injected via blocking `<script>` in `<head>` to avoid FOUC
-- **Language preference** (pt-BR/en-US/es-ES) stored in localStorage, set on `<html lang>`
-- **PWA-ready** with `manifest.json`, icons, and offline cache strategy
-- **DataTable**, **KpiCard**, **LineChart**, **BarChart**, **PieChart** components
-- **EmptyState** UX for when no data exists
-- **Modular components** under `components/ui/`, `components/relatorios/`, `components/rh/`, `components/formulas.ts`
-
-**Build Scripts:**
-
-| Script | Description |
-|--------|-------------|
-| `dev` | `next dev -p 3000` — development with hot reload |
-| `build` | `next build` — production build |
-| `start` | `next start` — production server |
-| `test` | `tsx --test tests/*.test.ts` — Vitest-based tests
-
-## What Works (as of Code Analysis)
-
-✅ **Core CRUD operations** for Empresa, Usuario, Produto, Estoque, Filial  
-✅ **Authentication flow** with JWT + cookies  
-✅ **Prisma schema** fully defined with 85 models  
-✅ **Fastify server** starts with valid JWT_SECRET  
-✅ **Health endpoint** `/health`  
-✅ **Next.js frontend** renders without errors  
-✅ **Theme system** with localStorage persistence  
-✅ **DataTable** and **KPI card** components functional  
-✅ **Chart.js/Recharts** integration for dashboards  
-✅ **API pública** module registered and ready  
-✅ **PIX payments** module structure in place  
-✅ **Shopee/Mercado Livre** integration frameworks  
-## Known Gaps / Incomplete
-
-⚠️ **Full business logic not yet implemented** — many routes exist but delegate to services that may have stub logic  
-⚠️ **Payroll (`folha`)** module structure exists but salary calculation logic needs validation  
-⚠️ **Gestão de tempo** reads ponto but does NOT write jornada (as noted in `server.ts:28-29` comments)  
-⚠️ **Loja de recompensas** — points are calculated but never persisted (deliberate design per `loja.routes.js` comments)  
-⚠️ **Inventario** — system snapshot freezes counts at session open; no real-time sync detailed  
-⚠️ **AI module** (`ia`) — scaffolded but actual LLM integration not visible in code  
-⚠️ **External API syncs** (Shopee, Mercado Livre) — routes registered but webhook/credential handling needs review  
-⚠️ **Dexie PWA offline** — IndexedDB schema exists but full CRUD offline support needs testing  
-⚠️ **Migration synchronization** — `schema.prisma` has 200+ models; ensure all migrations are up to date (`prisma migrate diff` recommended)  
-⚠️ **TypeScript strictness** — some `.tsx` files in frontend may have `any` types or incomplete typings
-
-## Technology Stack
-
-| Layer | Technology | Version |
-|-------|------------|---------|
-| **Backend** | Node.js + Fastify | 20.x, 4.x |
-| **ORM** | Prisma Client | 5.x |
-| **Database** | PostgreSQL | 15+ |
-| **Authentication** | @fastify/jwt, cookies | — |
-| **Frontend** | Next.js 14 | 14.2.5 |
-| **UI** | React 18, TypeScript | 18.3.1, 5.5.4 |
-| **Styling** | Tailwind CSS | 3.4.10 |
-| **State** | Zustand | 4.5.4 |
-| **DB (PWA)** | Dexie.js | 6.4.6 (implied) |
-| **Charts** | Chart.js, Recharts | 4.5.1, 2.15.4 |
-| **HTTP** | Axios | 1.7.2 |
-| **Validation** | Zod | 3.23.8 |
-| **Deploy** | Vercel (configured) | — |
-| **Testing** | Vitest, TSX | — |
-
-## Quick Start (Minimal)
+## Como rodar localmente
 
 ```bash
-# 1. Clone & install
-git clone <repo>
-cd nexus-os
-npm install  # installs root deps
-cd backend && npm install
-cd frontend && npm install
-
-# 2. Configure environment
-cp .env.example .env  # edit DATABASE_URL and JWT_SECRET
-
-# 3. Database
+# Banco local para desenvolvimento e testes (Postgres em Docker)
 cd backend
-npx prisma migrate deploy  # creates all tables
-npx prisma generate
+docker compose up -d
 
-# 4. Start backend
-npm run dev  # http://localhost:3333
+# Backend
+cp .env.example .env        # preencha DATABASE_URL, JWT_SECRET e o que for usar
+npm install
+npx prisma migrate deploy
+npm run dev
 
-# 5. Start frontend
+# Frontend (outro terminal)
 cd ../frontend
-npm run dev  # http://localhost:3000
+cp .env.example .env.local  # NEXT_PUBLIC_API_URL=http://localhost:3333
+npm install
+npm run dev
 ```
 
-Access the full platform at `http://localhost:3000` with the backend API at `http://localhost:3333`.
+## Produção
+
+Variáveis, passos de publicação e cuidados de segurança: `README-PRODUCAO.md`, `docs/DEPLOY_SEGURANCA_PRODUCAO.md`
+e `docs/RELATORIO_CONFIGURACAO_INFRAESTRUTURA.md`. Nunca versione `.env` com valores reais.

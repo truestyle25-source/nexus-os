@@ -4,11 +4,18 @@
 
 Configure:
 
-- `DATABASE_URL`
+- `DATABASE_URL` com o papel `nexus_app` (sem BYPASSRLS; ver `docs/SEGURANCA_RLS_RUNBOOK.md`)
+- `DIRECT_URL` com o papel `nexus_migrator` (dono das tabelas: migrações, backup e restauração)
+- `PRISMA_CONNECTION_LIMIT` (padrão 10; abaixo do limite de 20 conexões do `nexus_app`)
+- `CREDENTIALS_ENCRYPTION_KEY` (cifra as credenciais de integração; guarde-a em local seguro)
 - `JWT_SECRET` com pelo menos 32 caracteres
-- `FRONTEND_URLS`
-- `GEMINI_API_KEY` (Google Gemini) quando a NEXUS AI estiver habilitada
-- `INFINITEPAY_CHECKOUT_URL` quando o checkout estiver configurado
+- `FRONTEND_URLS` com **todos** os domínios do frontend, separados por vírgula
+- `GEMINI_API_KEY` e `GEMINI_MODEL` (Google Gemini) quando a NEXUS AI estiver habilitada
+- `RESEND_API_KEY` e `EMAIL_FROM` para e-mails transacionais
+- `INFINITEPAY_CHECKOUT_URL`, `TRIAL_DAYS` e `SUBSCRIPTION_PRICE` quando o checkout estiver configurado
+- `STORAGE_PROVIDER`, `STORAGE_BUCKET`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` para documentos
+
+A lista completa e comentada está em `backend/.env.example`.
 
 Depois:
 
@@ -16,7 +23,7 @@ Depois:
 cd backend
 npm install
 npm run prisma:generate
-npm run db:migrate
+DATABASE_URL="$DIRECT_URL" npm run db:migrate   # migrações com o dono das tabelas
 npm run build
 npm start
 ```
@@ -42,7 +49,7 @@ Navegação e visual: o menu do Dashboard antes só liberava 3 de 13 itens, e a 
 
 3. **Estados de carregamento/erro**: Todos os componentes agora exibem estados de loading e erro adequados.
 
-4. **Menu ligado às rotas reais**: O menu agora reflete as rotas disponíveis — apenas "Fluxo" permanece desabilitado, pois não existe endpoint de fluxo de caixa no backend ainda.
+4. **Menu ligado às rotas reais**: O menu agora reflete as rotas disponíveis — o "Fluxo" usa `GET /fluxo-caixa` (ver seção Fluxo de caixa).
 
 5. **Remoção de duplicatas**: `/produtos`, `/usuários` e `/auditoria` eram duplicatas de `/products`/`/admin` e agora redirecionam para a versão canônica.
 
@@ -51,9 +58,9 @@ Navegação e visual: o menu do Dashboard antes só liberava 3 de 13 itens, e a 
 ## Novas funcionalidades de segurança e arquitetura
 
 - **Rate limiting**: APIs públicas agora têm limite de 100 requests/minuto via `createRateLimiter` (`api-publica.routes.ts`).
-- **Type safety**: Todas as ocorrências de `(app as any).authenticate` foram substituídas por `app.authenticate` (6 módulos corrigidos).
-- **Extração de business logic**: Funções de cálculo monetário e validação de alçadas de desconto foram movidas de `vendas.routes.ts` para `vendas.service.ts`.
-- **Cleanup de arquivos `.bak`**: 40+ arquivos de backup removidos do código-fonte e arquivados em `backups-archive/`.
+- **Autenticação por rota**: cada rota privada declara `authenticate` (e a permissão do módulo) no `preHandler`.
+- **Cálculo monetário e alçadas de desconto**: ficam em `backend/src/modules/vendas/vendas.routes.ts`.
+- **Limpeza de 2026-11-20**: cópias `.bak`, saídas de build/teste e scripts avulsos foram removidos do repositório (continuam no histórico do Git).
 - **Design system CSS**: Migração de cores fixas para variáveis `--nx-*` no `globals.css` (95% concluída).
 
 ## Control iD / iDClass
@@ -96,4 +103,4 @@ Chaves de API (`ChaveApi`, migração `202609131300_api_publica_chaves`) autenti
 
 ## Backup
 
-`npm run backup` roda `pg_dump -F c` contra `DATABASE_URL`, salva em `BACKUP_DIR` (padrão `./backups`, já no `.gitignore`) e aplica retenção (`BACKUP_RETENCAO_DIAS`, padrão 30 dias). `npm run backup:restaurar -- <arquivo>` roda `pg_restore --clean --if-exists`. Não testado contra um Postgres real neste ambiente (sem banco/rede aqui) — rode uma vez em homologação antes de confiar em produção. Sem agendamento automático — decida a frequência e rode via cron do seu provedor.
+`npm run backup` roda `pg_dump -F c` contra `DIRECT_URL` (ou `DATABASE_URL`, se ela não existir), salva em `BACKUP_DIR` (padrão `./backups`, já no `.gitignore`) e aplica retenção (`BACKUP_RETENCAO_DIAS`, padrão 30 dias). `npm run backup:restaurar -- <arquivo>` roda `pg_restore --clean --if-exists`. Não testado contra um Postgres real neste ambiente (sem banco/rede aqui) — rode uma vez em homologação antes de confiar em produção. Sem agendamento automático — decida a frequência e rode via cron do seu provedor.

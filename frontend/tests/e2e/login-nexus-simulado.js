@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   try {
     await page.goto('http://localhost:3000/login', { waitUntil: 'domcontentloaded' });
     await page.locator('input[placeholder="seu@email.com"]').fill('admin@nexus.com');
-    await page.locator('input[placeholder="••••••••"]').fill('12345678');
+    await page.locator('input[placeholder="••••••••"]').fill(process.env.NEXUS_AUDIT_PASSWORD || '');
     await page.getByRole('button', { name: 'Entrar no NEXUS OS' }).click();
     await page.waitForURL('**/', { timeout: 30000 });
     console.log('Login successful. URL:', page.url());
