@@ -1,0 +1,250 @@
+/*
+ * Ficha do produto — sistema visual único (tokens).
+ * Todas as medidas da ficha saem desta escala; nenhum componente usa valor solto.
+ * Cores vêm do tema do NEXUS OS (--nx-*), então o claro e o escuro funcionam igual ao resto do app.
+ */
+.ficha {
+  /* Escala de espaçamento (4 px) */
+  --pf-1: 4px;
+  --pf-2: 8px;
+  --pf-3: 12px;
+  --pf-4: 16px;
+  --pf-5: 24px;
+  --pf-6: 32px;
+  /* Dimensões de controle */
+  --pf-campo-altura: 36px;
+  --pf-botao-altura: 36px;
+  --pf-aba-altura: 40px;
+  --pf-linha-tabela: 40px;
+  /* Tipografia */
+  --pf-fonte-rotulo: 11px;
+  --pf-fonte-campo: 13px;
+  --pf-fonte-secao: 14px;
+  --pf-fonte-titulo: 20px;
+  /* Bordas e raios */
+  --pf-raio: 10px;
+  --pf-raio-secao: 14px;
+  --pf-borda: 1px solid var(--nx-border);
+
+  /* Mesmo recuo e largura máxima da listagem de produtos (padding 24, até 1400 px). */
+  padding: var(--pf-5);
+  max-width: 1400px;
+  margin: 0 auto;
+  color: var(--nx-ink);
+  font-size: var(--pf-fonte-campo);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pf-4);
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- cabeçalho */
+.cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pf-4);
+}
+.titulo { font-size: var(--pf-fonte-titulo); font-weight: 700; letter-spacing: -0.01em; margin: 0; line-height: 1.25; word-break: break-word; }
+.subtitulo { display: flex; flex-wrap: wrap; gap: var(--pf-2); align-items: center; margin-top: var(--pf-1); color: var(--nx-ink-2); font-size: var(--pf-fonte-campo); }
+.acoes { display: flex; flex-wrap: wrap; gap: var(--pf-2); align-items: center; }
+
+/* ---------------------------------------------------------------- abas */
+.abas {
+  display: flex;
+  gap: var(--pf-1);
+  border-bottom: var(--pf-borda);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--nx-canvas);
+}
+.aba {
+  flex: 0 0 auto;
+  height: var(--pf-aba-altura);
+  padding: 0 var(--pf-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--nx-ink-2);
+  font-size: var(--pf-fonte-campo);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pf-2);
+}
+.aba:hover { color: var(--nx-ink); }
+.abaAtiva { color: var(--nx-ink); border-bottom-color: var(--nx-accent); }
+.abaMarca { width: 6px; height: 6px; border-radius: 50%; background: var(--nx-amber); }
+.subabas { display: flex; flex-wrap: wrap; gap: var(--pf-2); }
+.subaba {
+  height: 30px; padding: 0 var(--pf-3); border-radius: 999px; border: var(--pf-borda);
+  background: transparent; color: var(--nx-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.subabaAtiva { background: var(--nx-accent); border-color: var(--nx-accent); color: #fff; }
+
+/* ---------------------------------------------------------------- seções e grade */
+.secao {
+  background: var(--nx-surface);
+  border: var(--pf-borda);
+  border-radius: var(--pf-raio-secao);
+  padding: var(--pf-4) var(--pf-5) var(--pf-5);
+  min-width: 0;
+}
+.secaoTopo { display: flex; justify-content: space-between; align-items: center; gap: var(--pf-3); margin-bottom: var(--pf-4); flex-wrap: wrap; }
+.secaoTitulo { font-size: var(--pf-fonte-secao); font-weight: 700; margin: 0; }
+.secaoDescricao { color: var(--nx-ink-3); font-size: 12px; margin: var(--pf-1) 0 0; }
+.coluna { display: flex; flex-direction: column; gap: var(--pf-4); min-width: 0; }
+
+.grade {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--pf-3) var(--pf-4);
+  align-items: start;
+}
+.c2 { grid-column: span 2; }
+.c3 { grid-column: span 3; }
+.c4 { grid-column: span 4; }
+.c6 { grid-column: span 6; }
+.c8 { grid-column: span 8; }
+.c12 { grid-column: span 12; }
+@media (max-width: 1180px) {
+  .c2 { grid-column: span 3; }
+  .c3 { grid-column: span 4; }
+  .c4 { grid-column: span 6; }
+  .c8 { grid-column: span 12; }
+}
+@media (max-width: 760px) {
+  .c2, .c3 { grid-column: span 6; }
+  .c4, .c6, .c8 { grid-column: span 12; }
+  .secao { padding: var(--pf-4); }
+}
+@media (max-width: 480px) {
+  .c2, .c3 { grid-column: span 12; }
+}
+
+/* ---------------------------------------------------------------- campos */
+.campo { display: flex; flex-direction: column; gap: var(--pf-1); min-width: 0; }
+.rotulo {
+  font-size: var(--pf-fonte-rotulo); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--nx-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.entrada {
+  width: 100%;
+  height: var(--pf-campo-altura);
+  padding: 0 var(--pf-3);
+  border-radius: var(--pf-raio);
+  border: 1px solid var(--nx-border-strong);
+  background: var(--nx-surface-2);
+  color: var(--nx-ink);
+  font-size: var(--pf-fonte-campo);
+  min-width: 0;
+}
+.entrada:focus { outline: 2px solid var(--nx-accent); outline-offset: 0; border-color: transparent; }
+.entrada:disabled, .entrada[readonly] { opacity: 0.7; cursor: not-allowed; }
+.entradaNumero { text-align: right; font-variant-numeric: tabular-nums; }
+.area { height: auto; min-height: 84px; padding: var(--pf-2) var(--pf-3); resize: vertical; line-height: 1.45; }
+.erroCampo .entrada { border-color: var(--nx-red); }
+.ajuda { font-size: 11px; color: var(--nx-ink-3); line-height: 1.35; }
+.erroTexto { font-size: 11px; color: var(--nx-red); line-height: 1.35; }
+.prefixado { display: flex; align-items: center; gap: var(--pf-2); }
+
+/* Alternador (liga/desliga) */
+.alternador {
+  display: flex; align-items: center; gap: var(--pf-3); min-height: var(--pf-campo-altura);
+  padding: 0 var(--pf-3); border: var(--pf-borda); border-radius: var(--pf-raio); background: var(--nx-surface-2);
+  cursor: pointer; user-select: none; min-width: 0;
+}
+.alternador input { position: absolute; opacity: 0; pointer-events: none; }
+.trilho { flex: 0 0 auto; width: 32px; height: 18px; border-radius: 999px; background: var(--nx-border-strong); position: relative; transition: background 0.15s; }
+.trilho::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+.alternadorLigado .trilho { background: var(--nx-accent); }
+.alternadorLigado .trilho::after { transform: translateX(14px); }
+.alternador:focus-within { outline: 2px solid var(--nx-accent); }
+.alternadorTexto { font-size: var(--pf-fonte-campo); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alternadorDesligado { opacity: 0.55; cursor: not-allowed; }
+
+/* ---------------------------------------------------------------- botões */
+.botao {
+  height: var(--pf-botao-altura); padding: 0 var(--pf-4); border-radius: var(--pf-raio);
+  border: 1px solid var(--nx-border-strong); background: var(--nx-surface-2); color: var(--nx-ink);
+  font-size: var(--pf-fonte-campo); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: var(--pf-2);
+  white-space: nowrap;
+}
+.botao:hover:not(:disabled) { border-color: var(--nx-accent); }
+.botao:disabled { opacity: 0.5; cursor: not-allowed; }
+.botaoPrimario { background: var(--nx-accent); border-color: var(--nx-accent); color: #fff; }
+.botaoPerigo { color: var(--nx-red); }
+.botaoPequeno { height: 28px; padding: 0 var(--pf-3); font-size: 12px; }
+
+/* ---------------------------------------------------------------- métricas e selos */
+.metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--pf-3); }
+.metrica { border: var(--pf-borda); border-radius: var(--pf-raio); padding: var(--pf-3); background: var(--nx-surface-2); min-width: 0; }
+.metricaRotulo { font-size: var(--pf-fonte-rotulo); text-transform: uppercase; letter-spacing: 0.06em; color: var(--nx-ink-3); font-weight: 700; }
+.metricaValor { font-size: 17px; font-weight: 700; margin-top: var(--pf-1); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.metricaAjuda { font-size: 11px; color: var(--nx-ink-3); margin-top: 2px; }
+
+.selo { display: inline-flex; align-items: center; height: 22px; padding: 0 var(--pf-2); border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid var(--nx-border-strong); color: var(--nx-ink-2); white-space: nowrap; }
+.seloOk { color: var(--nx-green); border-color: color-mix(in srgb, var(--nx-green) 45%, transparent); }
+.seloAlerta { color: var(--nx-amber); border-color: color-mix(in srgb, var(--nx-amber) 45%, transparent); }
+.seloErro { color: var(--nx-red); border-color: color-mix(in srgb, var(--nx-red) 45%, transparent); }
+
+.aviso { border: 1px dashed var(--nx-border-strong); border-radius: var(--pf-raio); padding: var(--pf-3); color: var(--nx-ink-2); font-size: 12px; line-height: 1.45; }
+.avisoErro { border-color: var(--nx-red); color: var(--nx-red); }
+.avisoOk { border-color: var(--nx-green); color: var(--nx-green); }
+
+/* ---------------------------------------------------------------- tabelas */
+.tabelaCaixa { width: 100%; overflow-x: auto; border: var(--pf-borda); border-radius: var(--pf-raio); }
+.tabela { width: 100%; border-collapse: collapse; font-size: var(--pf-fonte-campo); }
+.tabela th {
+  position: sticky; top: 0; background: var(--nx-surface-2); text-align: left; font-size: var(--pf-fonte-rotulo);
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--nx-ink-3); font-weight: 700; padding: 0 var(--pf-3);
+  height: 36px; white-space: nowrap; border-bottom: var(--pf-borda);
+}
+.tabela th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+.tabela td { padding: var(--pf-2) var(--pf-3); height: var(--pf-linha-tabela); border-bottom: var(--pf-borda); vertical-align: middle; }
+.tabela tr:last-child td { border-bottom: 0; }
+.tabela tbody tr:hover td { background: color-mix(in srgb, var(--nx-accent) 5%, transparent); }
+.num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.vazio { padding: var(--pf-6) var(--pf-4); text-align: center; color: var(--nx-ink-3); }
+.rodapeTabela { display: flex; justify-content: space-between; align-items: center; gap: var(--pf-3); padding-top: var(--pf-3); color: var(--nx-ink-3); font-size: 12px; flex-wrap: wrap; }
+.filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--pf-3); align-items: end; margin-bottom: var(--pf-3); }
+.tabela .entrada { height: 30px; }
+
+/* ---------------------------------------------------------------- modal */
+.fundo { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; padding: var(--pf-4); }
+.modal { width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; background: var(--nx-surface); border: var(--pf-borda); border-radius: var(--pf-raio-secao); padding: var(--pf-5); box-shadow: var(--nx-shadow-pop, 0 24px 64px rgba(0,0,0,.4)); }
+.modalAcoes { display: flex; justify-content: flex-end; gap: var(--pf-2); margin-top: var(--pf-5); flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- etiquetas (impressão) */
+.etiquetas { display: flex; flex-wrap: wrap; gap: var(--pf-3); }
+.etiqueta { background: #fff; color: #000; border: 1px solid #ccc; border-radius: 6px; padding: var(--pf-2); text-align: center; width: 230px; }
+.etiquetaNome { font-size: 11px; font-weight: 700; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.etiquetaPreco { font-size: 14px; font-weight: 800; margin-top: 2px; }
+/* Impressão das etiquetas: ver impressao-etiquetas.css (regra global ativada só durante a impressão). */
+
+/* Conteúdo não-campo alinhado à linha das entradas (desconta a altura do rótulo + gap). */
+.alinharCampo { padding-top: calc(var(--pf-fonte-rotulo) * 1.4 + var(--pf-1)); }
+
+/* Espaçamento vertical entre blocos dentro de uma seção (sempre da escala). */
+.espaco3 { margin-top: var(--pf-3); }
+.espaco4 { margin-top: var(--pf-4); }
+.espacoAbaixo { margin-bottom: var(--pf-3); }
+.previa { max-height: 96px; max-width: 100%; border-radius: var(--pf-raio); border: var(--pf-borda); }
+
+@media (max-width: 760px) {
+  .ficha { padding: var(--pf-4); }
+}
+
+/* Entradas dentro de tabelas: largura mínima legível; a tabela rola dentro da própria caixa em telas estreitas. */
+.entradaTabela { min-width: 96px; }
+@media (max-width: 760px) {
+  /* Campos empilhados: nada a alinhar lateralmente. */
+  .alinharCampo { padding-top: 0; }
+}

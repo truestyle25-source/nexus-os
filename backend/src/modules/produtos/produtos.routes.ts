@@ -7,6 +7,10 @@ import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { temPermissao } from '../../lib/permissoes.js';
 import { ErroDeNegocio, NaoEncontrado, Conflito } from '../../lib/erros.js';
 import { aplicarMovimento, criarEstoqueParaProduto } from '../estoque/estoque.service.js';
+import {
+  camposErpSchema, camposErpParaPrisma, codigoEmUsoPorOutroProduto, exigeJustificativa, exigirPermissoesDosCampos,
+  registrarHistoricoPrecos, sincronizarCodigoPrincipal, soCamposErp, validarReferenciasDosCampos,
+} from './produto-campos.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 const codigoBarrasSchema = z.string().regex(/^(?:\d{8}|\d{12}|\d{13})$/, 'Código de barras deve ser um GTIN-8, UPC-A ou EAN-13 válido.').refine((codigo) => {
@@ -211,11 +215,14 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
         validade: z.string().optional(),
         descricao: z.string().optional(),
         origem: origemSchema.default('MANUAL'),
-      });
+      }).merge(camposErpSchema);
       const data = schema.parse(req.body);
       if (!(await temPermissao(req.user.id, 'custos', 'editar'))) {
         throw new ErroDeNegocio('Sem permissão: custos.editar', 403);
       }
+      const erp = soCamposErp(data);
+      await exigirPermissoesDosCampos(req, erp);
+      await validarReferenciasDosCampos(req.user.empresaId, erp);
       if (data.estoqueMaximo < data.estoqueMinimo) {
         throw new ErroDeNegocio('Estoque máximo não pode ser menor que o estoque mínimo.', 400);
       }
@@ -237,14 +244,14 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
         const existente = await prisma.produto.findFirst({ where: { empresaId: req.user.empresaId, sku: data.sku } });
         if (existente) throw Conflito('Já existe um produto com este SKU nesta empresa.');
       }
-      if (data.codigoBarras) {
-        const existente = await prisma.produto.findFirst({ where: { empresaId: req.user.empresaId, codigoBarras: data.codigoBarras } });
-        if (existente) throw Conflito('Já existe um produto com este código de barras nesta empresa.');
+      if (data.codigoBarras && (await codigoEmUsoPorOutroProduto(req.user.empresaId, data.codigoBarras))) {
+        throw Conflito('Já existe um produto com este código de barras nesta empresa.');
       }
       const margem = ((data.precoVenda - data.custo) / data.precoVenda) * 100;
       const produto = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         const novo = await tx.produto.create({
           data: {
+            ...(camposErpParaPrisma(erp) as Prisma.ProdutoUncheckedCreateInput),
             empresaId: req.user.empresaId,
             nome: data.nome,
             marca: data.marca?.trim() || null,
@@ -280,6 +287,7 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
             data: { local: data.local.trim() },
           });
         }
+        await sincronizarCodigoPrincipal(tx, req.user.empresaId, novo.id, data.codigoBarras);
         return novo;
       });
       await registrarAuditoria({
@@ -457,14 +465,20 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
         validade: z.string().nullable().optional(),
         descricao: z.string().nullable().optional(),
         origem: origemSchema.optional(),
-      });
+      }).merge(camposErpSchema);
       const data = schema.parse(req.body);
       if (data.custo !== undefined && !(await temPermissao(req.user.id, 'custos', 'editar'))) {
         throw new ErroDeNegocio('Sem permissão: custos.editar', 403);
       }
-      const { local, ...dadosProduto } = data;
+      const erp = soCamposErp(data);
+      await exigirPermissoesDosCampos(req, erp);
+      await validarReferenciasDosCampos(req.user.empresaId, erp);
+      const { local, justificativaPreco, premiacaoInicio: _pi, premiacaoFim: _pf, ...dadosProduto } = data;
       const anterior = await prisma.produto.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!anterior) throw NaoEncontrado('Produto não encontrado nesta empresa.');
+      if (exigeJustificativa(anterior, data) && !justificativaPreco) {
+        throw new ErroDeNegocio('Informe a justificativa: o preço de venda cai mais de 10% ou fica abaixo do custo.', 422);
+      }
       if (data.categoriaId) {
         const c = await prisma.categoria.findFirst({ where: { id: data.categoriaId, empresaId: req.user.empresaId } });
         if (!c) throw NaoEncontrado('Categoria inválida para esta empresa.');
@@ -477,9 +491,9 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
         const existente = await prisma.produto.findFirst({ where: { empresaId: req.user.empresaId, sku: data.sku, NOT: { id } } });
         if (existente) throw Conflito('Já existe um produto com este SKU nesta empresa.');
       }
-      if (data.codigoBarras && data.codigoBarras !== anterior.codigoBarras) {
-        const existente = await prisma.produto.findFirst({ where: { empresaId: req.user.empresaId, codigoBarras: data.codigoBarras, NOT: { id } } });
-        if (existente) throw Conflito('Já existe um produto com este código de barras nesta empresa.');
+      if (data.codigoBarras && data.codigoBarras !== anterior.codigoBarras
+        && (await codigoEmUsoPorOutroProduto(req.user.empresaId, data.codigoBarras, id))) {
+        throw Conflito('Já existe um produto com este código de barras nesta empresa.');
       }
       const custo = data.custo ?? Number(anterior.custo);
       const precoVenda = data.precoVenda ?? Number(anterior.precoVenda);
@@ -503,6 +517,7 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
           where: { id: anterior.id },
           data: {
             ...dadosProduto,
+            ...camposErpParaPrisma(erp),
             custo: data.custo,
             precoVenda: data.precoVenda,
             margem: ((precoVenda - custo) / precoVenda) * 100,
@@ -513,6 +528,12 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
             updatedAt: new Date(),
           },
         });
+        // Histórico: uma linha por preço/custo alterado (quem, quando, antes/depois, por quê).
+        await registrarHistoricoPrecos(tx, {
+          empresaId: req.user.empresaId, produtoId: anterior.id, usuarioId: req.user.id,
+          anterior, novo: data, justificativa: justificativaPreco ?? null,
+        });
+        await sincronizarCodigoPrincipal(tx, req.user.empresaId, anterior.id, data.codigoBarras);
         if (local !== undefined) {
           await tx.estoque.updateMany({
             where: { empresaId: req.user.empresaId, produtoId: anterior.id },
@@ -652,8 +673,20 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
     '/categorias',
     { preHandler: [app.authenticate, await permissaoMiddleware('produtos', 'criar')] },
     async (req: FastifyRequest) => {
-      const { nome, descricao } = z.object({ nome: z.string().min(2), descricao: z.string().optional() }).parse(req.body);
-      const categoria = await prisma.categoria.create({ data: { empresaId: req.user.empresaId, nome, descricao } });
+      const { nome, descricao, categoriaPaiId } = z.object({
+        nome: z.string().min(2),
+        descricao: z.string().optional(),
+        // Hierarquia: sem pai = grupo (nível 0); com pai = subgrupo 1, 2 ou 3.
+        categoriaPaiId: z.string().min(1).optional(),
+      }).parse(req.body);
+      let nivel = 0;
+      if (categoriaPaiId) {
+        const pai = await prisma.categoria.findFirst({ where: { id: categoriaPaiId, empresaId: req.user.empresaId }, select: { nivel: true } });
+        if (!pai) throw NaoEncontrado('Grupo/subgrupo pai inválido para esta empresa.');
+        if (pai.nivel >= 3) throw new ErroDeNegocio('Limite de hierarquia: grupo + 3 níveis de subgrupo.', 400);
+        nivel = pai.nivel + 1;
+      }
+      const categoria = await prisma.categoria.create({ data: { empresaId: req.user.empresaId, nome, descricao, categoriaPaiId: categoriaPaiId ?? null, nivel } });
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,

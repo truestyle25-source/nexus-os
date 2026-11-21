@@ -32,6 +32,8 @@ export async function atualizarCatalogoLocal(contexto: ContextoLocal, filialId: 
       nome: produto.nome,
       sku: produto.sku ?? null,
       codigoBarras: produto.codigoBarras ?? null,
+      codigosBarras: Array.isArray(produto.codigosBarras) ? produto.codigosBarras.map(String) : [],
+      posicaoPdv: produto.posicaoPdv ?? null,
       precoVenda: Number(produto.precoVenda),
       precoPromocional: produto.precoPromocional == null ? null : Number(produto.precoPromocional),
       promocaoInicio: produto.promocaoInicio ?? null,

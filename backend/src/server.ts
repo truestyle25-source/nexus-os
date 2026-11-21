@@ -52,6 +52,7 @@ import { apiPublicaRoutes } from './modules/api-publica/api-publica.routes.js';
 import { ttsRoutes } from './modules/tts/tts.controller.js';
 import { relatoriosRoutes } from './modules/relatorios/relatorios.routes.js';
 import { fornecedoresRoutes } from './modules/fornecedores/fornecedores.routes.js';
+import { produtoFichaRoutes } from './modules/produtos/produto-ficha.routes.js';
 import { radarRoutes } from './modules/radar/radar.routes.js';
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
 import { registerAuthentication } from './middlewares/auth.js';
@@ -275,6 +276,8 @@ await app.register(apiPublicaRoutes);
 await app.register(ttsRoutes);
 await app.register(relatoriosRoutes);
 await app.register(fornecedoresRoutes);
+// Ficha completa do produto (cadastro ERP por abas).
+await app.register(produtoFichaRoutes);
 await app.register(fiscalRoutes);
 // Radar Organizacional: uma única chamada (/radar/resumo) alimenta a tela.
 await app.register(radarRoutes, { prefix: "/radar" });

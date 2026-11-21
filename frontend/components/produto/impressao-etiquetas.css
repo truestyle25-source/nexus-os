@@ -1,0 +1,12 @@
+/*
+ * Impressão das etiquetas da ficha do produto.
+ * Só vale enquanto o body tem a classe `pf-imprimindo-etiquetas` (posta pelo botão
+ * "Imprimir etiquetas" e retirada logo depois): outras impressões do sistema,
+ * como o cupom do PDV, não são afetadas.
+ */
+@media print {
+  body.pf-imprimindo-etiquetas * { visibility: hidden !important; }
+  body.pf-imprimindo-etiquetas .pf-area-impressao,
+  body.pf-imprimindo-etiquetas .pf-area-impressao * { visibility: visible !important; }
+  body.pf-imprimindo-etiquetas .pf-area-impressao { position: absolute; left: 0; top: 0; }
+}

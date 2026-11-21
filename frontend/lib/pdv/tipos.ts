@@ -59,6 +59,10 @@ export interface ProdutoLocal {
   nome: string;
   sku?: string | null;
   codigoBarras?: string | null;
+  /** Todos os códigos do produto (principal + adicionais da aba Código de Barras). */
+  codigosBarras?: string[];
+  /** Ordem de exibição configurada na aba PDV do cadastro (menor primeiro). */
+  posicaoPdv?: number | null;
   precoVenda: number;
   precoPromocional?: number | null;
   promocaoInicio?: string | null;

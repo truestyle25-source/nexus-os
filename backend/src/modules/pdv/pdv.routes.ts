@@ -54,14 +54,22 @@ export async function pdvRoutes(app: FastifyInstance) {
         codigoBarras: string | null; precoVenda: Prisma.Decimal; precoPromocional: Prisma.Decimal | null;
         promocaoInicio: Date | null; promocaoFim: Date | null; categoriaId: string | null;
         unidade: string; imagem: string | null; status: string; estoqueFilial: number; atualizadoEm: Date;
+        disponivelPdv: boolean; posicaoPdv: number | null; vendaFracionada: boolean; controlaEstoque: boolean;
+        precoFilial: Prisma.Decimal | null; ativoFilial: boolean | null; disponivelFilial: boolean | null;
+        codigosBarras: string[] | null;
       }>>(Prisma.sql`
         SELECT p."id", p."empresaId", ${filial.id}::text AS "filialId", p."nome", p."sku",
           p."codigoBarras", p."precoVenda", p."precoPromocional", p."promocaoInicio", p."promocaoFim",
           p."categoriaId", p."unidade", p."imagem", p."status",
           COALESCE(e."quantidade", 0)::int AS "estoqueFilial",
-          GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt")) AS "atualizadoEm"
+          GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(pf."updatedAt", p."updatedAt")) AS "atualizadoEm",
+          p."disponivelPdv", p."posicaoPdv", p."vendaFracionada", p."controlaEstoque",
+          pf."precoVenda" AS "precoFilial", pf."ativo" AS "ativoFilial", pf."disponivelVenda" AS "disponivelFilial",
+          (SELECT array_agg(c."codigo" ORDER BY c."principal" DESC, c."codigo") FROM "ProdutoCodigoBarras" c
+            WHERE c."produtoId" = p."id" AND c."empresaId" = p."empresaId") AS "codigosBarras"
         FROM "Produto" p
         LEFT JOIN "Estoque" e ON e."produtoId" = p."id" AND e."filialId" = ${filial.id}
+        LEFT JOIN "ProdutoFilial" pf ON pf."produtoId" = p."id" AND pf."filialId" = ${filial.id}
         WHERE p."empresaId" = ${req.user.empresaId}
         ${filtroAtualizacao}
         ORDER BY "atualizadoEm" ASC, p."id" ASC
@@ -72,9 +80,13 @@ export async function pdvRoutes(app: FastifyInstance) {
     return {
       produtos: produtos.map((produto) => ({
         ...produto,
-        precoVenda: Number(produto.precoVenda),
+        // Preço desta filial (aba Filial do cadastro) sobrepõe o preço do produto — o mesmo que POST /vendas aplica.
+        precoVenda: Number(produto.precoFilial ?? produto.precoVenda),
+        precoFilial: undefined,
         precoPromocional: produto.precoPromocional == null ? null : Number(produto.precoPromocional),
-        ativo: produto.status === 'ATIVO',
+        codigosBarras: produto.codigosBarras ?? [],
+        // Vendável no PDV desta filial: ativo, disponível no PDV e não bloqueado na filial.
+        ativo: produto.status === 'ATIVO' && produto.disponivelPdv && produto.ativoFilial !== false && produto.disponivelFilial !== false,
         atualizadoEm: produto.atualizadoEm.toISOString(),
       })),
       total,

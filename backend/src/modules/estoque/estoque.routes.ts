@@ -5,11 +5,12 @@ import { prisma } from '../../lib/prisma.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { temPermissao } from '../../lib/permissoes.js';
+import { ErroDeNegocio } from '../../lib/erros.js';
 import { aplicarMovimento, transferirEstoque } from './estoque.service.js';
 import { calcularGiroPorProduto, gerarSnapshotDoDia } from './estoque-indicadores.service.js';
 
 const origemMovimento = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO', 'PDV', 'PONTO', 'INTEGRACAO', 'IA']);
-const tipoMovimento = z.enum(['ENTRADA', 'SAIDA', 'AJUSTE', 'INVENTARIO', 'PERDA', 'AVARIA', 'TRANSFERENCIA', 'DEVOLUCAO', 'VENDA', 'COMPRA']);
+const tipoMovimento = z.enum(['ENTRADA', 'SAIDA', 'AJUSTE', 'INVENTARIO', 'PERDA', 'AVARIA', 'DESCARTE', 'TRANSFERENCIA', 'DEVOLUCAO', 'VENDA', 'COMPRA']);
 
 export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
   app.get(
@@ -83,7 +84,7 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
       const desdeParado = new Date(agora);
       desdeParado.setDate(desdeParado.getDate() - query.diasParado);
       const movimentadosRecentemente = await prisma.estoqueMovimentacao.findMany({
-        where: { empresaId: req.user.empresaId, tipo: { in: ['SAIDA', 'VENDA'] }, createdAt: { gte: desdeParado } },
+        where: { empresaId: req.user.empresaId, tipo: { in: ['SAIDA', 'VENDA', 'CONSUMO_INSUMO'] }, createdAt: { gte: desdeParado } },
         select: { produtoId: true },
         distinct: ['produtoId'],
       });
@@ -206,11 +207,16 @@ export async function estoqueRoutes(app: FastifyInstance): Promise<void> {
           quantidade: z.number().finite().positive().refine((n) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-8, 'Use no máximo 3 casas decimais.'),
           motivo: z.string().optional(),
           origem: origemMovimento.default('MANUAL'),
+          permitirNegativo: z.boolean().optional(),
         })
         .parse(req.body);
+      if (data.permitirNegativo && !(await temPermissao(req.user.id, 'estoque', 'administrar'))) {
+        throw new ErroDeNegocio('Transferir deixando estoque negativo exige a permissão estoque.administrar.', 403);
+      }
 
       const result = await prisma.$transaction((tx: Prisma.TransactionClient) =>
         transferirEstoque(tx, {
+          autorizadoNegativo: data.permitirNegativo === true,
           empresaId: req.user.empresaId,
           produtoId: data.produtoId,
           filialOrigemId: data.filialOrigemId,

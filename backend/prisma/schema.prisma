@@ -47,6 +47,9 @@ enum TipoMovEstoque {
   DEVOLUCAO
   VENDA
   COMPRA
+  PRODUCAO // entrada de produto acabado na produção
+  CONSUMO_INSUMO // saída de insumo consumido na produção
+  DESCARTE // saída por descarte (vencido, inutilizável)
 }
 
 enum StatusCompra {
@@ -68,6 +71,8 @@ model Empresa {
   endereco                 String?
   cidade                   String?
   estado                   String?
+  // SIMPLES_NACIONAL | SIMPLES_EXCESSO_SUBLIMITE | REGIME_NORMAL — decide CSOSN (Simples) x CST (normal)
+  regimeTributario         String?
   // Fuso IANA da empresa. O registro de ponto usa para decidir a que DIA
   // pertence uma marcação: às 23h30 em São Paulo a batida é do dia 27, e o
   // mesmo instante em UTC seria do dia 28. Ausente => `America/Sao_Paulo`.
@@ -153,6 +158,11 @@ model Empresa {
   treinamentos             Treinamento[]
   vendas                   Venda[]
   vendaPagamentos          VendaPagamento[]
+  // Módulo Produtos (ERP) — 2026-11-21
+  produtosFiscal           ProdutoFiscal[]
+  produtosCodigosBarras    ProdutoCodigoBarras[]
+  produtosPrecoHistorico   ProdutoPrecoHistorico[]
+  produtosFiliais          ProdutoFilial[]
 }
 
 // --- Importação de dados (CSV/API) --------------------------------------------
@@ -206,6 +216,8 @@ model Filial {
   producoesKit         ProducaoKit[]
   consumosInternos     ConsumoInterno[]
   sessoesInventario    SessaoInventario[]
+  produtosConfig       ProdutoFilial[]
+  historicoPrecos      ProdutoPrecoHistorico[]
 
   @@index([empresaId])
 }
@@ -261,6 +273,7 @@ model Usuario {
   producoesKit              ProducaoKit[]
   consumosInternos          ConsumoInterno[]
   consumosInternosAprovou   ConsumoInterno[]        @relation("ConsumoInternoAprovador")
+  alteracoesPreco           ProdutoPrecoHistorico[]
 
   @@index([empresaId])
 }
@@ -320,70 +333,129 @@ model Auditoria {
 
 // --- PARTE 2: Se+ï¿½+ï¿½o 8 Produtos ---
 model Categoria {
-  id        String    @id @default(cuid())
-  empresaId String
-  empresa   Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  nome      String
-  descricao String?
-  produtos  Produto[]
-  createdAt DateTime  @default(now())
+  id             String      @id @default(cuid())
+  empresaId      String
+  empresa        Empresa     @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  nome           String
+  descricao      String?
+  // Hierarquia: grupo (nível 0) e subgrupos 1, 2 e 3. O produto aponta para a categoria mais específica.
+  categoriaPaiId String?
+  categoriaPai   Categoria?  @relation("CategoriaHierarquia", fields: [categoriaPaiId], references: [id], onDelete: Restrict)
+  subcategorias  Categoria[] @relation("CategoriaHierarquia")
+  nivel          Int         @default(0)
+  produtos       Produto[]
+  createdAt      DateTime    @default(now())
 
   @@index([empresaId])
 }
 
 model Produto {
-  id                        String                  @id @default(cuid())
-  empresaId                 String
-  empresa                   Empresa                 @relation(fields: [empresaId], references: [id])
-  categoriaId               String?
-  categoria                 Categoria?              @relation(fields: [categoriaId], references: [id])
-  fornecedorId              String?
-  fornecedor                Fornecedor?             @relation(fields: [fornecedorId], references: [id])
-  tipoProdutoId             String?
-  tipoProduto               TipoProduto?            @relation(fields: [tipoProdutoId], references: [id])
-  unidadeBaseId             String?
-  unidadeBase               Unidade?                @relation("ProdutoUnidadeBase", fields: [unidadeBaseId], references: [id])
-  politicaCusto             PoliticaCusto           @default(MEDIO_PONDERADO)
-  nome                      String
-  marca                     String?
-  sku                       String?
-  codigoBarras              String?
-  custo                     Decimal                 @db.Decimal(14, 6)
-  precoVenda                Decimal                 @db.Decimal(10, 2)
-  margem                    Decimal?                @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
-  unidade                   String                  @default("UN") // unidade legado — mantida para compatibilidade de leitura antiga
-  estoqueMinimo             Decimal                 @default(5) @db.Decimal(14, 3)
-  estoqueMaximo             Decimal                 @default(100) @db.Decimal(14, 3)
-  pontoPedido               Decimal                 @default(0) @db.Decimal(14, 3)
-  peso                      String?
-  ncm                       String?
-  precoPromocional          Decimal?                @db.Decimal(10, 2)
-  promocaoInicio            DateTime?
-  promocaoFim               DateTime?
-  promocaoLimite            Int?
-  validade                  DateTime?
-  imagem                    String?
-  descricao                 String?
-  status                    StatusGeral             @default(ATIVO)
-  ehKit                     Boolean                 @default(false)
-  origem                    Origem                  @default(MANUAL)
-  createdAt                 DateTime                @default(now())
-  updatedAt                 DateTime                @updatedAt
-  estoques                  Estoque[]
-  movimentacoes             EstoqueMovimentacao[]
-  snapshotsEstoque          EstoqueSnapshotDiario[]
-  comprasItens              CompraItem[]
-  composicaoComoKit         ComposicaoKit[]         @relation("KitProduto")
-  composicaoComoIngrediente ComposicaoKit[]         @relation("IngredienteProduto")
-  producoesKit              ProducaoKit[]
-  consumosInternos          ConsumoInterno[]
-  fatoresConversao          FatorConversao[]
+  id                           String                  @id @default(cuid())
+  empresaId                    String
+  empresa                      Empresa                 @relation(fields: [empresaId], references: [id])
+  categoriaId                  String?
+  categoria                    Categoria?              @relation(fields: [categoriaId], references: [id])
+  fornecedorId                 String?
+  fornecedor                   Fornecedor?             @relation(fields: [fornecedorId], references: [id])
+  tipoProdutoId                String?
+  tipoProduto                  TipoProduto?            @relation(fields: [tipoProdutoId], references: [id])
+  unidadeBaseId                String?
+  unidadeBase                  Unidade?                @relation("ProdutoUnidadeBase", fields: [unidadeBaseId], references: [id])
+  politicaCusto                PoliticaCusto           @default(MEDIO_PONDERADO)
+  nome                         String
+  marca                        String?
+  sku                          String?
+  codigoBarras                 String?
+  custo                        Decimal                 @db.Decimal(14, 6)
+  precoVenda                   Decimal                 @db.Decimal(10, 2)
+  margem                       Decimal?                @db.Decimal(5, 2) // calculada: (preco-custo)/preco*100
+  unidade                      String                  @default("UN") // unidade legado — mantida para compatibilidade de leitura antiga
+  estoqueMinimo                Decimal                 @default(5) @db.Decimal(14, 3)
+  estoqueMaximo                Decimal                 @default(100) @db.Decimal(14, 3)
+  pontoPedido                  Decimal                 @default(0) @db.Decimal(14, 3)
+  peso                         String?
+  ncm                          String?
+  precoPromocional             Decimal?                @db.Decimal(10, 2)
+  promocaoInicio               DateTime?
+  promocaoFim                  DateTime?
+  promocaoLimite               Int?
+  validade                     DateTime?
+  imagem                       String?
+  descricao                    String?
+  status                       StatusGeral             @default(ATIVO)
+  ehKit                        Boolean                 @default(false)
+  // ---- Cadastro ERP (2026-11-21). Todos opcionais ou com padrão: nenhum dado existente muda. ----
+  referencia                   String?
+  descricaoResumida            String?
+  fabricante                   String?
+  codigoExterno                String?
+  unidadeCompraId              String?
+  unidadeCompra                Unidade?                @relation("ProdutoUnidadeCompra", fields: [unidadeCompraId], references: [id])
+  unidadeVendaId               String?
+  unidadeVenda                 Unidade?                @relation("ProdutoUnidadeVenda", fields: [unidadeVendaId], references: [id])
+  unidadeTributavelId          String?
+  unidadeTributavel            Unidade?                @relation("ProdutoUnidadeTributavel", fields: [unidadeTributavelId], references: [id])
+  centroCustoVenda             String?
+  centroCustoContabil          String?
+  quantidadeEmbalagem          Decimal?                @db.Decimal(14, 3)
+  diasValidade                 Int?
+  // Parâmetros
+  embalagem                    Boolean                 @default(false)
+  vendaFracionada              Boolean                 @default(false)
+  controlaBalanca              Boolean                 @default(false)
+  enviaCozinha                 Boolean                 @default(false)
+  produtoGlp                   Boolean                 @default(false)
+  imprimeFichaExpedicao        Boolean                 @default(false)
+  // Estoque
+  controlaEstoque              Boolean                 @default(true)
+  permiteEstoqueNegativo       Boolean                 @default(false)
+  permiteTransferenciaNegativa Boolean                 @default(false)
+  controlaValidade             Boolean                 @default(false)
+  controlaLote                 Boolean                 @default(false)
+  estoqueSeguranca             Decimal                 @default(0) @db.Decimal(14, 3)
+  estoqueIdeal                 Decimal?                @db.Decimal(14, 3)
+  densidade                    Decimal?                @db.Decimal(14, 6)
+  pesoEmbalagem                Decimal?                @db.Decimal(14, 3)
+  // Preços (custo = custo médio/política; os demais são informativos ou tabelas)
+  precoCompra                  Decimal?                @db.Decimal(14, 6)
+  ultimoCustoAquisicao         Decimal?                @db.Decimal(14, 6)
+  precoTabelaA                 Decimal?                @db.Decimal(10, 2)
+  precoTabelaB                 Decimal?                @db.Decimal(10, 2)
+  precoTabelaC                 Decimal?                @db.Decimal(10, 2)
+  descontoMaximoPercentual     Decimal?                @db.Decimal(5, 2)
+  comissaoPercentual           Decimal?                @db.Decimal(5, 2)
+  despesasPercentual           Decimal?                @db.Decimal(5, 2)
+  // Premiação (vigência opcional)
+  premiacaoPercentual          Decimal?                @db.Decimal(5, 2)
+  premiacaoInicio              DateTime?
+  premiacaoFim                 DateTime?
+  premiacaoRegra               String?
+  // PDV (só o que o PDV atual de fato usa)
+  disponivelPdv                Boolean                 @default(true)
+  posicaoPdv                   Int?
+  fiscal                       ProdutoFiscal?
+  codigosBarras                ProdutoCodigoBarras[]
+  historicoPrecos              ProdutoPrecoHistorico[]
+  filiaisConfig                ProdutoFilial[]
+  origem                       Origem                  @default(MANUAL)
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime                @updatedAt
+  estoques                     Estoque[]
+  movimentacoes                EstoqueMovimentacao[]
+  snapshotsEstoque             EstoqueSnapshotDiario[]
+  comprasItens                 CompraItem[]
+  composicaoComoKit            ComposicaoKit[]         @relation("KitProduto")
+  composicaoComoIngrediente    ComposicaoKit[]         @relation("IngredienteProduto")
+  producoesKit                 ProducaoKit[]
+  consumosInternos             ConsumoInterno[]
+  fatoresConversao             FatorConversao[]
 
   @@unique([empresaId, sku])
   @@unique([empresaId, codigoBarras])
   @@index([empresaId])
   @@index([sku])
   @@index([empresaId, tipoProdutoId])
+  @@index([empresaId, referencia])
 }
 
 model ComposicaoKit {
@@ -600,9 +672,9 @@ model EstoqueMovimentacao {
   produtoId       String
   produto         Produto        @relation(fields: [produtoId], references: [id])
   // Filial onde o efeito de estoque desta linha ocorre. Para TRANSFERENCIA,
-  // esta +ï¿½ a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
-  // aponta a filial que recebe ï¿½ï¿½ï¿½ uma segunda linha (tipo TRANSFERENCIA,
-  // quantidade positiva) +ï¿½ criada na filial de destino, ligada pelo mesmo
+  // esta é a filial de ORIGEM (a quantidade sai daqui); filialDestinoId
+  // aponta a filial que recebe — uma segunda linha (tipo TRANSFERENCIA,
+  // quantidade positiva) é criada na filial de destino, ligada pelo mesmo
   // valor de `documento` (ver estoque.service.ts).
   filialId        String
   filial          Filial         @relation("MovOrigem", fields: [filialId], references: [id])
@@ -615,6 +687,11 @@ model EstoqueMovimentacao {
   motivo          String?
   documento       String? // NF, pedido, venda id; para TRANSFERENCIA, agrupa as duas pontas
   origem          Origem
+  // Rastreabilidade (2026-11-21): saldo da filial antes e depois, e custo unitário aplicado.
+  // Nulos nas movimentações anteriores a esta versão.
+  saldoAnterior   Decimal?       @db.Decimal(14, 3)
+  saldoPosterior  Decimal?       @db.Decimal(14, 3)
+  custoUnitario   Decimal?       @db.Decimal(14, 6)
   createdAt       DateTime       @default(now())
 
   @@index([empresaId, produtoId])
@@ -919,6 +996,9 @@ enum TipoProdutoEnum {
   INSUMO
   FABRICADO
   USO_INTERNO
+  MATERIA_PRIMA // matéria-prima (entra na fabricação)
+  PRODUTO_ACABADO // produto acabado de fabricação própria
+  SERVICO // serviço (sem controle de estoque)
 }
 
 enum PoliticaCusto {
@@ -943,21 +1023,24 @@ model Dimensao {
 }
 
 model Unidade {
-  id               String           @id @default(cuid())
-  empresaId        String
-  empresa          Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  dimensaoId       String
-  dimensao         Dimensao         @relation(fields: [dimensaoId], references: [id])
-  nome             String // ex: Kilograma, Grama, Litro, Mililitro, Unidade, Duzia, Caixa
-  simbolo          String // ex: kg, g, L, mL, UN, dz, cx
-  fatorCanonico    Decimal          @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade canônica da dimensão
-  ativo            Boolean          @default(true)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  produtosBase     Produto[]        @relation("ProdutoUnidadeBase")
-  fatoresOrigem    FatorConversao[] @relation("FatorConversaoOrigem")
-  fatoresDestino   FatorConversao[] @relation("FatorConversaoDestino")
-  consumosInternos ConsumoInterno[]
+  id                 String           @id @default(cuid())
+  empresaId          String
+  empresa            Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  dimensaoId         String
+  dimensao           Dimensao         @relation(fields: [dimensaoId], references: [id])
+  nome               String // ex: Kilograma, Grama, Litro, Mililitro, Unidade, Duzia, Caixa
+  simbolo            String // ex: kg, g, L, mL, UN, dz, cx
+  fatorCanonico      Decimal          @db.Decimal(14, 6) // quanto vale 1 desta unidade na unidade canônica da dimensão
+  ativo              Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  produtosBase       Produto[]        @relation("ProdutoUnidadeBase")
+  fatoresOrigem      FatorConversao[] @relation("FatorConversaoOrigem")
+  fatoresDestino     FatorConversao[] @relation("FatorConversaoDestino")
+  consumosInternos   ConsumoInterno[]
+  produtosCompra     Produto[]        @relation("ProdutoUnidadeCompra")
+  produtosVenda      Produto[]        @relation("ProdutoUnidadeVenda")
+  produtosTributavel Produto[]        @relation("ProdutoUnidadeTributavel")
 
   @@unique([empresaId, simbolo])
   @@index([empresaId, dimensaoId])
@@ -1522,6 +1605,7 @@ model IntegracaoPonto {
   erros               Json?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+
   @@index([empresaId])
 }
 
@@ -1598,6 +1682,7 @@ model RegraAutomacao {
   ativa     Boolean  @default(true)
   origem    Origem   @default(AUTOMATICO)
   createdAt DateTime @default(now())
+
   @@index([empresaId])
 }
 
@@ -1611,6 +1696,7 @@ model ConversaIA {
   contexto  Json?
   origem    Origem   @default(IA)
   createdAt DateTime @default(now())
+
   @@index([empresaId])
 }
 
@@ -2988,4 +3074,104 @@ model NexusErpRecord {
   @@index([empresaId, module, createdAt])
   @@index([empresaId, status])
   @@index([empresaId, title])
+}
+
+// ============================================================================
+// Módulo Produtos (ERP) — 2026-11-21
+// ============================================================================
+
+// Dados fiscais do produto (1:1). O NCM continua em Produto.ncm (não duplicado).
+// Nenhuma alíquota é presumida: tudo é informado pelo usuário e validado no formato.
+model ProdutoFiscal {
+  id                      String   @id @default(cuid())
+  empresaId               String
+  empresa                 Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId               String   @unique
+  produto                 Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  origemMercadoria        Int? // 0 a 8 (tabela de origem da NF-e)
+  cest                    String?
+  cfopEntrada             String?
+  cfopSaida               String?
+  cstIcms                 String? // regime normal
+  csosn                   String? // Simples Nacional
+  aliquotaIcms            Decimal? @db.Decimal(7, 4)
+  reducaoBaseIcms         Decimal? @db.Decimal(7, 4)
+  cstPis                  String?
+  aliquotaPis             Decimal? @db.Decimal(7, 4)
+  cstCofins               String?
+  aliquotaCofins          Decimal? @db.Decimal(7, 4)
+  cstIpi                  String?
+  aliquotaIpi             Decimal? @db.Decimal(7, 4)
+  codigoEnquadramentoIpi  String?
+  cstIbsCbs               String? // reforma tributária (LC 214/2025)
+  classificacaoTributaria String? // cClassTrib
+  aliquotaIbs             Decimal? @db.Decimal(7, 4)
+  aliquotaCbs             Decimal? @db.Decimal(7, 4)
+  naturezaOperacao        String?
+  informacoesAdicionais   String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([empresaId])
+}
+
+// Códigos de identificação do produto (vários por produto, únicos por empresa).
+// O código principal continua espelhado em Produto.codigoBarras (compatibilidade com o PDV offline).
+model ProdutoCodigoBarras {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId String
+  produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  codigo    String
+  tipo      String // EAN13 | EAN8 | GTIN14 | UPCA | INTERNO | BALANCA
+  principal Boolean  @default(false)
+  descricao String?
+  createdAt DateTime @default(now())
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId, produtoId])
+}
+
+// Histórico de alterações de preço e custo (quem, quando, de quanto para quanto, por quê).
+model ProdutoPrecoHistorico {
+  id            String   @id @default(cuid())
+  empresaId     String
+  empresa       Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId     String
+  produto       Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  filialId      String?
+  filial        Filial?  @relation(fields: [filialId], references: [id], onDelete: Restrict)
+  campo         String // PRECO_VENDA | CUSTO | PRECO_COMPRA | TABELA_A | TABELA_B | TABELA_C | PRECO_FILIAL
+  valorAnterior Decimal? @db.Decimal(14, 6)
+  valorNovo     Decimal? @db.Decimal(14, 6)
+  usuarioId     String?
+  usuario       Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  justificativa String?
+  origem        String   @default("MANUAL")
+  createdAt     DateTime @default(now())
+
+  @@index([empresaId, produtoId, createdAt])
+}
+
+// Vínculo e configuração do produto por filial. Sem linha = vinculado com os padrões do produto.
+model ProdutoFilial {
+  id              String   @id @default(cuid())
+  empresaId       String
+  empresa         Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId       String
+  produto         Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  filialId        String
+  filial          Filial   @relation(fields: [filialId], references: [id], onDelete: Restrict)
+  ativo           Boolean  @default(true) // false = produto desvinculado/inativo nesta filial
+  disponivelVenda Boolean  @default(true)
+  precoVenda      Decimal? @db.Decimal(10, 2) // sobrepõe Produto.precoVenda nesta filial
+  custo           Decimal? @db.Decimal(14, 6) // custo informado para a filial (informativo)
+  estoqueMinimo   Decimal? @db.Decimal(14, 3)
+  estoqueMaximo   Decimal? @db.Decimal(14, 3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([produtoId, filialId])
+  @@index([empresaId, filialId])
 }

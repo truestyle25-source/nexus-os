@@ -4,8 +4,8 @@ import { ErroDeNegocio, NaoEncontrado, Conflito } from '../../lib/erros.js';
 
 type Tx = Prisma.TransactionClient;
 
-const ENTRADAS: TipoMovEstoque[] = ['ENTRADA', 'COMPRA', 'DEVOLUCAO'];
-const SAIDAS: TipoMovEstoque[] = ['SAIDA', 'VENDA', 'PERDA', 'AVARIA'];
+export const ENTRADAS: TipoMovEstoque[] = ['ENTRADA', 'COMPRA', 'DEVOLUCAO', 'PRODUCAO'];
+export const SAIDAS: TipoMovEstoque[] = ['SAIDA', 'VENDA', 'PERDA', 'AVARIA', 'CONSUMO_INSUMO', 'DESCARTE'];
 
 /**
  * Garante que todo Produto ativo tenha uma linha de Estoque (quantidade 0)
@@ -45,6 +45,8 @@ export interface MovimentoInput {
   motivo?: string;
   documento?: string;
   origem: Origem;
+  /** Custo unitário aplicado (padrão: custo atual do produto). Registrado na movimentação. */
+  custoUnitario?: number;
 }
 
 /**
@@ -85,13 +87,21 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
   } else if (SAIDAS.includes(input.tipo)) {
     delta = -input.quantidade;
     novaQtd = qtdAtual - input.quantidade;
-    if (novaQtd < 0) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${input.quantidade}.`, 400);
-    const updated = await tx.estoque.updateMany({
-      where: { filialId: input.filialId, produtoId: input.produtoId, quantidade: { gte: input.quantidade } },
-      data: { quantidade: { decrement: input.quantidade } },
-    });
-    if (updated.count !== 1) throw Conflito('Estoque foi alterado por outra operação. Tente novamente.');
-    estoqueId = atual!.id;
+    // Estoque negativo só quando o cadastro do produto permite (Produto.permiteEstoqueNegativo).
+    const permiteNegativo = produto.permiteEstoqueNegativo === true;
+    if (novaQtd < 0 && !permiteNegativo) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${input.quantidade}.`, 400);
+    if (!atual) {
+      // Só chega aqui com estoque negativo permitido e sem linha de estoque na filial.
+      const criado = await tx.estoque.create({ data: { empresaId: input.empresaId, filialId: input.filialId, produtoId: input.produtoId, quantidade: novaQtd, valorTotal: 0 } });
+      estoqueId = criado.id;
+    } else {
+      const updated = await tx.estoque.updateMany({
+        where: { filialId: input.filialId, produtoId: input.produtoId, ...(permiteNegativo ? { quantidade: qtdAtual } : { quantidade: { gte: input.quantidade } }) },
+        data: { quantidade: { decrement: input.quantidade } },
+      });
+      if (updated.count !== 1) throw Conflito('Estoque foi alterado por outra operação. Tente novamente.');
+      estoqueId = atual.id;
+    }
   } else if (input.tipo === 'AJUSTE' || input.tipo === 'INVENTARIO') {
     // Nestes dois, "quantidade" é a contagem final, não um delta.
     novaQtd = input.quantidade;
@@ -111,7 +121,7 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
     throw new ErroDeNegocio(`Tipo de movimentação não suportado: ${input.tipo}.`, 400);
   }
 
-  const estoque = await tx.estoque.update({ where: { id: estoqueId }, data: { valorTotal: novaQtd * Number(produto.custo) } });
+  const estoque = await tx.estoque.update({ where: { id: estoqueId }, data: { valorTotal: Math.max(0, novaQtd) * Number(produto.custo) } });
   const movimentacao = await tx.estoqueMovimentacao.create({
     data: {
       empresaId: input.empresaId,
@@ -123,6 +133,10 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
       motivo: input.motivo,
       documento: input.documento,
       origem: input.origem,
+      // Rastreabilidade: saldo da filial antes e depois e o custo aplicado.
+      saldoAnterior: qtdAtual,
+      saldoPosterior: novaQtd,
+      custoUnitario: input.custoUnitario ?? Number(produto.custo),
     },
   });
 
@@ -138,6 +152,8 @@ export interface TransferenciaInput {
   usuarioId?: string;
   motivo?: string;
   origem: Origem;
+  /** Autorização (estoque.administrar) para transferir deixando a origem negativa — só vale se o produto permitir. */
+  autorizadoNegativo?: boolean;
 }
 
 /**
@@ -162,16 +178,21 @@ export async function transferirEstoque(tx: Tx, input: TransferenciaInput) {
 
   const estoqueOrigem = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: input.filialOrigemId, produtoId: input.produtoId } } });
   const qtdOrigemAtual = Number(estoqueOrigem?.quantidade ?? 0);
-  if (qtdOrigemAtual < input.quantidade) {
+  const negativoAutorizado = produto.permiteTransferenciaNegativa === true && input.autorizadoNegativo === true;
+  if (qtdOrigemAtual < input.quantidade && !negativoAutorizado) {
     throw new ErroDeNegocio(`Estoque insuficiente na filial de origem para ${produto.nome}: tem ${qtdOrigemAtual}, precisa ${input.quantidade}.`, 400);
   }
+  if (!estoqueOrigem) {
+    await tx.estoque.create({ data: { empresaId: input.empresaId, filialId: input.filialOrigemId, produtoId: input.produtoId, quantidade: 0, valorTotal: 0 } });
+  }
   const decremento = await tx.estoque.updateMany({
-    where: { filialId: input.filialOrigemId, produtoId: input.produtoId, quantidade: { gte: input.quantidade } },
+    where: { filialId: input.filialOrigemId, produtoId: input.produtoId, ...(negativoAutorizado ? { quantidade: qtdOrigemAtual } : { quantidade: { gte: input.quantidade } }) },
     data: { quantidade: { decrement: input.quantidade } },
   });
   if (decremento.count !== 1) throw Conflito('Estoque de origem foi alterado por outra operação. Tente novamente.');
 
   const estoqueDestinoAtual = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: input.filialDestinoId, produtoId: input.produtoId } } });
+  const qtdDestinoAntes = Number(estoqueDestinoAtual?.quantidade ?? 0);
   let estoqueDestinoId: string;
   if (estoqueDestinoAtual) {
     await tx.estoque.update({ where: { id: estoqueDestinoAtual.id }, data: { quantidade: { increment: input.quantidade } } });
@@ -188,7 +209,7 @@ export async function transferirEstoque(tx: Tx, input: TransferenciaInput) {
     tx.estoque.findUniqueOrThrow({ where: { id: estoqueDestinoId } }),
   ]);
   const custo = Number(produto.custo);
-  await tx.estoque.update({ where: { id: estoqueOrigemFinal.id }, data: { valorTotal: Number(estoqueOrigemFinal.quantidade) * custo } });
+  await tx.estoque.update({ where: { id: estoqueOrigemFinal.id }, data: { valorTotal: Math.max(0, Number(estoqueOrigemFinal.quantidade)) * custo } });
   await tx.estoque.update({ where: { id: estoqueDestinoFinal.id }, data: { valorTotal: Number(estoqueDestinoFinal.quantidade) * custo } });
 
   const documento = `TRANSF-${randomUUID()}`;
@@ -205,6 +226,9 @@ export async function transferirEstoque(tx: Tx, input: TransferenciaInput) {
         motivo: input.motivo,
         documento,
         origem: input.origem,
+        saldoAnterior: qtdOrigemAtual,
+        saldoPosterior: qtdOrigemAtual - input.quantidade,
+        custoUnitario: custo,
       },
     }),
     tx.estoqueMovimentacao.create({
@@ -219,6 +243,9 @@ export async function transferirEstoque(tx: Tx, input: TransferenciaInput) {
         motivo: input.motivo,
         documento,
         origem: input.origem,
+        saldoAnterior: qtdDestinoAntes,
+        saldoPosterior: qtdDestinoAntes + input.quantidade,
+        custoUnitario: custo,
       },
     }),
   ]);

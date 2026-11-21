@@ -1,3 +1,4 @@
+import { registrarHistoricoPrecos } from '../produtos/produto-campos.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
@@ -416,6 +417,9 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
             SELECT "quantidade", "valorTotal" FROM "Estoque"
             WHERE "filialId" = ${compra.filialId} AND "produtoId" = ${produto.id}
             FOR UPDATE`;
+          // preco por unidade base = valorUnit / fatorAplicado (se houver fator)
+          const fator = item.fatorAplicado && Number(item.fatorAplicado) > 0 ? Number(item.fatorAplicado) : 1;
+          const precoUnitarioBase = Number(item.valorUnit) / fator;
           await aplicarMovimento(tx, {
             empresaId: req.user.empresaId,
             filialId: compra.filialId,
@@ -426,25 +430,36 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
             motivo: `Recebimento compra ${id}`,
             documento: id,
             origem: compra.origem,
+            custoUnitario: precoUnitarioBase,
           });
           // Etapa 4 — custo médio ponderado (política aprovada).
-          // preco por unidade base = valorUnit / fatorAplicado (se houver fator)
-          const fator = item.fatorAplicado && Number(item.fatorAplicado) > 0 ? Number(item.fatorAplicado) : 1;
-          const precoUnitarioBase = Number(item.valorUnit) / fator;
 
           const qtdAtual = Number(estoqueAntes?.quantidade ?? 0);
           const valorAtual = Number(estoqueAntes?.valorTotal ?? 0);
 
           const novaQtd = qtdAtual + Number(item.quantidadeBase ?? item.quantidade);
           const novoValorTotal = valorAtual + (Number(item.quantidadeBase ?? item.quantidade) * precoUnitarioBase);
-          const novoCusto = novaQtd > 0 ? novoValorTotal / novaQtd : precoUnitarioBase;
+          const custoMedio = novaQtd > 0 ? novoValorTotal / novaQtd : precoUnitarioBase;
+          // Política de custo do cadastro (antes ignorada: sempre média ponderada).
+          // MEDIO_PONDERADO (padrão) mantém o comportamento anterior.
+          const novoCusto = produto.politicaCusto === 'ULTIMO_CUSTO'
+            ? precoUnitarioBase
+            : produto.politicaCusto === 'PADRAO' ? Number(produto.custo) : custoMedio;
 
-          await tx.produto.update({ where: { id: produto.id }, data: { custo: novoCusto } });
+          await tx.produto.update({
+            where: { id: produto.id },
+            data: { custo: novoCusto, ultimoCustoAquisicao: precoUnitarioBase, precoCompra: Number(item.valorUnit) },
+          });
+          await registrarHistoricoPrecos(tx, {
+            empresaId: req.user.empresaId, produtoId: produto.id, usuarioId: req.user.id, filialId: compra.filialId,
+            anterior: produto, novo: { custo: novoCusto, precoCompra: Number(item.valorUnit) },
+            justificativa: `Recebimento da compra ${id}`, origem: 'COMPRA',
+          });
           // aplicarMovimento já gravou a quantidade (= novaQtd) e garantiu que a
           // linha de estoque existe; aqui só se corrige o valor pelo custo médio.
           await tx.estoque.update({
             where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
-            data: { quantidade: novaQtd, valorTotal: novoValorTotal },
+            data: { quantidade: novaQtd, valorTotal: produto.politicaCusto === 'MEDIO_PONDERADO' ? novoValorTotal : novaQtd * novoCusto },
           });
         }
 

@@ -375,7 +375,7 @@ return (<div className="nexus-products-page" style={{padding:24,maxWidth:1400,ma
 <thead style={{position:'sticky',top:0,background:'var(--nx-surface)',zIndex:10}}><tr style={{borderBottom:'1px solid var(--nx-border)'}}>{['','Produto','SKU','Categoria','Estoque','Preço','Status','Ações'].map(h=>(<th key={h} style={{fontSize:10,color:'var(--nx-ink-3)',textTransform:'uppercase',letterSpacing:.8,padding:'12px 8px',textAlign:'left'}}>{h}</th>))}</tr></thead>
 <tbody>
 {filteredProducts.map(p=>{ const pct=Math.min(100,Math.round((p.estoque/Math.max(1,p.estoqueMax))*100)); return (
-<tr key={p.id} onClick={()=>void abrirDetalhe(p)} style={{borderBottom:'1px solid var(--nx-border)',cursor:'pointer',transition:'all .2s'}} onMouseEnter={e=>{(e.currentTarget as any).style.background = 'var(--nx-surface-2)'}} onMouseLeave={e=>{(e.currentTarget as any).style.background='transparent'}}>
+<tr key={p.id} onClick={()=>router.push(`/produtos/${p.id}`)} style={{borderBottom:'1px solid var(--nx-border)',cursor:'pointer',transition:'all .2s'}} onMouseEnter={e=>{(e.currentTarget as any).style.background = 'var(--nx-surface-2)'}} onMouseLeave={e=>{(e.currentTarget as any).style.background='transparent'}}>
 <td style={{padding:'12px 8px'}}><input type="checkbox" checked={selected.has(p.id)} onClick={e=>e.stopPropagation()} onChange={()=>toggleSel(p.id)} aria-label={'Selecionar '+p.nome} /></td>
 <td style={{padding:'12px 8px'}}><div style={{display:'flex',gap:10,alignItems:'center'}}><span style={{width:44,height:44,borderRadius:10,background:'transparent',border:'none',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{p.emoji||'📋'}</span><span><div style={{fontSize:12,fontWeight:800}}>{p.nome}</div><div style={{fontSize:10,color:'var(--nx-ink-2)'}}>{p.variacao}</div></span></div></td>
 <td style={{padding:'12px 8px'}}><div style={{fontSize:11,color:'var(--nx-ink-2)',fontFamily:'monospace'}}>{p.sku}</div><div style={{fontSize:10,color:'var(--nx-ink-3)',fontFamily:'monospace'}}>{p.barras}</div></td>
@@ -388,7 +388,7 @@ return (<div className="nexus-products-page" style={{padding:24,maxWidth:1400,ma
 </tbody></table></div>
 ):(
 <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
-{filteredProducts.map(p=>(<div key={p.id} onClick={()=>void abrirDetalhe(p)} style={{background: 'var(--nx-surface-2)',border: '1px solid var(--nx-border)',borderRadius:12,padding:12,cursor:'pointer'}}>
+{filteredProducts.map(p=>(<div key={p.id} onClick={()=>router.push(`/produtos/${p.id}`)} style={{background: 'var(--nx-surface-2)',border: '1px solid var(--nx-border)',borderRadius:12,padding:12,cursor:'pointer'}}>
 <div style={{width:'100%',height:160,borderRadius:12,background:'var(--nx-surface-2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:48}}>{p.emoji||'📦'}</div>
 <div style={{fontSize:12,fontWeight:800,marginTop:8,color: 'var(--nx-ink-2)'}}>{p.nome}</div><div style={{fontSize:10,color:'var(--nx-ink-3)'}}>{p.sku}</div>
 <div style={{fontSize:14,fontWeight:800,marginTop:4}}>{brl(p.promo?p.precoPromocional??p.precoVenda:p.precoVenda)}</div>
