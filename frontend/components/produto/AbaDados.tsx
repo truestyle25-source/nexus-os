@@ -76,7 +76,7 @@ export default function AbaDados({ form, set, catalogos, ficha, podeEditar, aoAt
           <CampoTexto l={2} rotulo="SKU / código interno" valor={form.sku} onChange={ed && ((v) => ed('sku', v))} maxLength={60} />
           <CampoTexto l={6} rotulo="Descrição" valor={form.nome} onChange={ed && ((v) => ed('nome', v))} maxLength={160} />
           <CampoTexto l={2} rotulo="Descrição resumida" valor={form.descricaoResumida} onChange={ed && ((v) => ed('descricaoResumida', v))} maxLength={60} ajuda="Cupom e etiqueta" />
-          <CampoSelecao l={3} rotulo="Tipo de produto" valor={form.tipoProdutoId} onChange={ed && ((v) => ed('tipoProdutoId', v))} vazio="Não classificado"
+          <CampoSelecao l={3} rotulo="Tipo de produto" valor={form.tipoProdutoId} onChange={ed && ((v) => ed('tipoProdutoId', v))} vazio="Selecione o tipo"
             opcoes={catalogos.tipos.map((t) => ({ valor: t.id, texto: t.nome }))} ajuda={catalogos.tipos.find((t) => t.id === form.tipoProdutoId)?.descricao ?? undefined} />
           <CampoTexto l={3} rotulo="Fabricante" valor={form.fabricante} onChange={ed && ((v) => ed('fabricante', v))} maxLength={120} />
           <CampoTexto l={3} rotulo="Marca" valor={form.marca} onChange={ed && ((v) => ed('marca', v))} maxLength={120} />

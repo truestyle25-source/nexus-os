@@ -446,6 +446,7 @@ model Produto {
   comprasItens                 CompraItem[]
   composicaoComoKit            ComposicaoKit[]         @relation("KitProduto")
   composicaoComoIngrediente    ComposicaoKit[]         @relation("IngredienteProduto")
+  movimentacoesComoKit         EstoqueMovimentacao[]   @relation("MovimentacaoKit")
   producoesKit                 ProducaoKit[]
   consumosInternos             ConsumoInterno[]
   fatoresConversao             FatorConversao[]
@@ -464,7 +465,13 @@ model ComposicaoKit {
   empresa              Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
   kitProdutoId         String
   ingredienteProdutoId String
-  quantidadePorKit     Decimal  @db.Decimal(12, 3)
+  quantidadePorKit     Decimal  @db.Decimal(12, 3) // quantidade por kit na UNIDADE BASE do componente (é o que baixa do estoque)
+  // Composição informada pelo usuário (2026-11-21): quantidade na unidade escolhida (ex.: 500 g de um insumo em kg).
+  // Nulos nas linhas antigas = a quantidade foi informada direto na unidade base.
+  unidadeId            String?
+  unidade              Unidade? @relation(fields: [unidadeId], references: [id], onDelete: Restrict)
+  quantidade           Decimal? @db.Decimal(14, 6)
+  ordem                Int      @default(0)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   kitProduto           Produto  @relation("KitProduto", fields: [kitProdutoId], references: [id], onDelete: Cascade)
@@ -692,10 +699,14 @@ model EstoqueMovimentacao {
   saldoAnterior   Decimal?       @db.Decimal(14, 3)
   saldoPosterior  Decimal?       @db.Decimal(14, 3)
   custoUnitario   Decimal?       @db.Decimal(14, 6)
+  // Baixa de componente feita pela venda de um KIT: aponta o kit vendido (origem da movimentação).
+  kitProdutoId    String?
+  kitProduto      Produto?       @relation("MovimentacaoKit", fields: [kitProdutoId], references: [id], onDelete: SetNull)
   createdAt       DateTime       @default(now())
 
   @@index([empresaId, produtoId])
   @@index([empresaId, filialId])
+  @@index([empresaId, kitProdutoId])
   @@index([createdAt])
 }
 
@@ -911,6 +922,8 @@ model VendaItem {
   custoUnitario  Decimal  @db.Decimal(10, 2)
   desconto       Decimal  @default(0) @db.Decimal(10, 2)
   total          Decimal  @db.Decimal(12, 2)
+  // Venda de KIT: cópia da composição, das quantidades baixadas e dos custos no momento da venda.
+  composicaoKit  Json?
 
   @@index([vendaId])
 }
@@ -999,6 +1012,9 @@ enum TipoProdutoEnum {
   MATERIA_PRIMA // matéria-prima (entra na fabricação)
   PRODUTO_ACABADO // produto acabado de fabricação própria
   SERVICO // serviço (sem controle de estoque)
+  KIT // kit: vendido como um produto; a venda baixa os componentes da composição
+  FABRICA // fábrica
+  NAO_CLASSIFICADO // não classificado
 }
 
 enum PoliticaCusto {
@@ -1041,6 +1057,7 @@ model Unidade {
   produtosCompra     Produto[]        @relation("ProdutoUnidadeCompra")
   produtosVenda      Produto[]        @relation("ProdutoUnidadeVenda")
   produtosTributavel Produto[]        @relation("ProdutoUnidadeTributavel")
+  composicoesKit     ComposicaoKit[]
 
   @@unique([empresaId, simbolo])
   @@index([empresaId, dimensaoId])

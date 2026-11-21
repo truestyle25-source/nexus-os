@@ -112,7 +112,7 @@ async function listarMovimentos(req: FastifyRequest, produtoId: string, f: z.inf
       where, orderBy: { createdAt: 'desc' },
       skip: todos ? 0 : (f.pagina - 1) * f.limite,
       take: todos ? 5000 : f.limite,
-      include: { filial: { select: { nome: true } }, filialDestino: { select: { nome: true } }, usuario: { select: { nome: true } } },
+      include: { filial: { select: { nome: true } }, filialDestino: { select: { nome: true } }, usuario: { select: { nome: true } }, kitProduto: { select: { id: true, nome: true } } },
     }),
     prisma.estoqueMovimentacao.count({ where }),
   ]);
@@ -122,6 +122,8 @@ async function listarMovimentos(req: FastifyRequest, produtoId: string, f: z.inf
       id: m.id, data: m.createdAt, tipo: m.tipo, quantidade: Number(m.quantidade),
       filial: m.filial?.nome ?? null, filialDestino: m.filialDestino?.nome ?? null,
       usuario: m.usuario?.nome ?? null, documento: m.documento, motivo: m.motivo, origem: m.origem,
+      // Baixa feita pela venda de um KIT: qual kit originou a movimentação deste componente.
+      kit: m.kitProduto ? { id: m.kitProduto.id, nome: m.kitProduto.nome } : null,
       saldoAnterior: num(m.saldoAnterior), saldoPosterior: num(m.saldoPosterior),
       ...(podeVerCusto ? { custoUnitario: num(m.custoUnitario) } : {}),
     })),

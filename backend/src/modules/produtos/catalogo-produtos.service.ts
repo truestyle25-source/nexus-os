@@ -47,7 +47,7 @@ const UNIDADES: Array<{ dimensao: (typeof DIMENSOES)[number]['codigo']; simbolo:
   { dimensao: 'EMBALAGEM', simbolo: 'GL', nome: 'Galão', fator: '1' },
 ];
 
-const TIPOS: Array<{ codigo: 'MERCADORIA' | 'INSUMO' | 'FABRICADO' | 'USO_INTERNO' | 'MATERIA_PRIMA' | 'PRODUTO_ACABADO' | 'SERVICO'; nome: string; descricao: string }> = [
+const TIPOS: Array<{ codigo: 'MERCADORIA' | 'INSUMO' | 'FABRICADO' | 'USO_INTERNO' | 'MATERIA_PRIMA' | 'PRODUTO_ACABADO' | 'SERVICO' | 'KIT' | 'FABRICA' | 'NAO_CLASSIFICADO'; nome: string; descricao: string }> = [
   { codigo: 'MERCADORIA', nome: 'Mercadoria para revenda', descricao: 'Comprado pronto e revendido.' },
   { codigo: 'MATERIA_PRIMA', nome: 'Matéria-prima', descricao: 'Transformado na fabricação.' },
   { codigo: 'INSUMO', nome: 'Insumo', descricao: 'Consumido na produção ou na operação.' },
@@ -55,6 +55,9 @@ const TIPOS: Array<{ codigo: 'MERCADORIA' | 'INSUMO' | 'FABRICADO' | 'USO_INTERN
   { codigo: 'PRODUTO_ACABADO', nome: 'Produto acabado', descricao: 'Pronto para venda, resultado da produção.' },
   { codigo: 'USO_INTERNO', nome: 'Material de uso interno', descricao: 'Consumo próprio, não vendido.' },
   { codigo: 'SERVICO', nome: 'Serviço', descricao: 'Sem controle de estoque.' },
+  { codigo: 'KIT', nome: 'Kit', descricao: 'Vendido como um produto; a venda baixa os componentes da composição.' },
+  { codigo: 'FABRICA', nome: 'Fábrica', descricao: 'Produto ligado à operação de fábrica.' },
+  { codigo: 'NAO_CLASSIFICADO', nome: 'Não classificado', descricao: 'Ainda sem classificação definida.' },
 ];
 
 export async function garantirCatalogoPadrao(empresaId: string, tx: Tx | typeof prisma = prisma): Promise<void> {

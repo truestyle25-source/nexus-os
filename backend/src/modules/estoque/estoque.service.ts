@@ -47,6 +47,8 @@ export interface MovimentoInput {
   origem: Origem;
   /** Custo unitário aplicado (padrão: custo atual do produto). Registrado na movimentação. */
   custoUnitario?: number;
+  /** Baixa de componente pela venda de um KIT: o kit vendido (origem da movimentação). */
+  kitProdutoId?: string | null;
 }
 
 /**
@@ -137,6 +139,7 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
       saldoAnterior: qtdAtual,
       saldoPosterior: novaQtd,
       custoUnitario: input.custoUnitario ?? Number(produto.custo),
+      kitProdutoId: input.kitProdutoId ?? null,
     },
   });
 

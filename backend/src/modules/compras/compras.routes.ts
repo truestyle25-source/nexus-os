@@ -10,6 +10,7 @@ import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { clean } from '../../lib/format.js';
 import { aplicarMovimento } from '../estoque/estoque.service.js';
 import { converterParaUnidadeBaseCompra } from '../estoque/conversao.service.js';
+import { recalcularCustoDosKits } from '../produtos/kit.service.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 
@@ -462,6 +463,12 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
             data: { quantidade: novaQtd, valorTotal: produto.politicaCusto === 'MEDIO_PONDERADO' ? novoValorTotal : novaQtd * novoCusto },
           });
         }
+
+        // Kits (tipo KIT) que usam algum produto recebido: o custo do kit acompanha o novo custo
+        // dos componentes. O preço de venda NÃO muda (só custo, margem e histórico).
+        await recalcularCustoDosKits(tx, req.user.empresaId, [...new Set(compra.itens.map((i) => i.produtoId))], {
+          usuarioId: req.user.id, justificativa: `Componente atualizado no recebimento da compra ${id}`, origem: 'COMPRA',
+        });
 
         const atualizada = await tx.compra.update({ where: { id }, data: { status: 'RECEBIDA', dataRecebimento: new Date() } });
         await tx.financeiro.create({

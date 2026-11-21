@@ -46,7 +46,7 @@ export async function pdvRoutes(app: FastifyInstance) {
 
     const desde = query.desde ? new Date(query.desde) : null;
     const filtroAtualizacao = desde
-      ? Prisma.sql`AND GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt")) >= ${desde}`
+      ? Prisma.sql`AND GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(k."atualizado", p."updatedAt")) >= ${desde}`
       : Prisma.empty;
     const [produtos, total] = await Promise.all([
       prisma.$queryRaw<Array<{
@@ -61,8 +61,12 @@ export async function pdvRoutes(app: FastifyInstance) {
         SELECT p."id", p."empresaId", ${filial.id}::text AS "filialId", p."nome", p."sku",
           p."codigoBarras", p."precoVenda", p."precoPromocional", p."promocaoInicio", p."promocaoFim",
           p."categoriaId", p."unidade", p."imagem", p."status",
-          COALESCE(e."quantidade", 0)::int AS "estoqueFilial",
-          GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(pf."updatedAt", p."updatedAt")) AS "atualizadoEm",
+          -- KIT não tem estoque próprio: o disponível é quantos kits os componentes permitem montar
+          -- nesta filial (componente sem controle de estoque ou com negativo liberado não limita).
+          CASE WHEN tp."codigo" = 'KIT'
+            THEN CASE WHEN COALESCE(k."componentes", 0) = 0 THEN 0 ELSE COALESCE(k."disponivel", 999999) END
+            ELSE COALESCE(e."quantidade", 0)::int END AS "estoqueFilial",
+          GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(pf."updatedAt", p."updatedAt"), COALESCE(k."atualizado", p."updatedAt")) AS "atualizadoEm",
           p."disponivelPdv", p."posicaoPdv", p."vendaFracionada", p."controlaEstoque",
           pf."precoVenda" AS "precoFilial", pf."ativo" AS "ativoFilial", pf."disponivelVenda" AS "disponivelFilial",
           (SELECT array_agg(c."codigo" ORDER BY c."principal" DESC, c."codigo") FROM "ProdutoCodigoBarras" c
@@ -70,6 +74,17 @@ export async function pdvRoutes(app: FastifyInstance) {
         FROM "Produto" p
         LEFT JOIN "Estoque" e ON e."produtoId" = p."id" AND e."filialId" = ${filial.id}
         LEFT JOIN "ProdutoFilial" pf ON pf."produtoId" = p."id" AND pf."filialId" = ${filial.id}
+        LEFT JOIN "TipoProduto" tp ON tp."id" = p."tipoProdutoId"
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS "componentes",
+            MIN(CASE WHEN cp."controlaEstoque" AND NOT cp."permiteEstoqueNegativo"
+              THEN FLOOR(GREATEST(COALESCE(ce."quantidade", 0), 0) / ck."quantidadePorKit") END)::int AS "disponivel",
+            MAX(GREATEST(ck."updatedAt", cp."updatedAt", COALESCE(ce."updatedAt", ck."updatedAt"))) AS "atualizado"
+          FROM "ComposicaoKit" ck
+          JOIN "Produto" cp ON cp."id" = ck."ingredienteProdutoId"
+          LEFT JOIN "Estoque" ce ON ce."produtoId" = ck."ingredienteProdutoId" AND ce."filialId" = ${filial.id}
+          WHERE ck."kitProdutoId" = p."id" AND ck."empresaId" = p."empresaId" AND tp."codigo" = 'KIT'
+        ) k ON true
         WHERE p."empresaId" = ${req.user.empresaId}
         ${filtroAtualizacao}
         ORDER BY "atualizadoEm" ASC, p."id" ASC

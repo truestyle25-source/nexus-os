@@ -66,8 +66,13 @@ async function buscarFatorConversao({
       unidadeDestinoId,
       ativo: true,
       ...(fornecedorId ? { fornecedorId } : { fornecedorId: null }),
-      vigenciaDe: { lte: agora },
-      vigenciaAte: { gte: agora },
+      // Vigência aberta (null) vale: o fator cadastrado na ficha tem vigenciaAte nula enquanto
+      // estiver em uso. Antes, `vigenciaAte: { gte }` excluía exatamente esses fatores e toda
+      // conversão por embalagem (ex.: 1 CX = 6 UN) era recusada.
+      AND: [
+        { OR: [{ vigenciaDe: null }, { vigenciaDe: { lte: agora } }] },
+        { OR: [{ vigenciaAte: null }, { vigenciaAte: { gte: agora } }] },
+      ],
     },
     orderBy: [{ fornecedorId: fornecedorId ? 'desc' : 'asc' }, { createdAt: 'desc' }],
   });

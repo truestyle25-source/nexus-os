@@ -11,6 +11,7 @@ import {
   camposErpSchema, camposErpParaPrisma, codigoEmUsoPorOutroProduto, exigeJustificativa, exigirPermissoesDosCampos,
   registrarHistoricoPrecos, sincronizarCodigoPrincipal, soCamposErp, validarReferenciasDosCampos,
 } from './produto-campos.js';
+import { validarMudancaDeTipo } from './kit.service.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 const codigoBarrasSchema = z.string().regex(/^(?:\d{8}|\d{12}|\d{13})$/, 'Código de barras deve ser um GTIN-8, UPC-A ou EAN-13 válido.').refine((codigo) => {
@@ -476,6 +477,7 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
       const { local, justificativaPreco, premiacaoInicio: _pi, premiacaoFim: _pf, ...dadosProduto } = data;
       const anterior = await prisma.produto.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!anterior) throw NaoEncontrado('Produto não encontrado nesta empresa.');
+      if (data.tipoProdutoId !== undefined) await validarMudancaDeTipo(prisma, req.user.empresaId, anterior, data.tipoProdutoId);
       if (exigeJustificativa(anterior, data) && !justificativaPreco) {
         throw new ErroDeNegocio('Informe a justificativa: o preço de venda cai mais de 10% ou fica abaixo do custo.', 422);
       }
