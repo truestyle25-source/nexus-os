@@ -29,6 +29,8 @@ const empresaEditableSchema = z
     razaoSocial: z.string().max(160).nullable().optional(),
     cnpj: z.string().max(20).nullable().optional(),
     inscricaoEstadual: z.string().max(32).nullable().optional(),
+    // Decide CST (regime normal) x CSOSN (Simples) na aba Tributos dos produtos.
+    regimeTributario: z.enum(['SIMPLES_NACIONAL', 'SIMPLES_EXCESSO_SUBLIMITE', 'REGIME_NORMAL']).nullable().optional(),
     responsavelCpf: z.string().max(20).nullable().optional(),
     responsavelRg: z.string().max(32).nullable().optional(),
     cep: z.string().max(12).nullable().optional(),
@@ -125,6 +127,7 @@ export async function empresaRoutes(app: FastifyInstance): Promise<void> {
       if (corpo.razaoSocial !== undefined) data.razaoSocial = vazioParaNulo(corpo.razaoSocial);
       if (cnpj !== undefined) data.cnpj = cnpj;
       if (corpo.inscricaoEstadual !== undefined) data.inscricaoEstadual = vazioParaNulo(corpo.inscricaoEstadual);
+      if (corpo.regimeTributario !== undefined) data.regimeTributario = corpo.regimeTributario;
       if (corpo.responsavelCpf !== undefined) data.responsavelCpf = digitosOuNulo(corpo.responsavelCpf);
       if (corpo.responsavelRg !== undefined) data.responsavelRg = vazioParaNulo(corpo.responsavelRg);
       if (corpo.cep !== undefined) data.cep = digitosOuNulo(corpo.cep);
@@ -138,7 +141,7 @@ export async function empresaRoutes(app: FastifyInstance): Promise<void> {
       const anterior = await prisma.empresa.findFirst({
         where: { id: req.user.empresaId },
         select: {
-          nome: true, razaoSocial: true, cnpj: true, inscricaoEstadual: true,
+          nome: true, razaoSocial: true, cnpj: true, inscricaoEstadual: true, regimeTributario: true,
           responsavelCpf: true, responsavelRg: true, cep: true,
           endereco: true, cidade: true, estado: true,
         },

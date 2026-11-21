@@ -59,7 +59,11 @@ export async function sincronizarCatalogo(
 export async function buscarPorCodigoBarras(empresaId: string, filialId: string, codigo: string): Promise<ProdutoLocal | undefined> {
   const limpo = codigo.trim();
   if (!limpo) return undefined;
-  return db().catalogoProdutos.where('[empresaId+filialId+codigoBarras]').equals([empresaId, filialId, limpo]).first();
+  const principal = await db().catalogoProdutos.where('[empresaId+filialId+codigoBarras]').equals([empresaId, filialId, limpo]).first();
+  if (principal) return principal;
+  // Códigos adicionais (EAN-8, GTIN, código interno, de balança...): o mesmo produto, sem duplicar cadastro.
+  return db().catalogoProdutos.where('[empresaId+filialId]').equals([empresaId, filialId])
+    .filter((p) => Array.isArray(p.codigosBarras) && p.codigosBarras.includes(limpo)).first();
 }
 
 /** Busca por SKU exato. */

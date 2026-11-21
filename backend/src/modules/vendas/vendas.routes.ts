@@ -333,15 +333,25 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         let subtotalBruto = 0;
         let descontoTotal = 0;
         for (const item of data.itens) {
-          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true } });
+          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true } });
           if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} não encontrado.`);
-          const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
-          const qtdAtual = Number(estoque?.quantidade ?? 0);
-          if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
+          // Configuração do produto NESTA filial (aba Filial do cadastro): vínculo, disponibilidade e preço próprio.
+          const configFilial = await tx.produtoFilial.findUnique({ where: { produtoId_filialId: { produtoId: item.produtoId, filialId: data.filialId } } });
+          if (configFilial && (!configFilial.ativo || !configFilial.disponivelVenda)) {
+            throw new ErroDeNegocio(`${produto.nome} não está disponível para venda nesta filial.`, 422);
+          }
+          // Sem controle de estoque (ex.: serviço) ou com estoque negativo permitido: não bloqueia por saldo.
+          if (produto.controlaEstoque && !produto.permiteEstoqueNegativo) {
+            const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
+            const qtdAtual = Number(estoque?.quantidade ?? 0);
+            if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
+          }
           const promocaoDentroDaJanela = produto.precoPromocional != null
             && (!produto.promocaoInicio || produto.promocaoInicio <= agoraUtc)
             && (!produto.promocaoFim || produto.promocaoFim >= agoraUtc);
-          const preco = arred2(Number(promocaoDentroDaJanela ? produto.precoPromocional : produto.precoVenda));
+          // Preço: promoção vigente > preço desta filial > preço do produto.
+          const precoBase = configFilial?.precoVenda != null ? configFilial.precoVenda : produto.precoVenda;
+          const preco = arred2(Number(promocaoDentroDaJanela ? produto.precoPromocional : precoBase));
           const descontoItem = arred2(item.desconto);
           const brutoItem = arred2(preco * item.quantidade);
           const totalItem = arred2(brutoItem - descontoItem);
@@ -467,17 +477,20 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             );
           }
 
-          await aplicarMovimento(tx, {
-            empresaId: user.empresaId,
-            filialId: data.filialId,
-            produtoId: item.produto.id,
-            usuarioId: user.id,
-            tipo: 'VENDA',
-            quantidade: conversao.quantidadeDestino.toNumber(),
-            motivo: `Venda ${venda.id}`,
-            documento: venda.id,
-            origem: data.origem,
-          });
+          // Produto sem controle de estoque (ex.: serviço) não gera baixa.
+          if (produto.controlaEstoque) {
+            await aplicarMovimento(tx, {
+              empresaId: user.empresaId,
+              filialId: data.filialId,
+              produtoId: item.produto.id,
+              usuarioId: user.id,
+              tipo: 'VENDA',
+              quantidade: conversao.quantidadeDestino.toNumber(),
+              motivo: `Venda ${venda.id}`,
+              documento: venda.id,
+              origem: data.origem,
+            });
+          }
 
           // A conversao e a quantidade-base foram persistidas em VendaItem.
 
@@ -669,14 +682,26 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // transação, se algo falhar depois o rollback desfaz esta escrita.
         const vendaJaCancelada = await tx.venda.update({ where: { id }, data: { status: 'CANCELADA' } });
 
-        for (const item of body.estornarEstoque ? venda.itens : []) {
+        // Estorna EXATAMENTE o que a venda baixou (movimentações VENDA com documento = venda):
+        // produto sem controle de estoque não teve baixa e não ganha estoque; componentes de
+        // kit baixados na venda voltam junto.
+        const baixas = body.estornarEstoque
+          ? await tx.estoqueMovimentacao.groupBy({
+              by: ['produtoId', 'filialId'],
+              where: { empresaId: venda.empresaId, documento: id, tipo: 'VENDA' },
+              _sum: { quantidade: true },
+            })
+          : [];
+        for (const baixa of baixas) {
+          const quantidade = Math.abs(Number(baixa._sum.quantidade ?? 0));
+          if (quantidade <= 0) continue;
           await aplicarMovimento(tx, {
             empresaId: venda.empresaId,
-            filialId: venda.filialId,
-            produtoId: item.produtoId,
+            filialId: baixa.filialId,
+            produtoId: baixa.produtoId,
             usuarioId: user.id,
             tipo: 'DEVOLUCAO',
-            quantidade: (item.quantidadeBase ?? item.quantidade).toNumber(),
+            quantidade,
             motivo: motivoCancelamento,
             documento: id,
             origem: 'MANUAL',

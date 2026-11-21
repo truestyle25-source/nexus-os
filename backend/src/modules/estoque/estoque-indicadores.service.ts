@@ -72,7 +72,7 @@ export async function calcularGiroPorProduto(
 
   const whereSaida: Prisma.EstoqueMovimentacaoWhereInput = {
     empresaId,
-    tipo: { in: ['SAIDA', 'VENDA'] },
+    tipo: { in: ['SAIDA', 'VENDA', 'CONSUMO_INSUMO'] },
     createdAt: { gte: desde },
     ...(opcoes.filialId ? { filialId: opcoes.filialId } : {}),
   };
