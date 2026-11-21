@@ -25,7 +25,7 @@ import { analisarPorIA } from './iaFornecedores.service.js';
  * registrar dois handlers para o mesmo path.
  */
 
-const statusSchema = z.enum(['Ativo', 'Crítico', 'Inativo']);
+const statusSchema = z.enum(['Ativo', 'Crítico', 'Inativo', 'Bloqueado']);
 const categoriaSchema = z.enum(CATEGORIAS_FORNECEDOR);
 const condicaoSchema = z.enum(CONDICOES_PAGAMENTO);
 
@@ -55,8 +55,10 @@ const listQuerySchema = z.object({
   // normalizados adiante). Antes era `z.string()`: qualquer status
   // desconhecido caía em `normalizarStatus()` e virava 'Ativo' — ou seja,
   // `?status=Inativo` num typo devolvia a lista de Ativos em silêncio.
-  status: z.enum(['Ativo', 'Crítico', 'Inativo', 'ATIVO', 'INATIVO', 'ARQUIVADO']).optional(),
-  categoria: z.enum(CATEGORIAS_FORNECEDOR).optional(),
+  status: z.enum(['Ativo', 'Crítico', 'Inativo', 'Bloqueado', 'ATIVO', 'INATIVO', 'ARQUIVADO']).optional(),
+  // Categoria livre na ficha completa (ex.: "Matéria-prima"); as do modal continuam valendo.
+  categoria: z.string().trim().min(1).max(60).optional(),
+  uf: z.string().trim().regex(/^[A-Za-z]{2}$/).optional(),
   busca: z.string().optional(),
 });
 
@@ -133,7 +135,7 @@ export async function fornecedoresRoutes(app: FastifyInstance): Promise<void> {
       ws.addRow([`Gerado em ${new Date().toLocaleString('pt-BR')}`]);
       ws.addRow([]);
       const header = ws.addRow([
-        'Nome', 'CNPJ', 'Categoria', 'Status', 'Contato', 'WhatsApp', 'Telefone',
+        'Código', 'Nome', 'Nome fantasia', 'CNPJ/CPF', 'Cidade/UF', 'Categoria', 'Status', 'Contato', 'WhatsApp', 'Telefone',
         'Email', 'Condição Pagamento', 'Produtos', 'Total Comprado', 'Total Pedidos', 'Observações',
       ]);
       header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -142,7 +144,7 @@ export async function fornecedoresRoutes(app: FastifyInstance): Promise<void> {
       });
       for (const f of fornecedores) {
         ws.addRow([
-          f.nome, f.cnpj ?? '', f.categoria, f.status, f.contato ?? '', f.whatsapp ?? '',
+          f.codigoExibido ?? '', f.nome, f.nomeFantasia ?? '', f.cnpj ?? '', f.cidade ? `${f.cidade}/${f.uf ?? ''}` : '', f.categoria, f.status, f.contato ?? '', f.whatsapp ?? '',
           f.telefone ?? '', f.email ?? '', f.condicaoPagamento ?? '', f.produtos ?? '',
           Number(f.totalComprado), f.totalPedidos, f.observacoes ?? '',
         ]);

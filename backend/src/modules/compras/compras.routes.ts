@@ -11,6 +11,7 @@ import { clean } from '../../lib/format.js';
 import { aplicarMovimento } from '../estoque/estoque.service.js';
 import { converterParaUnidadeBaseCompra } from '../estoque/conversao.service.js';
 import { recalcularCustoDosKits } from '../produtos/kit.service.js';
+import { STATUS_QUE_RECEBEM_PEDIDO, proximoCodigo } from '../fornecedores/fornecedor-ficha.service.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 
@@ -84,7 +85,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         if (existente) throw Conflito('Já existe um fornecedor com este CNPJ/CPF nesta empresa.');
       }
       const { cnpjCpf: _legado, ...paraGravar } = data;
-      const fornecedor = await prisma.fornecedor.create({ data: { empresaId: req.user.empresaId, ...paraGravar, cnpj, origem: data.origem } });
+      const fornecedor = await prisma.$transaction(async (tx) => tx.fornecedor.create({ data: { empresaId: req.user.empresaId, ...paraGravar, cnpj, origem: data.origem, codigo: await proximoCodigo(tx, req.user.empresaId) } }));
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -135,7 +136,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
       const { status: statusRawF } = z
-        .object({ status: z.enum(['Ativo', 'Crítico', 'Inativo', 'ATIVO', 'INATIVO', 'ARQUIVADO']) })
+        .object({ status: z.enum(['Ativo', 'Crítico', 'Inativo', 'Bloqueado', 'ATIVO', 'INATIVO', 'ARQUIVADO']) })
         .parse(req.body);
       // Normaliza valores legados para o vocabulário v2 (status TEXT).
       const status =
@@ -245,8 +246,13 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const data = schema.parse(req.body);
       const filial = await prisma.filial.findFirst({ where: { id: data.filialId, empresaId: req.user.empresaId } });
       if (!filial) throw NaoEncontrado('Filial inválida para esta empresa.');
-      const fornecedor = await prisma.fornecedor.findFirst({ where: { id: data.fornecedorId, empresaId: req.user.empresaId, status: 'Ativo' } });
-      if (!fornecedor) throw NaoEncontrado('Fornecedor inválido para esta empresa (ou inativo).');
+      // Recebem pedido: Ativo e Crítico (crítico é alerta de desempenho, não bloqueio).
+      // Bloqueado e Inativo não recebem novos pedidos.
+      const fornecedor = await prisma.fornecedor.findFirst({ where: { id: data.fornecedorId, empresaId: req.user.empresaId } });
+      if (!fornecedor) throw NaoEncontrado('Fornecedor inválido para esta empresa.');
+      if (!STATUS_QUE_RECEBEM_PEDIDO.includes(fornecedor.status)) {
+        throw new ErroDeNegocio(`Fornecedor ${fornecedor.status.toLowerCase()} não pode receber novos pedidos de compra.`, 422);
+      }
       for (const item of data.itens) {
         const produto = await prisma.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId } });
         if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} inválido para esta empresa.`);
@@ -461,6 +467,22 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
           await tx.estoque.update({
             where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
             data: { quantidade: novaQtd, valorTotal: produto.politicaCusto === 'MEDIO_PONDERADO' ? novoValorTotal : novaQtd * novoCusto },
+          });
+        }
+
+        // Vínculo fornecedor × produto (aba Produtos do Fornecedor): último preço de compra (por
+        // unidade base) e histórico. Só atualiza vínculos existentes — não cria vínculo sozinho.
+        for (const item of compra.itens) {
+          const vinculo = await tx.fornecedorProduto.findFirst({ where: { empresaId: req.user.empresaId, fornecedorId: compra.fornecedorId, produtoId: item.produtoId } });
+          if (!vinculo) continue;
+          const qtdBase = Number(item.quantidadeBase ?? item.quantidade);
+          const precoBase = qtdBase > 0 ? (Number(item.valorUnit) * Number(item.quantidade)) / qtdBase : Number(item.valorUnit);
+          await tx.fornecedorProduto.update({ where: { id: vinculo.id }, data: { ultimoPrecoCompra: precoBase } });
+          await tx.fornecedorPrecoHistorico.create({
+            data: {
+              empresaId: req.user.empresaId, fornecedorId: compra.fornecedorId, produtoId: item.produtoId, campo: 'ULTIMA_COMPRA',
+              valorAnterior: vinculo.ultimoPrecoCompra, valorNovo: precoBase, origem: 'COMPRA', documento: id, usuarioId: req.user.id,
+            },
           });
         }
 
