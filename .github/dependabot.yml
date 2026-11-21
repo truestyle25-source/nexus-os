@@ -1,0 +1,38 @@
+# Atualizações de dependências por Pull Request (passam pelo CI antes de qualquer merge).
+# Correções de segurança chegam sempre; atualizações de versão são agrupadas e semanais.
+# Versões major ficam de fora do agrupamento automático: exigem migração planejada
+# (docs/PLANO_EVOLUCAO_DEPENDENCIAS.md), por exemplo Next 15/16 e Prisma 6.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      backend-menores:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      frontend-menores:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: monthly }
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

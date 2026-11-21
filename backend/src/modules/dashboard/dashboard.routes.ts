@@ -148,7 +148,7 @@ export async function dashboardRealRoutes(app: FastifyInstance) {
           usuariosAtivos
         }
       } catch (error) {
-        console.error("Erro ao carregar estatísticas do dashboard:", error)
+        req.log.error({ err: error, evento: "erro_interno" }, "erro ao carregar estatísticas do dashboard")
 
         return res.status(500).send({
           message: "Erro ao carregar estatísticas do dashboard."
@@ -300,16 +300,14 @@ export async function dashboardRealRoutes(app: FastifyInstance) {
             where: { empresaId, status: "FINALIZADA" },
             _sum: { total: true }
           }),
-          prisma.venda.findMany({
-            where: { empresaId, status: "FINALIZADA", clienteId: { not: null } },
-            select: { clienteId: true },
-            distinct: ["clienteId"]
-          })
+          // count(DISTINCT) no banco (o `distinct` do Prisma carregava todas as vendas do histórico na memória).
+          prisma.$queryRaw<{ n: number }[]>`SELECT count(DISTINCT "clienteId")::int AS n FROM "Venda" WHERE "empresaId" = ${empresaId} AND status = 'FINALIZADA' AND "clienteId" IS NOT NULL`
         ])
 
+        const clientesDistintosHistorico = Number(clientesComHistorico[0]?.n ?? 0)
         const faturamentoHistorico = Number(historico._sum.total ?? 0)
         const ltvRealizado =
-          clientesComHistorico.length > 0 ? faturamentoHistorico / clientesComHistorico.length : null
+          clientesDistintosHistorico > 0 ? faturamentoHistorico / clientesDistintosHistorico : null
 
         return {
           granularidade: porDia ? "dia" : "mes",
@@ -333,14 +331,14 @@ export async function dashboardRealRoutes(app: FastifyInstance) {
             // CAC não é devolvido como número porque não existe: não há registro
             // de investimento em aquisição/campanha em nenhum módulo do sistema.
             cac: null,
-            clientesComHistorico: clientesComHistorico.length,
+            clientesComHistorico: clientesDistintosHistorico,
             faturamentoHistorico: arredondar(faturamentoHistorico),
             observacao:
               "LTV realizado = faturamento FINALIZADO histórico ÷ clientes distintos que já compraram. CAC não é calculado: o sistema não registra investimento em aquisição/marketing."
           }
         }
       } catch (error) {
-        console.error("Erro ao carregar série do dashboard:", error)
+        req.log.error({ err: error, evento: "erro_interno" }, "erro ao carregar série do dashboard")
 
         return res.status(500).send({
           message: "Erro ao carregar série do dashboard."

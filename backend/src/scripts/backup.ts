@@ -17,7 +17,8 @@
  * ambiente de homologação antes de confiar nisso em produção.
  */
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const BACKUP_DIR = process.env.BACKUP_DIR || path.resolve(process.cwd(), 'backups');
@@ -34,11 +35,21 @@ function executar(comando: string, args: string[]): Promise<void> {
   });
 }
 
+function capturar(comando: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const processo = spawn(comando, args, { stdio: ['ignore', 'pipe', 'inherit'], env: process.env });
+    let saida = '';
+    processo.stdout.on('data', (d) => { saida += d; });
+    processo.on('error', reject);
+    processo.on('exit', (codigo) => (codigo === 0 ? resolve(saida) : reject(new Error(`${comando} saiu com código ${codigo}`))));
+  });
+}
+
 async function limparBackupsAntigos(): Promise<void> {
   const limite = Date.now() - RETENCAO_DIAS * 24 * 60 * 60 * 1000;
   const arquivos = await readdir(BACKUP_DIR).catch(() => [] as string[]);
   for (const arquivo of arquivos) {
-    if (!arquivo.endsWith('.dump')) continue;
+    if (!arquivo.endsWith('.dump') && !arquivo.endsWith('.dump.sha256')) continue;
     const caminho = path.join(BACKUP_DIR, arquivo);
     const info = await stat(caminho);
     if (info.mtimeMs < limite) {
@@ -65,8 +76,18 @@ async function main(): Promise<void> {
   console.log(`[backup] iniciando pg_dump para ${destino}...`);
   // -F c = formato "custom" do pg_dump: comprimido e restaurável com
   // pg_restore, inclusive parcialmente (schema só, dados só, tabela só).
-  await executar('pg_dump', [databaseUrl, '-F', 'c', '-f', destino]);
-  console.log('[backup] concluído.');
+  // -n public: só o schema da aplicação (no Supabase, auth/storage são do provedor e o
+  // dono das tabelas não tem permissão de ler esses schemas).
+  await executar('pg_dump', [databaseUrl, '-F', 'c', '-n', 'public', '--no-owner', '-f', destino]);
+
+  // Integridade: o arquivo precisa ser legível pelo pg_restore e ter objetos.
+  // A soma SHA-256 é gravada ao lado (detecta corrupção em cópias posteriores).
+  const indice = await capturar('pg_restore', ['--list', destino]);
+  const objetos = indice.split('\n').filter((l) => l && !l.startsWith(';')).length;
+  if (objetos === 0) throw new Error('dump gerado sem objetos restauráveis');
+  const soma = createHash('sha256').update(await readFile(destino)).digest('hex');
+  await writeFile(`${destino}.sha256`, `${soma}  ${path.basename(destino)}\n`);
+  console.log(`[backup] concluído e verificado: ${objetos} objetos, sha256 ${soma.slice(0, 12)}…`);
 
   await limparBackupsAntigos();
 }

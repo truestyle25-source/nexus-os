@@ -100,6 +100,18 @@ CREATE POLICY nexus_tenant ON public."TokenRevogado" FOR ALL TO PUBLIC
   USING (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL)
   WITH CHECK (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL);
 
+--    RateLimitJanela (contadores de rate limit por IP/usuário) e TarefaAgendada
+--    (trava das tarefas diárias entre instâncias): infraestrutura, só sistema.
+ALTER TABLE public."RateLimitJanela" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS nexus_sistema ON public."RateLimitJanela";
+CREATE POLICY nexus_sistema ON public."RateLimitJanela" FOR ALL TO PUBLIC
+  USING (public.app_escopo_sistema()) WITH CHECK (public.app_escopo_sistema());
+
+ALTER TABLE public."TarefaAgendada" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS nexus_sistema ON public."TarefaAgendada";
+CREATE POLICY nexus_sistema ON public."TarefaAgendada" FOR ALL TO PUBLIC
+  USING (public.app_escopo_sistema()) WITH CHECK (public.app_escopo_sistema());
+
 -- 5) Controle: nenhuma tabela de public pode ficar sem RLS (exceto o histórico
 --    de migrações do Prisma, que só o dono acessa).
 DO $$

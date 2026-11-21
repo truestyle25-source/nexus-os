@@ -3,6 +3,8 @@ import { prisma } from '../../lib/prisma.js';
 import { encryptSecret, decryptSecret } from '../../lib/secrets.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { ErroDeNegocio, NaoEncontrado } from '../../lib/erros.js';
+import { logDe } from '../../lib/logger.js';
+const log = logDe('mercadolivre');
 import { Prisma } from '@prisma/client';
 
 /** Valores aceitos na coluna `status` do `IntegracaoExterno`. */
@@ -282,7 +284,7 @@ export async function finalizarOAuth({ empresaId, usuarioId, state, code }: Dado
     const { provisionarTarefasML } = await import('./agendador-ml.js');
     await provisionarTarefasML(empresaId, { reativar: true });
   } catch (falha) {
-    console.error('[mercadolivre] provisionamento de tarefas agendadas falhou (conta conectada):', falha);
+    log.error({ err: falha, evento: 'integracao_falhou', integracao: 'mercadolivre' }, 'provisionamento de tarefas agendadas falhou (conta conectada)');
   }
   return conta;
 }

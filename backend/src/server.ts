@@ -53,14 +53,18 @@ import { ttsRoutes } from './modules/tts/tts.controller.js';
 import { relatoriosRoutes } from './modules/relatorios/relatorios.routes.js';
 import { fornecedoresRoutes } from './modules/fornecedores/fornecedores.routes.js';
 import { radarRoutes } from './modules/radar/radar.routes.js';
-// TEMPORARIAMENTE DESATIVADO: Enterprise Pack incompleto.
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
 import { registerAuthentication } from './middlewares/auth.js';
 import { prisma } from './lib/prisma.js';
 import { comoSistema } from './lib/tenant-context.js';
 import { ErroDeNegocio } from './lib/erros.js';
-import { serializerDeRequest } from './lib/log-redacao.js';
-import { iniciarAgendadorDeSnapshot } from './scripts/scheduler.js';
+import { opcoesDeLog } from './lib/logger.js';
+import { configuracaoTrustProxy } from './lib/client-ip.js';
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { createRateLimiter } from './middlewares/rateLimiter.js';
+import { iniciarAgendadorDeSnapshot, pararAgendadorDeSnapshot, TAREFAS_DIARIAS } from './scripts/scheduler.js';
+import { tarefasAtrasadas } from './lib/tarefa-agendada.js';
 import { iniciarAgendadorML, pararAgendadorML } from './modules/integracoes/agendador-ml.js';
 import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integracoes/shopee/shopee-scheduler.js';
 
@@ -86,9 +90,39 @@ dotenv.config();
  * só as chaves sensíveis conhecidas são afetadas (ver `lib/log-redacao.ts`).
  */
 const app = Fastify({
-  logger: { serializers: { req: serializerDeRequest } },
+  // Configuração única de log (redação de segredos, nível por LOG_LEVEL): lib/logger.ts.
+  logger: opcoesDeLog,
   bodyLimit: 20 * 1024 * 1024,
-  trustProxy: true,
+  // `true` (padrão anterior) ou o número de proxies confiáveis em TRUST_PROXY_HOPS: lib/client-ip.ts.
+  trustProxy: configuracaoTrustProxy(),
+  // Identificador de requisição: reaproveita o `X-Request-Id` recebido (se tiver formato seguro)
+  // ou gera um UUID. Vai em toda linha de log (`reqId`) e volta no cabeçalho da resposta.
+  requestIdHeader: false,
+  genReqId: (req) => {
+    const recebido = req.headers['x-request-id'];
+    const valor = Array.isArray(recebido) ? recebido[0] : recebido;
+    return valor && /^[A-Za-z0-9._-]{8,64}$/.test(valor) ? valor : randomUUID();
+  },
+});
+
+// Cabeçalhos de segurança em TODA resposta da API.
+// A CSP restritiva vale só para respostas JSON (a API não serve páginas); PDFs e
+// downloads continuam abrindo normalmente.
+app.addHook('onSend', async (request, reply, payload) => {
+  reply.header('X-Request-Id', request.id);
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.header('X-Frame-Options', 'DENY');
+  reply.header('Referrer-Policy', 'no-referrer');
+  reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  reply.header('Cross-Origin-Opener-Policy', 'same-origin');
+  if (process.env.NODE_ENV === 'production') {
+    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  const tipo = String(reply.getHeader('content-type') ?? '');
+  if (tipo.startsWith('application/json')) {
+    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  }
+  return payload;
 });
 
 // Métodos declarados e origens normalizadas: ver lib/cors.ts.
@@ -113,7 +147,26 @@ await app.register(registerAuthentication);
  *     o detalhe completo vai só para o log do servidor, nunca na resposta.
  */
 app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
-  request.log.error(error);
+  // Nível de log pelo TIPO do erro: falha do cliente (validação, regra de negócio,
+  // 4xx) é `info`; só o que vira 500 é `error` — é o que monitoramento e alertas contam.
+  const rota = request.routeOptions?.url ?? request.url.split('?')[0];
+  const erroDoCliente = error.name === 'ZodError'
+    || error instanceof ErroDeNegocio && error.status < 500
+    || (error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2002' || error.code === 'P2025'))
+    || (typeof error.statusCode === 'number' && error.statusCode >= 400 && error.statusCode < 500)
+    || error.constructor === Error;
+  // Capacidade esgotada (fila de conexões/transação além do tempo): 503 com Retry-After,
+  // para o cliente tentar de novo — não é bug, é sobrecarga. Registrado para o monitoramento.
+  const sobrecarga = error instanceof Prisma.PrismaClientKnownRequestError && (error.code === 'P2028' || error.code === 'P2024');
+  if (sobrecarga) {
+    request.log.warn({ rota, evento: 'capacidade_excedida', mensagem: error.message?.slice(0, 200) }, 'transação sem conexão disponível a tempo');
+    return reply.status(503).header('Retry-After', '2').send({ error: 'Sistema ocupado no momento. Tente novamente em instantes.', referencia: request.id });
+  }
+  if (erroDoCliente) {
+    request.log.info({ rota, erro: error.name, mensagem: error.message?.slice(0, 300) }, 'requisição recusada');
+  } else {
+    request.log.error({ err: error, rota, evento: 'erro_interno' }, 'erro interno não tratado');
+  }
 
   if (error.name === 'ZodError') {
     const zodError = error as unknown as { issues: unknown };
@@ -140,10 +193,48 @@ app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: Fastif
     return reply.status(400).send({ error: error.message });
   }
 
-  return reply.status(500).send({ error: 'Erro interno do servidor.' });
+  // `referencia` = id da requisição: o usuário pode informá-lo e o erro é achado no log.
+  return reply.status(500).send({ error: 'Erro interno do servidor.', referencia: request.id });
 });
 
+// Disponibilidade (liveness): o processo responde. Usado pelo health check do Render.
 app.get('/health', async () => ({ status: 'ok', service: 'NEXUS OS' }));
+
+// Prontidão (readiness): o processo consegue falar com o banco. 503 quando não.
+// Não expõe host, versão nem mensagem de erro do banco — só o estado e a latência.
+app.get('/health/ready', async (request, reply) => {
+  const inicio = Date.now();
+  try {
+    await Promise.race([
+      comoSistema('health:ready', () => prisma.$queryRaw`SELECT 1`),
+      new Promise((_, rejeitar) => setTimeout(() => rejeitar(new Error('timeout do banco (3 s)')), 3000)),
+    ]);
+    const latenciaBancoMs = Date.now() - inicio;
+    // Tarefas diárias sem sucesso há mais de 26 h (o monitor externo alerta). Não derruba a prontidão.
+    const atrasadas = await tarefasAtrasadas([...TAREFAS_DIARIAS]).catch(() => [] as string[]);
+    return { status: 'ok', banco: 'ok', latenciaBancoMs, tarefasAtrasadas: atrasadas, uptimeS: Math.round(process.uptime()) };
+  } catch (err) {
+    request.log.error({ err, evento: 'banco_indisponivel' }, 'health/ready: banco indisponível');
+    return reply.status(503).send({ status: 'indisponivel', banco: 'falha', uptimeS: Math.round(process.uptime()) });
+  }
+});
+
+// Erros de tela do frontend (error.tsx / global-error.tsx): vão para o MESMO log
+// estruturado do backend, com o id da requisição, para serem achados e contados.
+// Público de propósito (a tela pode quebrar antes do login), com corpo pequeno
+// e validado, e limite por IP.
+const limiteTelemetria = createRateLimiter(30, 60_000, { nome: 'telemetria-erro' });
+const esquemaErroFrontend = z.object({
+  mensagem: z.string().trim().min(1).max(500),
+  digest: z.string().max(100).optional(),
+  pagina: z.string().max(300).optional(),
+  pilha: z.string().max(4000).optional(),
+});
+app.post('/telemetria/erro-frontend', { preHandler: limiteTelemetria, bodyLimit: 16 * 1024 }, async (request, reply) => {
+  const dados = esquemaErroFrontend.parse(request.body);
+  request.log.warn({ evento: 'erro_frontend', ...dados, userAgent: String(request.headers['user-agent'] ?? '').slice(0, 200) }, 'erro no frontend');
+  return reply.status(204).send();
+});
 
 await app.register(dashboardRealRoutes, { prefix: "/dashboard" });
 await app.register(authRoutes);
@@ -188,6 +279,9 @@ await app.register(fiscalRoutes);
 // Radar Organizacional: uma única chamada (/radar/resumo) alimenta a tela.
 await app.register(radarRoutes, { prefix: "/radar" });
 
+// Exportado para testes de integração (o servidor só escuta quando este arquivo é o ponto de entrada).
+export { app };
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT || 3333);
   await app.listen({ port, host: '0.0.0.0' });
@@ -202,6 +296,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   async function encerrarComCuidado(sinal: string) {
     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);
+    pararAgendadorDeSnapshot();
     await pararAgendadorML();
     await pararAgendadorShopee();
     await app.close();

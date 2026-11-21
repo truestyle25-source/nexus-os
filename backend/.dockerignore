@@ -1,0 +1,15 @@
+# Nunca levar para dentro da imagem: segredos, backups, dependências da máquina local e saídas.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+backups
+*.dump
+*.log
+*.local
+tests
+coverage
+audit_query.js
+backup-*
+s backup-*

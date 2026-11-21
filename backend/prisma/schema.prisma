@@ -238,6 +238,8 @@ model Usuario {
   nome                      String
   email                     String                  @unique
   senhaHash                 String
+  // Tokens emitidos ANTES deste instante são recusados (troca/redefinição de senha encerra todas as sessões).
+  sessoesValidasDesde       DateTime?
   status                    StatusGeral             @default(ATIVO)
   origem                    Origem                  @default(MANUAL)
   ultimoLogin               DateTime?
@@ -2935,6 +2937,34 @@ model LoginAttempt {
 
   @@index([ip, createdAt])
   @@index([email, createdAt])
+}
+
+// --- Rate limit distribuído (janela fixa) ---
+// Um contador por (chave, início da janela), incrementado de forma atômica
+// (INSERT ... ON CONFLICT). Compartilhado por todas as instâncias do backend e
+// preservado entre reinícios. Sem dados de empresa: acesso só em escopo de sistema (RLS).
+model RateLimitJanela {
+  chave        String
+  janelaInicio DateTime
+  contador     Int      @default(1)
+  expiraEm     DateTime
+
+  @@id([chave, janelaInicio])
+  @@index([expiraEm])
+}
+
+// --- Trava de tarefas agendadas entre instâncias ---
+// Garante que uma tarefa diária (snapshot de estoque, fechamento de expediente)
+// rode uma única vez por dia mesmo com várias instâncias do backend.
+model TarefaAgendada {
+  nome              String    @id
+  ultimoDia         String? // AAAA-MM-DD (UTC) da última execução reivindicada
+  leaseExpiraEm     DateTime?
+  instancia         String?
+  ultimaExecucaoEm  DateTime?
+  ultimoSucessoEm   DateTime?
+  ultimoErro        String?
+  updatedAt         DateTime  @updatedAt
 }
 
 // --- Se+ï¿½ï¿½o 17: NexusErpRecord ---

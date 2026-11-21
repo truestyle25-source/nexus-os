@@ -33,6 +33,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
+import { logDe } from '../../lib/logger.js';
+const log = logDe('agendador-ml');
 import {
   executarComTravaDeSync,
   sincronizarProdutos,
@@ -234,7 +236,7 @@ async function reagendarComErro(
         instanciaId: null,
       },
     });
-    console.warn(`[ml-agendador] tarefa ${tarefaId} PAUSADA (erro permanente): ${motivo}`);
+    log.warn({ tarefaId, motivo, evento: 'integracao_falhou', integracao: 'mercadolivre' }, 'tarefa pausada (erro permanente)');
     return;
   }
   await prisma.sincronizacaoTarefa.update({
@@ -249,7 +251,7 @@ async function reagendarComErro(
       instanciaId: null,
     },
   });
-  console.warn(`[ml-agendador] tarefa ${tarefaId} retentativa ${tentativa} agendada: ${motivo}`);
+  log.warn({ tarefaId, tentativa, motivo, integracao: 'mercadolivre' }, 'retentativa agendada');
 }
 
 /** Mede processados/falhas do resultado do serviço pelo tipo da tarefa. */
@@ -342,7 +344,7 @@ async function executarTarefa(tarefa: {
       // Última linha de defesa: libera a execução para não ficar presa em
       // EXECUTANDO até expirar o lease (a recuperação por lease cobriria,
       // mas evitamos a espera desnecessária).
-      console.error(`[ml-agendador] falha ao registrar erro da tarefa ${tarefa.id}:`, falhaDeGravacao);
+      log.error({ err: falhaDeGravacao, tarefaId: tarefa.id }, 'falha ao registrar erro da tarefa');
       await prisma.sincronizacaoTarefa
         .update({ where: { id: tarefa.id }, data: { status: 'AGUARDANDO', leaseExpiraEm: null, instanciaId: null } })
         .catch(() => undefined);
@@ -442,15 +444,15 @@ async function ciclo(): Promise<void> {
     const { executarFilaNotificacoesML } = await import('./mercadolivre-notificacoes.service.js');
     const fila = await executarFilaNotificacoesML();
     if (fila.processadas > 0 || fila.ignoradas > 0 || fila.falhasPermanentes > 0 || fila.retentativas > 0 || fila.recuperadas > 0) {
-      console.log(`[ml-agendador] fila de webhooks: ${JSON.stringify(fila)}`);
+      log.info({ fila }, 'fila de webhooks processada');
     }
     const resumo = await executarTickML();
     if (resumo.execucoes > 0 || resumo.desengatadas > 0) {
-      console.log(`[ml-agendador] tick: ${JSON.stringify(resumo)}`);
+      log.info({ resumo }, 'tick concluído');
     }
   } catch (err) {
     // O loop NÃO morre por um erro do tick (ex.: banco reiniciando).
-    console.error('[ml-agendador] tick falhou (próxima tentativa no próximo ciclo):', err);
+    log.error({ err, evento: 'integracao_falhou', integracao: 'mercadolivre' }, 'tick falhou (próxima tentativa no próximo ciclo)');
   } finally {
     agendarProximoCiclo();
   }
@@ -464,17 +466,17 @@ async function ciclo(): Promise<void> {
  */
 async function iniciarAgendadorMLInterno(): Promise<void> {
   if (process.env.ML_SYNC_AUTO === 'false') {
-    console.log('[ml-agendador] desabilitado via ML_SYNC_AUTO=false.');
+    log.info('desabilitado via ML_SYNC_AUTO=false');
     return;
   }
   if (rodando) return;
   try {
     const contas = await provisionarTarefasDeContasConectadas();
-    console.log(`[ml-agendador] iniciado (instancia ${INSTANCIA_ID}, ${contas} conta(s) conectada(s) provisionada(s)).`);
+    log.info({ instancia: INSTANCIA_ID, contas }, 'agendador iniciado');
   } catch (err) {
     // Sem banco no boot: loga e inicia mesmo assim — tarefas JÁ existentes
     // continuam executando normalmente pelo tick.
-    console.error('[ml-agendador] provisionamento de boot falhou:', err);
+    log.error({ err }, 'provisionamento de boot falhou');
   }
   rodando = true;
   agendarProximoCiclo();

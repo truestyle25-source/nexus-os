@@ -104,3 +104,16 @@ Chaves de API (`ChaveApi`, migração `202609131300_api_publica_chaves`) autenti
 ## Backup
 
 `npm run backup` roda `pg_dump -F c` contra `DIRECT_URL` (ou `DATABASE_URL`, se ela não existir), salva em `BACKUP_DIR` (padrão `./backups`, já no `.gitignore`) e aplica retenção (`BACKUP_RETENCAO_DIAS`, padrão 30 dias). `npm run backup:restaurar -- <arquivo>` roda `pg_restore --clean --if-exists`. Não testado contra um Postgres real neste ambiente (sem banco/rede aqui) — rode uma vez em homologação antes de confiar em produção. Sem agendamento automático — decida a frequência e rode via cron do seu provedor.
+
+## Atualização de 2026-11-21 (pilares de infraestrutura)
+
+Antes ou junto do deploy do backend desta versão:
+
+```bash
+cd backend
+DATABASE_URL="$DIRECT_URL" npx prisma migrate deploy        # migração 202611211000_pilares_infra (aditiva)
+psql "$DIRECT_URL" -v ON_ERROR_STOP=1 -f prisma/seguranca/01_rls_policies.sql   # RLS nas 2 tabelas novas
+```
+
+Documentação nova: `docs/BACKUP_E_RECUPERACAO.md`, `docs/CI_CD_E_DEPLOY.md`, `docs/OBSERVABILIDADE.md`,
+`docs/ESCALABILIDADE_E_CARGA.md`, `docs/SEGURANCA_SESSOES_E_CREDENCIAIS.md` e `docs/PLANO_EVOLUCAO_DEPENDENCIAS.md`.

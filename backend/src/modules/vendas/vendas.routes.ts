@@ -708,10 +708,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         }
 
         if (body.estornarFinanceiro && venda.clienteId) {
-          const vendasCliente = await tx.venda.findMany({ where: { empresaId: user.empresaId, clienteId: venda.clienteId, status: 'FINALIZADA' }, select: { total: true, createdAt: true } });
-          const totalCliente = vendasCliente.reduce((s, v) => s + Number(v.total), 0);
-          const freq = vendasCliente.length;
-          const ultima = vendasCliente.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.createdAt ?? null;
+          // Agregação no banco (antes: TODAS as vendas do cliente eram carregadas na memória a cada cancelamento).
+          const agregado = await tx.venda.aggregate({ where: { empresaId: user.empresaId, clienteId: venda.clienteId, status: 'FINALIZADA' }, _sum: { total: true }, _count: { _all: true }, _max: { createdAt: true } });
+          const totalCliente = Number(agregado._sum.total ?? 0);
+          const freq = agregado._count._all;
+          const ultima = agregado._max.createdAt ?? null;
           await tx.cliente.update({ where: { id: venda.clienteId }, data: { valorTotalComprado: totalCliente, frequencia: freq, ticketMedio: freq ? totalCliente / freq : 0, ultimaCompra: ultima } });
         }
 

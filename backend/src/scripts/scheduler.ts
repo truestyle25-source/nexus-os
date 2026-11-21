@@ -7,7 +7,11 @@
  * `POST /estoque/snapshot/gerar`. Se ninguém configurasse esse cron, o giro
  * de estoque ficava preso no fallback aproximado para sempre.
  *
- * Agora, se `SNAPSHOT_AUTO_ENABLED=true` (padrão), o próprio processo do
+ * Desde 2026-11-21 a execução é verificada a cada 15 min e protegida por uma trava
+ * no banco (TarefaAgendada): roda UMA vez por dia entre todas as instâncias e é
+ * retomada se o processo estava parado no horário (reinício, Render Free dormindo).
+ *
+ * Antes disso, se `SNAPSHOT_AUTO_ENABLED=true` (padrão), o próprio processo do
  * backend agenda a execução diária via `setTimeout`/`setInterval` — sem
  * dependência nova, sem precisar de cron externo. Isso só funciona enquanto
  * o processo do backend estiver rodando continuamente (não serve para
@@ -19,6 +23,13 @@
 import { prisma } from '../lib/prisma.js';
 import { gerarSnapshotDoDia } from '../modules/estoque/estoque-indicadores.service.js';
 import { fecharExpediente } from '../modules/rh/ponto-fechamento.service.js';
+import { executarUmaVezPorDia } from '../lib/tarefa-agendada.js';
+import { logDe } from '../lib/logger.js';
+
+const log = logDe('agendador');
+
+/** Nomes das tarefas diárias (chave da trava em TarefaAgendada; usados também pelo /health/ready). */
+export const TAREFAS_DIARIAS = ['snapshot-estoque', 'fechamento-expediente'] as const;
 
 /**
  * Fecha o expediente de todas as empresas ativas, marcando as faltas.
@@ -26,62 +37,77 @@ import { fecharExpediente } from '../modules/rh/ponto-fechamento.service.js';
  * Roda DEPOIS do snapshot, no mesmo horário: os dois leem o dia anterior e são
  * idempotentes, mas o snapshot de estoque não depende de ponto — se o
  * fechamento falhar, o giro de estoque já foi salvo.
+ *
+ * Falha de UMA empresa não interrompe as outras; no fim, se alguma falhou, a
+ * tarefa é registrada como falha (para o monitor e para ser retomada).
  */
 async function fecharExpedientesDeTodasAsEmpresas(): Promise<void> {
-  const empresas = await prisma.empresa.findMany({ where: { status: 'ATIVO' }, select: { id: true, nome: true } });
+  const empresas = await prisma.empresa.findMany({ where: { status: 'ATIVO' }, select: { id: true } });
   let total = 0;
+  const falhas: string[] = [];
   for (const empresa of empresas) {
     try {
       const { faltasMarcadas } = await fecharExpediente(empresa.id);
       total += faltasMarcadas;
     } catch (err) {
-      console.error(`[scheduler] fechamento de expediente falhou para ${empresa.nome} (${empresa.id}):`, err);
+      falhas.push(empresa.id);
+      log.error({ err, empresaId: empresa.id, tarefa: 'fechamento-expediente' }, 'fechamento de expediente falhou para a empresa');
     }
   }
-  if (total > 0) console.log(`[scheduler] expediente fechado: ${total} faltas marcadas em ${empresas.length} empresas.`);
+  log.info({ tarefa: 'fechamento-expediente', empresas: empresas.length, faltasMarcadas: total, falhas: falhas.length }, 'fechamento de expediente processado');
+  if (falhas.length) throw new Error(`fechamento de expediente falhou em ${falhas.length} de ${empresas.length} empresa(s)`);
 }
 
 async function executarSnapshotDeTodasAsEmpresas(): Promise<void> {
-  const empresas = await prisma.empresa.findMany({ where: { status: 'ATIVO' }, select: { id: true, nome: true } });
+  const empresas = await prisma.empresa.findMany({ where: { status: 'ATIVO' }, select: { id: true } });
   let total = 0;
+  const falhas: string[] = [];
   for (const empresa of empresas) {
     try {
       const { processados } = await gerarSnapshotDoDia(empresa.id);
       total += processados;
     } catch (err) {
-      console.error(`[scheduler] snapshot falhou para empresa ${empresa.nome} (${empresa.id}):`, err);
+      falhas.push(empresa.id);
+      log.error({ err, empresaId: empresa.id, tarefa: 'snapshot-estoque' }, 'snapshot de estoque falhou para a empresa');
     }
   }
-  console.log(`[scheduler] snapshot diário concluído: ${empresas.length} empresas, ${total} linhas no total.`);
+  log.info({ tarefa: 'snapshot-estoque', empresas: empresas.length, linhas: total, falhas: falhas.length }, 'snapshot diário processado');
+  if (falhas.length) throw new Error(`snapshot falhou em ${falhas.length} de ${empresas.length} empresa(s)`);
 }
 
-function msAteProximoHorario(horaUtc: number): number {
-  const agora = new Date();
-  const proximo = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate(), horaUtc, 0, 0, 0));
-  if (proximo.getTime() <= agora.getTime()) {
-    proximo.setUTCDate(proximo.getUTCDate() + 1);
-  }
-  return proximo.getTime() - agora.getTime();
+/** A tarefa do dia já deveria ter rodado? (passou do horário configurado, em UTC) */
+export function passouDoHorario(horaUtc: number, agora = new Date()): boolean {
+  return agora.getUTCHours() >= horaUtc;
+}
+
+let verificador: NodeJS.Timeout | null = null;
+
+/** Uma verificação: se já passou do horário, executa cada tarefa diária (no máximo 1x/dia entre instâncias). */
+export async function verificarTarefasDiarias(horaUtc = Number(process.env.SNAPSHOT_HOUR_UTC ?? 3)): Promise<void> {
+  if (!passouDoHorario(horaUtc)) return;
+  await executarUmaVezPorDia('snapshot-estoque', executarSnapshotDeTodasAsEmpresas);
+  await executarUmaVezPorDia('fechamento-expediente', fecharExpedientesDeTodasAsEmpresas);
 }
 
 /**
- * Agenda a primeira execução para o próximo horário configurado (UTC) e,
- * a partir daí, repete a cada 24h. Chamado uma vez no boot do servidor
- * (server.ts). Não bloqueia o boot — o agendamento é assíncrono.
+ * Inicia o agendador: verifica 1 minuto depois do boot e, depois, a cada 15 min.
+ * Chamado uma vez no boot do servidor (server.ts). Não bloqueia o boot.
  */
 export function iniciarAgendadorDeSnapshot(): void {
   if (process.env.SNAPSHOT_AUTO_ENABLED === 'false') {
-    console.log('[scheduler] SNAPSHOT_AUTO_ENABLED=false — snapshot diário embutido desativado (use cron externo).');
+    log.info('SNAPSHOT_AUTO_ENABLED=false — tarefas diárias embutidas desativadas (use cron externo)');
     return;
   }
   const horaUtc = Number(process.env.SNAPSHOT_HOUR_UTC ?? 3);
-  const primeiraEsperaMs = msAteProximoHorario(horaUtc);
-  console.log(`[scheduler] snapshot diário agendado para daqui a ${Math.round(primeiraEsperaMs / 60000)} min (${horaUtc}h UTC), repetindo a cada 24h.`);
+  const rodar = () => void verificarTarefasDiarias(horaUtc).catch((err) => log.error({ err, evento: 'tarefa_falhou' }, 'verificação das tarefas diárias falhou'));
+  setTimeout(rodar, 60_000).unref();
+  verificador = setInterval(rodar, 15 * 60_000);
+  verificador.unref();
+  log.info({ horaUtc, intervaloMin: 15 }, 'agendador de tarefas diárias iniciado (trava distribuída no banco)');
+}
 
-  setTimeout(() => {
-    void executarSnapshotDeTodasAsEmpresas();
-    void fecharExpedientesDeTodasAsEmpresas();
-    setInterval(() => void executarSnapshotDeTodasAsEmpresas(), 24 * 60 * 60 * 1000);
-    setInterval(() => void fecharExpedientesDeTodasAsEmpresas(), 24 * 60 * 60 * 1000);
-  }, primeiraEsperaMs);
+/** Para o verificador (encerramento gracioso). */
+export function pararAgendadorDeSnapshot(): void {
+  if (verificador) clearInterval(verificador);
+  verificador = null;
 }
