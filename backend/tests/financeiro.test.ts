@@ -154,7 +154,10 @@ async function main() {
 
     const filtradoPendente = await app.inject({ method: 'GET', url: '/financeiro?status=PENDENTE', headers: H });
     const listaPendentes = filtradoPendente.json().lancamentos;
-    ok('filtro PENDENTE traz os sem-vencimento (249 receitas)', listaPendentes.some((l: any) => l.descricao === 'Receita 0'), `veio ${listaPendentes.length}`);
+    // As 249 receitas são criadas no mesmo instante (createMany) e a lista corta em 200 por
+    // createdAt: QUAL delas entra no corte é arbitrário. O que importa é o filtro trazer as
+    // receitas sem vencimento — antes o teste exigia exatamente a "Receita 0" e falhava ao acaso.
+    ok('filtro PENDENTE traz os sem-vencimento (249 receitas)', listaPendentes.some((l: any) => /^Receita \d+$/.test(l.descricao)), `veio ${listaPendentes.length}`);
     ok('filtro PENDENTE exclui a vencida', !listaPendentes.some((l: any) => l.descricao === 'Vencida de teste'));
     // "Compra de teste" vence em 2030, então É PENDENTE de verdade — mas fica fora
     // da página de 200 (os 249 registros sem vencimento são mais novos). O que
