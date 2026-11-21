@@ -43,7 +43,20 @@ function urlComLimiteDeConexoes(): string | undefined {
 }
 
 const datasourceUrl = urlComLimiteDeConexoes();
-const base = datasourceUrl ? new PrismaClient({ datasourceUrl }) : new PrismaClient();
+
+/**
+ * Tempos das transações interativas (`prisma.$transaction(async tx => ...)`).
+ * Padrão do Prisma: espera de 2 s por uma conexão livre e duração máxima de 5 s.
+ * No teste de carga (100 vendas simultâneas com pool de 10), 18–24% das vendas
+ * falhavam com "Unable to start a transaction in the given time" — a venda era
+ * recusada em vez de esperar a vez. Agora a transação espera até 10 s na fila e
+ * pode durar até 15 s (mesmo limite do statement_timeout do papel nexus_app).
+ */
+const transactionOptions = {
+  maxWait: Number(process.env.PRISMA_TX_MAX_WAIT_MS) || 10_000,
+  timeout: Number(process.env.PRISMA_TX_TIMEOUT_MS) || 15_000,
+};
+const base = datasourceUrl ? new PrismaClient({ datasourceUrl, transactionOptions }) : new PrismaClient({ transactionOptions });
 
 function minusculaInicial(nome: string): string {
   return nome.charAt(0).toLowerCase() + nome.slice(1);

@@ -1,6 +1,8 @@
 import { prisma } from '../../../lib/prisma.js';
 import { sincronizarStatusPedidosShopee } from './shopee.service.js';
 import { ShopeeApiError } from './shopee-api.client.js';
+import { logDe } from '../../../lib/logger.js';
+const log = logDe('agendador-shopee');
 
 const TICK_MS = 30_000;
 const LEASE_MS = 5 * 60_000;
@@ -74,7 +76,7 @@ async function tick() {
     }
   } catch (error) {
     // Erros de infraestrutura não devem encerrar o processo nem o agendador.
-    console.error('[shopee-sync] scheduler tick failed', error instanceof Error ? error.message : 'unknown');
+    log.error({ err: error, evento: 'integracao_falhou', integracao: 'shopee' }, 'tick do agendador falhou');
   } finally {
     running = false;
     if (!stopped) {

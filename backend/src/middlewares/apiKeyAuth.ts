@@ -2,8 +2,19 @@ import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { prisma } from '../lib/prisma.js';
 import { comoSistema, definirTenantDaRequisicao } from '../lib/tenant-context.js';
+import { createRateLimiter } from './rateLimiter.js';
 
 const hashChave = (chave: string): string => createHash('sha256').update(chave).digest('hex');
+
+/** Requisições por minuto por chave de API (`API_PUBLICA_LIMITE_MINUTO`, padrão 120). */
+const LIMITE_POR_MINUTO = Number(process.env.API_PUBLICA_LIMITE_MINUTO) || 120;
+const limitePorChave = createRateLimiter(LIMITE_POR_MINUTO, 60_000, {
+  nome: 'api-publica',
+  chaveExtra: (req) => {
+    const h = req.headers.authorization;
+    return h?.startsWith('Bearer ') ? `chave:${hashChave(h.slice(7)).slice(0, 24)}` : null;
+  },
+});
 
 /**
  * Autenticação da API pública (Seção 36) — SEPARADA da autenticação de
@@ -34,6 +45,9 @@ export function apiKeyAuth(escopoRequerido: string) {
       reply.status(403).send({ error: `Esta chave não tem o escopo necessário: ${escopoRequerido}.` });
       return;
     }
+    // Limite por CHAVE de API (não por IP), compartilhado entre instâncias.
+    await limitePorChave(request, reply);
+    if (reply.sent) return;
     // Daqui em diante a requisição opera no contexto da empresa dona da chave.
     definirTenantDaRequisicao(registro.empresaId, '');
     await prisma.chaveApi.update({ where: { id: registro.id }, data: { ultimoUso: new Date() } });

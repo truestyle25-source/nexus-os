@@ -1,0 +1,62 @@
+# Monitor de disponibilidade da produção (a cada 10 minutos).
+#
+# Confere, de fora:
+#   - API viva (/health) — com tolerância ao "despertar" do Render Free (até ~60 s);
+#   - API pronta (/health/ready): banco respondendo e tarefas diárias sem atraso;
+#   - frontend respondendo (/login).
+# Falha = execução vermelha = e-mail do GitHub para o dono do repositório (alerta).
+#
+# Efeito colateral intencional: a chamada periódica impede que o Render Free hiberne
+# por inatividade (o que também deixaria de rodar as tarefas diárias embutidas).
+name: Monitor de produção
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      api:
+        description: 'URL base da API (para testar o alerta, use uma URL inválida)'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor-producao
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Disponibilidade
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API: ${{ inputs.api || vars.MONITOR_API_URL || 'https://nexus-os-7u4g.onrender.com' }}
+      FRONT: ${{ vars.MONITOR_FRONTEND_URL || 'https://nexus-os-truestyle25-source.vercel.app' }}
+    steps:
+      - name: API viva (/health)
+        run: |
+          for i in 1 2 3 4; do
+            if curl -fsS --max-time 60 "$API/health" -o /tmp/health.json; then cat /tmp/health.json; echo; exit 0; fi
+            echo "tentativa $i falhou; aguardando"; sleep 10
+          done
+          echo "::error::API indisponível: $API/health não respondeu em 4 tentativas"; exit 1
+
+      - name: API pronta (/health/ready — banco e tarefas diárias)
+        run: |
+          codigo=$(curl -sS --max-time 30 -o /tmp/ready.json -w '%{http_code}' "$API/health/ready" || echo 000)
+          cat /tmp/ready.json 2>/dev/null; echo
+          if [ "$codigo" = "404" ]; then echo "::error::/health/ready não existe: a versão publicada é anterior a esta (deploy pendente?)"; exit 1; fi
+          if [ "$codigo" != "200" ]; then echo "::error::API sem banco: /health/ready respondeu HTTP $codigo"; exit 1; fi
+          atrasadas=$(jq -r '.tarefasAtrasadas | join(",")' /tmp/ready.json)
+          if [ -n "$atrasadas" ]; then echo "::error::Tarefas diárias sem sucesso há mais de 26 h: $atrasadas"; exit 1; fi
+          latencia=$(jq -r '.latenciaBancoMs' /tmp/ready.json)
+          echo "latência do banco: ${latencia} ms"
+          if [ "$latencia" -gt 2000 ]; then echo "::warning::latência do banco alta: ${latencia} ms"; fi
+
+      - name: Frontend (/login)
+        run: |
+          codigo=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$FRONT/login" || echo 000)
+          echo "frontend: HTTP $codigo"
+          [ "$codigo" = "200" ] || { echo "::error::Frontend indisponível: HTTP $codigo"; exit 1; }

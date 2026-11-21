@@ -106,7 +106,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
 
     const jti = randomUUID();
-    const token = app.jwt.sign({ id: result.usuario.id, empresaId: result.empresa.id, email: result.usuario.email, jti }, { expiresIn: '8h' });
+    const token = app.jwt.sign({ id: result.usuario.id, empresaId: result.empresa.id, email: result.usuario.email, jti, emitidoEmMs: Date.now() }, { expiresIn: '8h' });
     await registrarAuditoria({
       usuarioId: result.usuario.id,
       empresaId: result.empresa.id,
@@ -135,7 +135,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     await prisma.usuario.update({ where: { id: usuario.id }, data: { ultimoLogin: new Date() } });
     const jti = randomUUID();
-    const token = app.jwt.sign({ id: usuario.id, empresaId: usuario.empresaId, email: usuario.email, jti }, { expiresIn: '8h' });
+    const token = app.jwt.sign({ id: usuario.id, empresaId: usuario.empresaId, email: usuario.email, jti, emitidoEmMs: Date.now() }, { expiresIn: '8h' });
     await registrarAuditoria({
       usuarioId: usuario.id,
       empresaId: usuario.empresaId,
@@ -211,7 +211,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
     const senhaHash = await hashSenha(novaSenha);
     await prisma.$transaction([
-      prisma.usuario.update({ where: { id: registro.usuarioId }, data: { senhaHash } }),
+      prisma.usuario.update({ where: { id: registro.usuarioId }, data: { senhaHash, sessoesValidasDesde: new Date() } }),
       prisma.tokenRecuperacaoSenha.update({ where: { id: registro.id }, data: { usadoEm: new Date() } }),
     ]);
     const usuario = await prisma.usuario.findUnique({ where: { id: registro.usuarioId }, select: { empresaId: true } });
@@ -339,7 +339,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const senhaHash = await hashSenha(novaSenha);
-    await prisma.usuario.update({ where: { id: usuarioId }, data: { senhaHash } });
+    // Encerra TODAS as sessões do usuário (não só a atual): tokens anteriores ao marco são recusados.
+    await prisma.usuario.update({ where: { id: usuarioId }, data: { senhaHash, sessoesValidasDesde: new Date() } });
 
     if (jti && exp) {
       await prisma.tokenRevogado.upsert({

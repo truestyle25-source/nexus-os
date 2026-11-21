@@ -6,6 +6,8 @@ export interface AuthUserPayload {
   empresaId: string;
   email: string;
   jti: string;
+  /** Instante de emissão em ms (o `iat` tem resolução de segundos). Usado para encerrar sessões em massa. */
+  emitidoEmMs?: number;
 }
 
 declare module '@fastify/jwt' {

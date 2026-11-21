@@ -17,6 +17,16 @@
  *   fluxo de recuperação de senha (a resposta ao usuário já é genérica).
  */
 
+import { logDe } from './logger.js';
+
+const log = logDe('email');
+
+/** E-mail mascarado para log (LGPD): mantém 2 letras e o domínio. */
+export function mascararEmail(email: string): string {
+  const [usuario = '', dominio = ''] = String(email).split('@');
+  return `${usuario.slice(0, 2)}***@${dominio}`;
+}
+
 interface ResultadoEnvio {
   enviado: boolean;
   erro?: string;
@@ -27,10 +37,7 @@ async function enviarEmail(params: { para: string; assunto: string; html: string
   const remetente = process.env.EMAIL_FROM || 'NEXUS OS <onboarding@resend.dev>';
 
   if (!apiKey) {
-    console.warn(
-      `[email] RESEND_API_KEY não configurada — e-mail para ${params.para} NÃO foi enviado. ` +
-        'Configure RESEND_API_KEY e EMAIL_FROM no .env para habilitar o envio real.',
-    );
+    log.warn({ para: mascararEmail(params.para), evento: 'email_nao_enviado' }, 'RESEND_API_KEY não configurada: e-mail NÃO foi enviado');
     return { enviado: false, erro: 'RESEND_API_KEY não configurada' };
   }
 
@@ -52,14 +59,14 @@ async function enviarEmail(params: { para: string; assunto: string; html: string
 
     if (!resposta.ok) {
       const corpo = await resposta.text().catch(() => '');
-      console.error(`[email] falha ao enviar para ${params.para}: HTTP ${resposta.status} — ${corpo}`);
+      log.error({ para: mascararEmail(params.para), status: resposta.status, corpo: corpo.slice(0, 500), evento: 'integracao_falhou', integracao: 'resend' }, 'falha ao enviar e-mail');
       return { enviado: false, erro: `HTTP ${resposta.status}` };
     }
 
     return { enviado: true };
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
-    console.error(`[email] erro de rede ao enviar para ${params.para}: ${mensagem}`);
+    log.error({ para: mascararEmail(params.para), mensagem, evento: 'integracao_falhou', integracao: 'resend' }, 'erro de rede ao enviar e-mail');
     return { enviado: false, erro: mensagem };
   }
 }
