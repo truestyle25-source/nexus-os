@@ -1,0 +1,124 @@
+# Backup diário VERIFICADO do banco de produção (Supabase).
+#
+# Roda fora do Render e fora da máquina local. Só LÊ a produção.
+# A cada execução: dump -> integridade -> RESTAURAÇÃO de teste num Postgres descartável
+# (contagem de linhas tabela a tabela contra a origem) -> SHA-256 -> cifragem AES-256 -> envio.
+#
+# Destino do arquivo cifrado:
+#   - Armazenamento S3-compatível (Cloudflare R2, Backblaze B2, AWS S3) quando os segredos
+#     BACKUP_S3_* existem — recomendado; retenção aplicada aqui (BACKUP_RETENCAO_DIAS, padrão 30).
+#   - Senão, artefato do GitHub Actions (cifrado, 30 dias). Repositório público: o arquivo é
+#     baixável por usuários logados no GitHub, por isso NUNCA sai daqui sem cifragem.
+#
+# Falha (inclusive por segredo ausente) = execução vermelha = e-mail do GitHub para o dono do
+# repositório. Esse é o alerta de "backup não aconteceu".
+name: Backup diário
+
+on:
+  schedule:
+    - cron: '17 6 * * *' # 06:17 UTC = 03:17 em Brasília (fora do horário comercial)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-producao
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Backup verificado
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      verificacao:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: verificacao
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Segredos obrigatórios presentes
+        env:
+          ORIGEM: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          faltando=()
+          [ -n "$ORIGEM" ] || faltando+=(BACKUP_DATABASE_URL)
+          [ -n "$PASS" ] || faltando+=(BACKUP_PASSPHRASE)
+          if [ ${#faltando[@]} -gt 0 ]; then
+            echo "::error::Backup NÃO executado: configure os segredos ${faltando[*]} (docs/BACKUP_E_RECUPERACAO.md)."
+            exit 1
+          fi
+
+      - name: Cliente PostgreSQL 17
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          pg_dump --version
+
+      - name: Backup + teste de restauração + cifragem
+        env:
+          ORIGEM_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          VERIFICACAO_ADMIN_URL: postgresql://postgres:verificacao@localhost:5432/postgres
+          SAIDA_DIR: ${{ runner.temp }}/backup
+        run: bash backend/scripts/backup-producao.sh
+
+      - name: Enviar ao armazenamento S3-compatível
+        id: s3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.BACKUP_S3_REGION || 'auto' }}
+          ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+          RETENCAO_DIAS: ${{ vars.BACKUP_RETENCAO_DIAS || '30' }}
+        run: |
+          if [ -z "$BUCKET" ] || [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "enviado=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Armazenamento externo não configurado (BACKUP_S3_*). O backup cifrado fica só como artefato do GitHub (30 dias)."
+            exit 0
+          fi
+          ARGS=(); [ -n "$ENDPOINT" ] && ARGS=(--endpoint-url "$ENDPOINT")
+          DIR="${{ runner.temp }}/backup"
+          for f in "$DIR/$BACKUP_BASE.dump.gpg" "$DIR/$BACKUP_BASE.dump.sha256" "$DIR/$BACKUP_BASE.relatorio.json"; do
+            aws "${ARGS[@]}" s3 cp "$f" "s3://$BUCKET/diario/$(basename "$f")" --only-show-errors
+          done
+          # Confere que o objeto chegou com o mesmo tamanho.
+          local_bytes=$(stat -c %s "$DIR/$BACKUP_BASE.dump.gpg")
+          remoto_bytes=$(aws "${ARGS[@]}" s3api head-object --bucket "$BUCKET" --key "diario/$BACKUP_BASE.dump.gpg" --query ContentLength --output text)
+          [ "$local_bytes" = "$remoto_bytes" ] || { echo "::error::tamanho remoto ($remoto_bytes) difere do local ($local_bytes)"; exit 1; }
+          # Retenção: apaga objetos de diario/ mais velhos que RETENCAO_DIAS.
+          limite=$(date -u -d "-$RETENCAO_DIAS days" +%Y-%m-%dT%H:%M:%S)
+          aws "${ARGS[@]}" s3api list-objects-v2 --bucket "$BUCKET" --prefix diario/ \
+            --query "Contents[?LastModified<'$limite'].Key" --output text | tr '\t' '\n' | grep -v '^None$' | while read -r k; do
+            [ -n "$k" ] && aws "${ARGS[@]}" s3 rm "s3://$BUCKET/$k" --only-show-errors && echo "retenção: removido $k"
+          done
+          echo "enviado=true" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar como artefato (cifrado)
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-${{ env.BACKUP_BASE }}
+          path: |
+            ${{ runner.temp }}/backup/*.dump.gpg
+            ${{ runner.temp }}/backup/*.dump.sha256
+            ${{ runner.temp }}/backup/*.relatorio.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "## Backup diário"
+            f=$(ls "${{ runner.temp }}"/backup/*.relatorio.json 2>/dev/null | tail -1)
+            if [ -n "$f" ]; then echo '```json'; cat "$f"; echo '```'; else echo "Sem relatório: o backup falhou antes da verificação."; fi
+            echo "Armazenamento externo: ${{ steps.s3.outputs.enviado || 'não executado' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

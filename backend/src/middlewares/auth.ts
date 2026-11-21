@@ -12,7 +12,7 @@ import { abrirContextoRequisicao, comoSistema, definirTenantDaRequisicao } from 
  - O usuário está ativo (status = 'ATIVO')
  - Retorna também a empresaId para validação de contexto (empresa diferente)
  */
-async function validarUsuarioId(user: { id?: unknown } | null | undefined): Promise<{ id: string; empresaId: string } | null> {
+async function validarUsuarioId(user: { id?: unknown; iat?: unknown; emitidoEmMs?: unknown } | null | undefined): Promise<{ id: string; empresaId: string } | null> {
   const rawId = user?.id
 
   // 1. Verificar se o ID existe e é do tipo string
@@ -33,7 +33,7 @@ async function validarUsuarioId(user: { id?: unknown } | null | undefined): Prom
   const usuarioExistente = await comoSistema('auth:validar-usuario', () =>
     prisma.usuario.findFirst({
       where: { id },
-      select: { id: true, status: true, empresaId: true },
+      select: { id: true, status: true, empresaId: true, sessoesValidasDesde: true },
     }),
   )
 
@@ -44,6 +44,20 @@ async function validarUsuarioId(user: { id?: unknown } | null | undefined): Prom
   // 4. Verificar se o usuário está ativo
   if (usuarioExistente.status !== 'ATIVO') {
     return null
+  }
+
+  // 5. Sessões encerradas em massa (troca/redefinição de senha): tokens emitidos
+  //    antes do marco são recusados. Tokens do login atual trazem `emitidoEmMs`
+  //    (precisão de ms). Tokens sem essa claim usam o `iat` (segundos) e, por
+  //    segurança, só valem se emitidos num segundo POSTERIOR ao da troca.
+  if (usuarioExistente.sessoesValidasDesde) {
+    const marcoMs = usuarioExistente.sessoesValidasDesde.getTime()
+    const valido = typeof user?.emitidoEmMs === 'number'
+      ? user.emitidoEmMs >= marcoMs
+      : typeof user?.iat === 'number' && user.iat > Math.floor(marcoMs / 1000)
+    if (!valido) {
+      return null
+    }
   }
 
   // 5. Retornar o ID válido e a empresaId para validação de contexto (empresa diferente)
@@ -96,6 +110,9 @@ export const registerAuthentication = fp(async (app: any) => {
     // A partir daqui todas as consultas desta requisição rodam no contexto da
     // empresa validada no banco (set_config por transação, ver lib/prisma.ts).
     definirTenantDaRequisicao(usuarioValidado.empresaId, usuarioValidado.id)
+
+    // Toda linha de log desta requisição passa a identificar empresa e usuário (ids, sem dado pessoal).
+    request.log = request.log.child({ empresaId: usuarioValidado.empresaId, usuarioId: usuarioValidado.id })
 
     // Revogacao de token (Seção 5 — "Alterar senha").
     //

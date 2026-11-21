@@ -11,7 +11,11 @@ function getApiUrl(): string {
     return DEFAULT_API_URL;
   }
 
-  const stored = localStorage.getItem('nexus_api_url')?.trim();
+  // A troca da URL da API pelo localStorage é ferramenta de DESENVOLVIMENTO.
+  // Em produção ela é ignorada: um script injetado (XSS) poderia gravar ali o
+  // endereço de outro servidor e passar a receber o token de cada requisição.
+  const permiteTroca = process.env.NODE_ENV !== 'production' || window.location.hostname === 'localhost';
+  const stored = permiteTroca ? localStorage.getItem('nexus_api_url')?.trim() : undefined;
 
   if (stored) {
     try {

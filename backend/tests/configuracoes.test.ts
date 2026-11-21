@@ -98,7 +98,7 @@ async function main() {
   });
   await prisma.permissao.createMany({ data: permissoes.map((p) => ({ ...p, usuarioId: usuario2.id })) });
 
-  const H = { authorization: `Bearer ${app.jwt.sign({ id: usuario.id, empresaId: empresa.id, email: usuario.email })}` };
+  let H = { authorization: `Bearer ${app.jwt.sign({ id: usuario.id, empresaId: empresa.id, email: usuario.email })}` };
   const Hsem = { authorization: `Bearer ${app.jwt.sign({ id: semPermissao.id, empresaId: empresa2.id, email: semPermissao.email })}` };
   const H2 = { authorization: `Bearer ${app.jwt.sign({ id: usuario2.id, empresaId: empresa2.id, email: usuario2.email })}` };
   const ids = [usuario.id, semPermissao.id, usuario2.id];
@@ -149,6 +149,12 @@ async function main() {
       payload: { senhaAtual: 'novaSenha456', novaSenha: '123' },
     });
     ok('nova senha curta -> recusada', curta.statusCode >= 400, `status=${curta.statusCode}`);
+    // A troca de senha encerra TODAS as sessões do usuário (Usuario.sessoesValidasDesde):
+    // o token emitido antes da troca deixa de valer, como a tela já pressupõe (manda ao login).
+    const tokenAntigo = await app.inject({ method: 'GET', url: '/auth/me', headers: H });
+    ok('token emitido antes da troca de senha -> 401', tokenAntigo.statusCode === 401, `status=${tokenAntigo.statusCode}`);
+    // Novo login (token emitido depois da troca) para seguir com os demais fluxos.
+    H = { authorization: `Bearer ${app.jwt.sign({ id: usuario.id, empresaId: empresa.id, email: usuario.email, emitidoEmMs: Date.now() } as any)}` };
 
     console.log('\n3. POST /usuarios — criacao');
     const novo = await app.inject({
