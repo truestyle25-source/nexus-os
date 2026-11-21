@@ -147,3 +147,51 @@ export const TIPOS_MOVIMENTO: Record<string, string> = {
   AJUSTE: 'Ajuste', INVENTARIO: 'Inventário', PERDA: 'Perda', AVARIA: 'Avaria', DESCARTE: 'Descarte', DEVOLUCAO: 'Devolução',
   PRODUCAO: 'Produção', CONSUMO_INSUMO: 'Consumo de insumo',
 };
+
+// ============================================================================
+// Composição do Kit (tipo de produto KIT)
+// ============================================================================
+
+export const CODIGO_TIPO_KIT = 'KIT';
+
+/** Unidade em que a quantidade de um componente pode ser informada. fatorParaBase: 1 desta = N da base. */
+export interface UnidadeComponente { id: Id | null; simbolo: string; nome: string; fatorParaBase: number }
+
+export interface ComponenteKit {
+  produtoId: Id; codigo: string | null; nome: string; tipo: string | null; tipoCodigo: string | null;
+  status: string; ativo: boolean;
+  quantidade: number; unidadeId: Id | null; unidade: string;
+  quantidadeBase: number; unidadeBase: string;
+  custoUnitarioBase?: number; custoTotal?: number;
+  unidades: UnidadeComponente[];
+}
+
+export interface Kit {
+  kit: { id: Id; nome: string; sku: string | null; precoVenda: number; custo?: number; tipoKit: boolean; tipoProduto: { codigo: string; nome: string } | null };
+  podeVerCusto: boolean;
+  componentes: ComponenteKit[];
+  custoTotal?: number;
+  disponibilidade: Array<{ filialId: Id; filial: string; kitsPossiveis: number | null; limitante: string | null }>;
+  vendas: { itensVendidos: number; kitsVendidos: number; receita: number };
+  consumoComponentes: Array<{ produtoId: Id; nome: string; unidade: string; quantidade: number }>;
+}
+
+export interface CandidatoKit {
+  id: Id; codigo: string | null; nome: string; codigoBarras: string | null; tipo: string | null;
+  grupo: string | null; subgrupo: string | null; unidadeBase: string; unidadeBaseId: Id | null;
+  unidades: UnidadeComponente[]; saldoTotal: number; custo?: number;
+}
+
+export const kitApi = {
+  ler: (id: Id) => api.get<Kit>(`/produtos/${id}/kit`).then((r) => r.data),
+  salvar: (id: Id, componentes: Array<{ produtoId: Id; quantidade: number; unidadeId: Id | null }>) =>
+    api.put(`/produtos/${id}/kit`, { componentes }).then((r) => r.data),
+  candidatos: (id: Id, params: { busca?: string; tipoProdutoId?: Id; categoriaId?: Id }) =>
+    api.get<{ itens: CandidatoKit[] }>(`/produtos/${id}/kit/candidatos`, { params }).then((r) => r.data.itens),
+};
+
+/** Custo de uma linha da composição: quantidade × fator para a base × custo da base (mesma regra do servidor). */
+export function custoDaLinha(quantidade: number | null, fatorParaBase: number, custoBase: number | undefined): number | null {
+  if (quantidade == null || !(quantidade > 0) || custoBase == null) return null;
+  return arred(quantidade * fatorParaBase * custoBase, 4);
+}

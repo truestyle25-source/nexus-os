@@ -11,6 +11,7 @@ import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotencia.js';
 import { dataNoFuso, dataOperacionalDate } from '../../lib/fuso.js';
 import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado } from '../payments/pixProvider.js';
+import { expandirKitParaVenda, produtoEhTipoKit } from '../produtos/kit.service.js';
 
 // ============================================================================
 // ARREDONDAMENTO MONETÁRIO (integridade financeira — Regra 4.3).
@@ -333,15 +334,28 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         let subtotalBruto = 0;
         let descontoTotal = 0;
         for (const item of data.itens) {
-          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true } });
+          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true, tipoProdutoId: true } });
           if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} não encontrado.`);
+          const vendaDeKit = await produtoEhTipoKit(tx, user.empresaId, produto.tipoProdutoId);
           // Configuração do produto NESTA filial (aba Filial do cadastro): vínculo, disponibilidade e preço próprio.
           const configFilial = await tx.produtoFilial.findUnique({ where: { produtoId_filialId: { produtoId: item.produtoId, filialId: data.filialId } } });
           if (configFilial && (!configFilial.ativo || !configFilial.disponivelVenda)) {
             throw new ErroDeNegocio(`${produto.nome} não está disponível para venda nesta filial.`, 422);
           }
-          // Sem controle de estoque (ex.: serviço) ou com estoque negativo permitido: não bloqueia por saldo.
-          if (produto.controlaEstoque && !produto.permiteEstoqueNegativo) {
+          if (vendaDeKit) {
+            // KIT: o saldo que importa é o dos componentes na filial (o kit não tem estoque próprio).
+            const { componentes } = await expandirKitParaVenda(tx, user.empresaId, produto, item.quantidade);
+            for (const comp of componentes) {
+              const cfg = await tx.produto.findFirst({ where: { id: comp.produtoId, empresaId: user.empresaId }, select: { controlaEstoque: true, permiteEstoqueNegativo: true } });
+              if (!cfg || !cfg.controlaEstoque || cfg.permiteEstoqueNegativo) continue;
+              const est = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: comp.produtoId } } });
+              const tem = Number(est?.quantidade ?? 0);
+              if (tem < comp.quantidadeBaixa) {
+                throw new ErroDeNegocio(`Estoque insuficiente do componente ${comp.nome} para o kit ${produto.nome}: tem ${tem} ${comp.unidadeBase}, precisa ${comp.quantidadeBaixa} ${comp.unidadeBase}.`, 422);
+              }
+            }
+          } else if (produto.controlaEstoque && !produto.permiteEstoqueNegativo) {
+            // Sem controle de estoque (ex.: serviço) ou com estoque negativo permitido: não bloqueia por saldo.
             const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
             const qtdAtual = Number(estoque?.quantidade ?? 0);
             if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
@@ -454,6 +468,17 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             unidadeVendaSimbolo: item.produto.unidade,
           });
 
+          // KIT (tipo de produto KIT): não tem estoque próprio. A venda expande a composição e
+          // baixa os componentes na filial da venda, na mesma transação (tudo ou nada: se um
+          // componente não tiver saldo e não permitir negativo, a venda inteira é recusada).
+          // Produto com ficha técnica de PRODUÇÃO (ehKit sem o tipo KIT) baixa só o acabado,
+          // porque os ingredientes já saíram na produção. Antes, todo produto com ehKit baixava
+          // o próprio produto E os ingredientes (baixa dupla).
+          const tipoKit = await produtoEhTipoKit(tx, user.empresaId, produto.tipoProdutoId);
+          const expansao = tipoKit
+            ? await expandirKitParaVenda(tx, user.empresaId, produto, conversao.quantidadeDestino.toNumber())
+            : null;
+
           const snapshotAtualizado = await tx.vendaItem.updateMany({
             where: {
               vendaId: venda.id,
@@ -467,6 +492,12 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
               unidadeVenda: item.produto.unidade,
               fatorAplicado: conversao.fator,
               quantidadeBase: conversao.quantidadeDestino,
+              // Custo do kit = custo dos componentes no momento da venda (CMV/DRE), e a
+              // composição usada fica gravada: mudar o kit depois não altera vendas passadas.
+              ...(expansao ? {
+                custoUnitario: arred2(expansao.custoUnitarioKit),
+                composicaoKit: { kitId: produto.id, kitNome: produto.nome, quantidadeVendida: conversao.quantidadeDestino.toNumber(), custoUnitarioKit: expansao.custoUnitarioKit, componentes: expansao.componentes } as unknown as Prisma.InputJsonValue,
+              } : {}),
             },
           });
 
@@ -477,8 +508,27 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             );
           }
 
-          // Produto sem controle de estoque (ex.: serviço) não gera baixa.
-          if (produto.controlaEstoque) {
+          if (expansao) {
+            for (const comp of expansao.componentes) {
+              const componente = await tx.produto.findFirst({ where: { id: comp.produtoId, empresaId: user.empresaId }, select: { controlaEstoque: true } });
+              if (!componente) throw NaoEncontrado(`Componente do kit ${produto.nome} não encontrado.`);
+              if (!componente.controlaEstoque || comp.quantidadeBaixa <= 0) continue;
+              await aplicarMovimento(tx, {
+                empresaId: user.empresaId,
+                filialId: data.filialId,
+                produtoId: comp.produtoId,
+                usuarioId: user.id,
+                tipo: 'VENDA',
+                quantidade: comp.quantidadeBaixa,
+                custoUnitario: comp.custoUnitario,
+                motivo: `Venda de KIT ${produto.nome} (venda ${venda.id})`,
+                documento: venda.id,
+                origem: data.origem,
+                kitProdutoId: produto.id,
+              });
+            }
+          } else if (produto.controlaEstoque) {
+            // Produto sem controle de estoque (ex.: serviço) não gera baixa.
             await aplicarMovimento(tx, {
               empresaId: user.empresaId,
               filialId: data.filialId,
@@ -490,64 +540,6 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
               documento: venda.id,
               origem: data.origem,
             });
-          }
-
-          // A conversao e a quantidade-base foram persistidas em VendaItem.
-
-          // Tratar produto fabricado e kits
-          // Se produto fabricado (tipo = 'PRODUzido'): apenas o acabado é baixado
-          // (já feito acima - só decrementamos o produto atual, não os ingredientes)
-          // Se kit virtual: baixar componentes na venda
-          if (produto.ehKit) {
-            const componentes = await tx.composicaoKit.findMany({
-              where: { empresaId: user.empresaId, kitProdutoId: item.produto.id },
-              select: { ingredienteProdutoId: true, quantidadePorKit: true },
-            });
-
-            for (const comp of componentes) {
-              // Verificar se o ingrediente tem unidade diferente da base e converter se necessário
-              const ingrediente = await tx.produto.findFirst({
-                where: { id: comp.ingredienteProdutoId, empresaId: user.empresaId },
-              });
-              if (!ingrediente) throw NaoEncontrado('Ingrediente do kit não encontrado.');
-
-              const unidadeBaseIng = ingrediente.unidadeBaseId
-                ? await tx.unidade.findFirst({
-                    where: { id: ingrediente.unidadeBaseId, empresaId: user.empresaId },
-                    select: { id: true },
-                  })
-                : null;
-
-              if (ingrediente.unidadeBaseId && !unidadeBaseIng) {
-                throw NaoEncontrado('Unidade base do ingrediente nao encontrada.');
-              }
-
-              const convIng = await converterParaUnidadeBaseVenda({
-                empresaId: user.empresaId,
-                produtoId: comp.ingredienteProdutoId,
-                unidadeBaseId: unidadeBaseIng?.id,
-                quantidadeVenda: comp.quantidadePorKit,
-                unidadeVendaSimbolo: ingrediente.unidade,
-              });
-
-              await aplicarMovimento(tx, {
-                empresaId: user.empresaId,
-                filialId: data.filialId,
-                produtoId: comp.ingredienteProdutoId,
-                usuarioId: user.id,
-                tipo: 'VENDA',
-                quantidade: convIng.quantidadeDestino.toNumber(),
-                motivo: `Consumo de kit ${venda.id}`,
-                documento: venda.id,
-                origem: data.origem,
-              });
-
-              // A baixa do componente ja foi aplicada ao estoque.
-            }
-          } else {
-            // Produto fabricado: garantir que apenas o acabado foi baixado
-            // (já que aplicarMovimento já chamou pelo produto acabado)
-            // Não fazer nada adicional - os ingredientes já foram consumidos na produção
           }
         }
 
@@ -687,7 +679,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // kit baixados na venda voltam junto.
         const baixas = body.estornarEstoque
           ? await tx.estoqueMovimentacao.groupBy({
-              by: ['produtoId', 'filialId'],
+              by: ['produtoId', 'filialId', 'kitProdutoId'],
               where: { empresaId: venda.empresaId, documento: id, tipo: 'VENDA' },
               _sum: { quantidade: true },
             })
@@ -702,9 +694,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             usuarioId: user.id,
             tipo: 'DEVOLUCAO',
             quantidade,
-            motivo: motivoCancelamento,
+            motivo: baixa.kitProdutoId ? `${motivoCancelamento} (componente de kit)` : motivoCancelamento,
             documento: id,
             origem: 'MANUAL',
+            // Componente de kit volta marcado com o kit de origem (rastreio do estorno).
+            kitProdutoId: baixa.kitProdutoId,
           });
         }
 

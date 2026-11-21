@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { fichaApi, fmtNum, lerNumero, mensagemDeErro, type Catalogos, type Ficha } from '@/lib/produto-ficha';
+import { CODIGO_TIPO_KIT, fichaApi, fmtNum, lerNumero, mensagemDeErro, type Catalogos, type Ficha } from '@/lib/produto-ficha';
 import { formDaFicha, payloadAlterado, type FormProduto } from '@/components/produto/formulario';
 import { Aviso, Botao, Selo, cx, estilos as s } from '@/components/produto/ui';
 import AbaDados from '@/components/produto/AbaDados';
@@ -15,10 +15,12 @@ import AbaEstoque from '@/components/produto/AbaEstoque';
 import AbaMovimento from '@/components/produto/AbaMovimento';
 import AbaFilial from '@/components/produto/AbaFilial';
 import { AbaIntegracoes, AbaPdv, AbaPremiacao } from '@/components/produto/AbasComplementares';
+import AbaComposicaoKit from '@/components/produto/AbaComposicaoKit';
 
-type Aba = 'dados' | 'precos' | 'tributos' | 'codigos' | 'estoque' | 'movimento' | 'pdv' | 'filial' | 'premiacao' | 'integracoes';
+type Aba = 'dados' | 'precos' | 'tributos' | 'codigos' | 'estoque' | 'kit' | 'movimento' | 'pdv' | 'filial' | 'premiacao' | 'integracoes';
 const ABAS: Array<[Aba, string]> = [
   ['dados', 'Dados'], ['precos', 'Preços'], ['tributos', 'Tributos'], ['codigos', 'Código de Barras'], ['estoque', 'Estoque'],
+  ['kit', 'Composição do Kit'],
   ['movimento', 'Movimento'], ['pdv', 'PDV'], ['filial', 'Filial'], ['premiacao', 'Premiação'], ['integracoes', 'Integrações'],
 ];
 /** Abas cujos campos vão no "Salvar" principal (as outras salvam por conta própria). */
@@ -45,6 +47,7 @@ export default function FichaProdutoPage() {
   const [mensagem, setMensagem] = useState<{ texto: string; erro?: boolean } | null>(null);
   const [sujoTributos, setSujoTributos] = useState(false);
   const [sujoFilial, setSujoFilial] = useState(false);
+  const [sujoKit, setSujoKit] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
   const avisar = useCallback((texto: string, erro?: boolean) => {
@@ -73,10 +76,16 @@ export default function FichaProdutoPage() {
 
   const alteracoes = useMemo(() => (form && original && ficha ? payloadAlterado(original, form, ficha.podeVerCusto) : {}), [form, original, ficha]);
   const sujo = Object.keys(alteracoes).length > 0;
-  const qualquerSujo = sujo || sujoTributos || sujoFilial;
+  const qualquerSujo = sujo || sujoTributos || sujoFilial || sujoKit;
+  // Aba Composição do Kit: aparece quando o tipo escolhido (mesmo antes de salvar) é Kit.
+  const tipoNoFormularioEhKit = !!form && catalogos?.tipos.find((t) => t.id === form.tipoProdutoId)?.codigo === CODIGO_TIPO_KIT;
+  const tipoSalvoEhKit = ficha?.produto.tipoProduto?.codigo === CODIGO_TIPO_KIT;
+  const abasVisiveis = ABAS.filter(([k]) => k !== 'kit' || tipoNoFormularioEhKit);
+  useEffect(() => { if (aba === 'kit' && !tipoNoFormularioEhKit) setAba('dados'); }, [aba, tipoNoFormularioEhKit]);
   const abasSujas = useMemo(() => new Set((Object.entries(CAMPOS_POR_ABA) as Array<[Aba, string[]]>).filter(([, campos]) => campos.some((c) => c in alteracoes)).map(([a]) => a)), [alteracoes]);
   if (sujoTributos) abasSujas.add('tributos');
   if (sujoFilial) abasSujas.add('filial');
+  if (sujoKit) abasSujas.add('kit');
 
   // Aviso ao sair com alterações não salvas.
   useEffect(() => {
@@ -154,7 +163,7 @@ export default function FichaProdutoPage() {
       {!podeEditar && <Aviso>Somente leitura: alterar o cadastro exige a permissão produtos.editar.</Aviso>}
 
       <nav className={s.abas} role="tablist" aria-label="Seções do produto">
-        {ABAS.map(([k, t]) => (
+        {abasVisiveis.map(([k, t]) => (
           <button key={k} type="button" role="tab" aria-selected={aba === k} className={cx(s.aba, aba === k && s.abaAtiva)} onClick={() => setAba(k)}>
             {t}{abasSujas.has(k) && <span className={s.abaMarca} aria-label="com alterações" />}
           </button>
@@ -167,6 +176,7 @@ export default function FichaProdutoPage() {
         {aba === 'tributos' && <AbaTributos ficha={ficha} podeEditar={podeEditar} aoSalvar={atualizarTudo} avisar={avisar} aoAlterar={setSujoTributos} />}
         {aba === 'codigos' && <AbaCodigos ficha={ficha} podeEditar={podeEditar} aoAtualizar={atualizarTudo} avisar={avisar} />}
         {aba === 'estoque' && <AbaEstoque form={form} set={set} ficha={ficha} catalogos={catalogos} podeEditar={podeEditar} podeMovimentar={pode('estoque', 'criar')} aoAtualizar={atualizarTudo} avisar={avisar} />}
+        {aba === 'kit' && tipoNoFormularioEhKit && <AbaComposicaoKit ficha={ficha} catalogos={catalogos} podeEditar={podeEditar} tipoSalvoKit={tipoSalvoEhKit} aoAtualizar={atualizarTudo} avisar={avisar} aoAlterar={setSujoKit} />}
         {aba === 'movimento' && <AbaMovimento ficha={ficha} catalogos={catalogos} podeVerEstoque={pode('estoque', 'visualizar')} avisar={avisar} />}
         {aba === 'pdv' && <AbaPdv form={form} set={set} podeEditar={podeEditar} catalogos={catalogos} />}
         {aba === 'filial' && <AbaFilial ficha={ficha} podeEditar={podeEditar} aoAtualizar={atualizarTudo} avisar={avisar} aoAlterar={setSujoFilial} />}
