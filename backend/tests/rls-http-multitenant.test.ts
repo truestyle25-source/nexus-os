@@ -27,6 +27,10 @@ import { gestaoRoutes } from '../src/modules/gestao/gestao.routes.js';
 import { vendasRoutes } from '../src/modules/vendas/vendas.routes.js';
 import { ErroDeNegocio } from '../src/lib/erros.js';
 
+// O limite de cadastro (5/min por IP) fica no banco e vale para todos os arquivos de
+// teste; cada arquivo usa um IP próprio (faixa de documentação) para não esgotar o dos outros.
+const IP_CADASTRO = '198.51.100.15';
+
 function travaBanco() {
   const url = new URL(process.env.DATABASE_URL || 'postgresql://x@invalido/x');
   if (!['localhost', '127.0.0.1'].includes(url.hostname) || url.port !== '5432' || url.pathname.replace(/^\/+/, '') !== 'nexus_os_test') {
@@ -62,7 +66,7 @@ test('HTTP: isolamento multiempresa nos dois sentidos + usuário sem permissão'
   try {
     for (const k of ['A', 'B'] as const) {
       const email = `rlshttp${k.toLowerCase()}${SUF}@teste.local`;
-      const reg = await app.inject({ method: 'POST', url: '/auth/register-company', payload: { nomeEmpresa: `RLS HTTP ${k} ${SUF}`, nome: `Dono ${k}`, email, senha: 'SenhaForte123' } });
+      const reg = await app.inject({ method: 'POST', url: '/auth/register-company', remoteAddress: IP_CADASTRO, payload: { nomeEmpresa: `RLS HTTP ${k} ${SUF}`, nome: `Dono ${k}`, email, senha: 'SenhaForte123' } });
       assert.equal(reg.statusCode, 201, `cadastro ${k}: ${reg.body}`);
       const log = await app.inject({ method: 'POST', url: '/auth/login', payload: { email, senha: 'SenhaForte123' } });
       assert.equal(log.statusCode, 200);

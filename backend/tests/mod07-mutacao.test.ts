@@ -22,6 +22,10 @@ import { registerAuthentication } from '../src/middlewares/auth.js';
 import { vendasRoutes } from '../src/modules/vendas/vendas.routes.js';
 import { ErroDeNegocio } from '../src/lib/erros.js';
 
+// O limite de cadastro (5/min por IP) fica no banco e vale para todos os arquivos de
+// teste; cada arquivo usa um IP próprio (faixa de documentação) para não esgotar o dos outros.
+const IP_CADASTRO = '198.51.100.11';
+
 const SEGREDO = 'segredo-teste-isolamento';
 const SUFIXO = Date.now().toString(36);
 let passou = 0;
@@ -31,7 +35,7 @@ function ok(nome: string, condicao: boolean, detalhe = '') {
   else { falhas++; console.log(`  FAIL ${nome}${detalhe ? ` -> ${detalhe}` : ''}`); }
 }
 async function register(app: Fastify, payload: Record<string, unknown>) {
-  return app.inject({ method: 'POST', url: '/auth/register-company', payload });
+  return app.inject({ method: 'POST', url: '/auth/register-company', payload, remoteAddress: IP_CADASTRO });
 }
 async function login(app: Fastify, email: string) {
   return app.inject({ method: 'POST', url: '/auth/login', payload: { email, senha: 'senha123' } });

@@ -33,6 +33,10 @@ import { registerAuthentication } from '../src/middlewares/auth.js';
 import { MODULOS, ACOES } from '../src/lib/permissoes-catalogo.js';
 import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
 
+// O limite de cadastro (5/min por IP) fica no banco e vale para todos os arquivos de
+// teste; cada arquivo usa um IP próprio (faixa de documentação) para não esgotar o dos outros.
+const IP_CADASTRO = '198.51.100.16';
+
 const SEGREDO = 'segredo-teste-assinatura';
 const SUFIXO = Date.now().toString(36);
 let falhas = 0;
@@ -90,7 +94,7 @@ async function main() {
   // usuário e assinatura numa trans só. Se a assinatura deixasse de ser criada
   // aqui, a tela cairia no "Nenhuma assinatura encontrada" para toda empresa nova.
   const registro = await app.inject({
-    method: 'POST', url: '/auth/register-company',
+    method: 'POST', url: '/auth/register-company', remoteAddress: IP_CADASTRO,
     payload: {
       nomeEmpresa: `AssinTeste ${SUFIXO}`,
       cnpj: cnpjDeTeste(),

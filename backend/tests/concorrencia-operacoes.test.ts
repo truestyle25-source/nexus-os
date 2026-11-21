@@ -27,6 +27,10 @@ import { vendasRoutes } from '../src/modules/vendas/vendas.routes.js';
 import { pdvRoutes } from '../src/modules/pdv/pdv.routes.js';
 import { ErroDeNegocio } from '../src/lib/erros.js';
 
+// O limite de cadastro (5/min por IP) fica no banco e vale para todos os arquivos de
+// teste; cada arquivo usa um IP próprio (faixa de documentação) para não esgotar o dos outros.
+const IP_CADASTRO = '198.51.100.14';
+
 const url = new URL(process.env.DATABASE_URL || 'postgresql://x@invalido/x');
 if (!['localhost', '127.0.0.1'].includes(url.hostname) || url.port !== '5432' || url.pathname.replace(/^\/+/, '') !== 'nexus_os_test') {
   throw new Error('Teste bloqueado: este teste só pode usar localhost:5432/nexus_os_test.');
@@ -48,7 +52,7 @@ test('concorrência: compras, vendas e caixa sob requisições simultâneas', as
   for (const r of [authRoutes, empresaRoutes, produtosRoutes, comprasRoutes, estoqueRoutes, vendasRoutes, pdvRoutes]) await app.register(r);
 
   const email = `conc${SUF}@teste.local`;
-  const reg = await app.inject({ method: 'POST', url: '/auth/register-company', payload: { nomeEmpresa: `Concorrencia ${SUF}`, nome: 'Dono Conc', email, senha: 'SenhaForte123' } });
+  const reg = await app.inject({ method: 'POST', url: '/auth/register-company', remoteAddress: IP_CADASTRO, payload: { nomeEmpresa: `Concorrencia ${SUF}`, nome: 'Dono Conc', email, senha: 'SenhaForte123' } });
   assert.equal(reg.statusCode, 201, reg.body);
   const tok = (await app.inject({ method: 'POST', url: '/auth/login', payload: { email, senha: 'SenhaForte123' } })).json().token;
   const H = { authorization: `Bearer ${tok}` };
