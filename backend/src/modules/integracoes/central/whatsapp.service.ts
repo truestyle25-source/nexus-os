@@ -27,9 +27,14 @@ const STATUS_META: Record<string, string> = { sent: 'ENVIADA', delivered: 'ENTRE
 
 /** Só dígitos, 10 a 15 (padrão E.164 sem "+"). Números brasileiros sem DDI ganham 55. */
 export function telefoneWhatsApp(bruto: string): string | null {
-  let d = String(bruto ?? '').replace(/\D/g, '');
+  const texto = String(bruto ?? '').trim();
+  let d = texto.replace(/\D/g, '');
+  // Número com "+" ou "00" na frente já traz o código do país: nunca prefixa 55.
+  // Sem código do país (10 ou 11 dígitos: DDD + número) assume Brasil.
+  if (texto.startsWith('+')) return d.length >= 8 && d.length <= 15 ? d : null;
+  if (texto.startsWith('00')) { d = d.slice(2); return d.length >= 8 && d.length <= 15 ? d : null; }
   if (d.length === 10 || d.length === 11) d = `55${d}`;
-  return d.length >= 10 && d.length <= 15 ? d : null;
+  return d.length >= 12 && d.length <= 15 ? d : null;
 }
 
 export interface EnvioWhatsApp {
@@ -38,12 +43,15 @@ export interface EnvioWhatsApp {
   texto?: string;
   modelo?: { nome: string; idioma: string; parametros: string[] };
   origem?: string;
+  /** O usuário confirma que o contato autorizou receber mensagens (LGPD / política da Meta). */
+  consentimento?: boolean;
 }
 
 export async function enviarWhatsApp(empresaId: string, usuarioId: string | null, envio: EnvioWhatsApp) {
   const cred = await credenciaisInternas(empresaId, 'whatsapp');
   if (!cred || cred.status !== 'CONECTADO') throw new ErroDeNegocio('O WhatsApp Business não está conectado. Configure e teste a conexão na Central de Integrações.', 409);
   const para = telefoneWhatsApp(envio.para);
+  const base = para ? await baseDeConsentimento(empresaId, para, Boolean(envio.consentimento)) : null;
   if (!para) throw new ErroDeNegocio('Telefone inválido. Use DDD + número (ex.: 11 99999-8888) ou o formato internacional.', 400);
   let corpo: Record<string, unknown>;
   let resumo: string;
@@ -61,7 +69,7 @@ export async function enviarWhatsApp(empresaId: string, usuarioId: string | null
     };
     resumo = `Modelo ${m.nome}${m.parametros.length ? ` (${m.parametros.join(' · ')})` : ''}`;
   }
-  const msg = await prisma.whatsappMensagem.create({ data: { empresaId, direcao: 'ENVIADA', telefone: para, tipo: envio.tipo === 'TEXTO' ? 'text' : 'template', conteudo: resumo.slice(0, 1000), status: 'ENVIANDO', origem: envio.origem ?? 'CENTRAL', usuarioId } });
+  const msg = await prisma.whatsappMensagem.create({ data: { empresaId, direcao: 'ENVIADA', telefone: para, tipo: envio.tipo === 'TEXTO' ? 'text' : 'template', conteudo: resumo.slice(0, 1000), status: 'ENVIANDO', origem: envio.origem ?? 'CENTRAL', consentimento: base, usuarioId } });
   const inicio = Date.now();
   let r: Response;
   try {
@@ -140,10 +148,11 @@ export async function processarWebhook(empresaId: string, phoneNumberId: string,
         const nome = v.contacts?.find((c) => c.wa_id === m.from)?.profile?.name ?? null;
         const conteudo = m.text?.body ?? m.button?.text ?? `[${m.type ?? 'mensagem'}]`;
         const criado = await prisma.whatsappMensagem.createMany({
-          data: [{ empresaId, direcao: 'RECEBIDA', telefone: m.from.replace(/\D/g, '').slice(0, 20), nomeContato: nome?.slice(0, 120) ?? null, tipo: (m.type ?? 'text').slice(0, 30), conteudo: conteudo.slice(0, 1000), waMessageId: m.id.slice(0, 200), status: 'RECEBIDA', origem: 'WEBHOOK' }],
+          data: [{ empresaId, direcao: 'RECEBIDA', telefone: m.from.replace(/\D/g, '').slice(0, 20), nomeContato: nome?.slice(0, 120) ?? null, tipo: (m.type ?? 'text').slice(0, 30), conteudo: conteudo.slice(0, 1000), waMessageId: m.id.slice(0, 200), status: 'RECEBIDA', origem: 'WEBHOOK', consentimento: 'RECEBIDA' }],
           skipDuplicates: true,
         });
         if (criado.count) res.recebidas++; else res.duplicadas++;
+        if (criado.count) await aplicarPalavraChave(empresaId, m.from, m.text?.body ?? m.button?.text ?? '');
       }
       for (const s of v.statuses ?? []) {
         const novo = s.status ? STATUS_META[s.status] : undefined;
@@ -178,11 +187,12 @@ export async function enviarDocumentoWhatsApp(empresaId: string, usuarioId: stri
   const cred = await credenciaisInternas(empresaId, 'whatsapp');
   if (!cred || cred.status !== 'CONECTADO') return { status: 'NAO_CONECTADO' as const };
   const para = telefoneWhatsApp(p.para);
+  if (para && (await descadastrado(empresaId, para))) return { status: 'FALHOU' as const, erro: 'O contato pediu para não receber mensagens por WhatsApp (descadastro).' };
   if (!para) return { status: 'FALHOU' as const, erro: 'Telefone inválido para WhatsApp.' };
   const base = `https://graph.facebook.com/${versaoGraph(cred.config)}/${cred.config.phoneNumberId}`;
   const auth = { Authorization: `Bearer ${cred.segredos.accessToken}` };
   const modelo = /^[a-z0-9_]{1,512}$/.test(cred.config.modeloDocumento ?? '') ? cred.config.modeloDocumento : null;
-  const msg = await prisma.whatsappMensagem.create({ data: { empresaId, direcao: 'ENVIADA', telefone: para, tipo: modelo ? 'template' : 'document', conteudo: `${p.pdf.nome} — ${p.legenda}`.slice(0, 1000), status: 'ENVIANDO', origem: p.origem, usuarioId } });
+  const msg = await prisma.whatsappMensagem.create({ data: { empresaId, direcao: 'ENVIADA', telefone: para, tipo: modelo ? 'template' : 'document', conteudo: `${p.pdf.nome} — ${p.legenda}`.slice(0, 1000), status: 'ENVIANDO', origem: p.origem, consentimento: 'FORNECEDOR', usuarioId } });
   const falhar = async (erro: string) => {
     await prisma.whatsappMensagem.update({ where: { id: msg.id }, data: { status: 'FALHOU', erro } });
     return { status: 'FALHOU' as const, erro, mensagemId: msg.id };
@@ -213,4 +223,47 @@ export async function enviarDocumentoWhatsApp(empresaId: string, usuarioId: stri
   } catch {
     return falhar('Sem comunicação com a Meta (timeout ou rede).');
   }
+}
+
+// ------------------------------- LGPD ---------------------------------------
+// Política: só se escreve para quem autorizou. O contato que já escreveu para a empresa
+// (mensagem RECEBIDA) conta como iniciador; fora disso, o usuário precisa confirmar a
+// autorização (fica gravada na mensagem). Quem respondeu SAIR/PARAR/STOP não recebe nada
+// até responder VOLTAR. Fornecedores (Compras) são comunicação comercial B2B.
+export const PALAVRAS_SAIR = ['sair', 'parar', 'stop', 'cancelar', 'descadastrar'];
+export const PALAVRAS_VOLTAR = ['voltar', 'start', 'reativar'];
+
+export async function descadastrado(empresaId: string, telefone: string): Promise<boolean> {
+  return (await prisma.whatsappDescadastro.count({ where: { empresaId, telefone } })) > 0;
+}
+
+async function baseDeConsentimento(empresaId: string, telefone: string, declarado: boolean): Promise<string> {
+  if (await descadastrado(empresaId, telefone)) throw new ErroDeNegocio('O contato pediu para não receber mensagens por WhatsApp (respondeu SAIR). Nada foi enviado.', 409);
+  const iniciou = await prisma.whatsappMensagem.count({ where: { empresaId, telefone, direcao: 'RECEBIDA' } });
+  if (iniciou) return 'CLIENTE_INICIOU';
+  if (declarado) return 'DECLARADO';
+  throw new ErroDeNegocio('Confirme que o contato autorizou receber mensagens da empresa pelo WhatsApp.', 409);
+}
+
+export async function aplicarPalavraChave(empresaId: string, telefoneBruto: string, texto: string) {
+  const telefone = telefoneBruto.replace(/\D/g, '').slice(0, 20);
+  const palavra = texto.trim().toLowerCase();
+  if (PALAVRAS_SAIR.includes(palavra)) {
+    await prisma.whatsappDescadastro.upsert({ where: { empresaId_telefone: { empresaId, telefone } }, create: { empresaId, telefone, origem: 'PALAVRA_CHAVE' }, update: {} });
+  } else if (PALAVRAS_VOLTAR.includes(palavra)) {
+    await prisma.whatsappDescadastro.deleteMany({ where: { empresaId, telefone } });
+  }
+}
+
+export async function listarDescadastros(empresaId: string) {
+  return prisma.whatsappDescadastro.findMany({ where: { empresaId }, orderBy: { createdAt: 'desc' }, take: 200, select: { telefone: true, origem: true, createdAt: true } });
+}
+
+/** Descadastro manual (ex.: o cliente pediu por telefone) ou reativação. */
+export async function definirDescadastro(empresaId: string, telefoneBruto: string, descadastrar: boolean) {
+  const telefone = telefoneWhatsApp(telefoneBruto);
+  if (!telefone) throw new ErroDeNegocio('Telefone inválido.', 400);
+  if (descadastrar) await prisma.whatsappDescadastro.upsert({ where: { empresaId_telefone: { empresaId, telefone } }, create: { empresaId, telefone, origem: 'MANUAL' }, update: {} });
+  else await prisma.whatsappDescadastro.deleteMany({ where: { empresaId, telefone } });
+  return { telefone, descadastrado: descadastrar };
 }

@@ -61,8 +61,11 @@ export async function enviarPorEmail(p: { para: string; assunto: string; html: s
 
 /** Telefone no formato internacional só com dígitos (Brasil: 55 + DDD + número). */
 export function normalizarTelefone(tel: string): string | null {
-  let d = tel.replace(/\D/g, '');
-  if (d.startsWith('00')) d = d.slice(2);
+  // Mesma regra do WhatsApp da Central: "+" ou "00" = já tem código do país (sem prefixar 55).
+  const texto = tel.trim();
+  let d = texto.replace(/\D/g, '');
+  if (texto.startsWith('+')) return d.length >= 8 && d.length <= 15 ? d : null;
+  if (d.startsWith('00')) { d = d.slice(2); return d.length >= 8 && d.length <= 15 ? d : null; }
   if (d.length === 10 || d.length === 11) d = `55${d}`;
   return d.length >= 12 && d.length <= 15 ? d : null;
 }

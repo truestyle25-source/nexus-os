@@ -156,6 +156,7 @@ model Empresa {
   integracaoEventos        IntegracaoEvento[]
   whatsappMensagens        WhatsappMensagem[]
   emailEnvios              EmailEnvio[]
+  whatsappDescadastros     WhatsappDescadastro[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -2411,39 +2412,42 @@ model ChaveApi {
 }
 
 model IntegracaoExterno {
-  id            String    @id @default(cuid())
-  empresaId     String
-  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  tipo          String    @default("MERCADO_LIVRE") // MERCADO_LIVRE
-  state         String? // Nonce OAuth: valor único que valida o callback (gerado com randomBytes(24).base64url)
-  stateExpiraEm DateTime? // Validade do state (uso único, expira em 10 min); nulo quando não há tentativa pendente
-  nome          String
+  id                String    @id @default(cuid())
+  empresaId         String
+  empresa           Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo              String    @default("MERCADO_LIVRE") // MERCADO_LIVRE
+  state             String? // Nonce OAuth: valor único que valida o callback (gerado com randomBytes(24).base64url)
+  stateExpiraEm     DateTime? // Validade do state (uso único, expira em 10 min); nulo quando não há tentativa pendente
+  nome              String
   // Credenciais OAuth (clientId / clientSecret / redirectUri). Sempre
   // criptografadas antes de gravar e NUNCA expostas na resposta.
-  clientId      String?
-  clientSecret  String?
-  redirectUri   String?
+  clientId          String?
+  clientSecret      String?
+  redirectUri       String?
   // Informações da conta vinculada após o OAuth
-  accountName   String?
-  accountId     String?
+  accountName       String?
+  accountId         String?
   // Token de acesso (criptografado)
-  accessToken   String?
-  refreshToken  String?
-  tokenExpiry   DateTime?
-  scope         String?
+  accessToken       String?
+  refreshToken      String?
+  tokenExpiry       DateTime?
+  scope             String?
   // Controle de estado de sincronização
-  status        String    @default("NAO_CONFIGURADO") // NAO_CONFIGURADO | CONECTANDO | CONECTADO | EXPIRADO | ERRO | REVOGADO
-  erros         Json?
-  ultimoTesteEm DateTime?
-  ultimoSyncEm  DateTime?
+  status            String    @default("NAO_CONFIGURADO") // NAO_CONFIGURADO | CONECTANDO | CONECTADO | EXPIRADO | ERRO | REVOGADO
+  erros             Json?
+  ultimoTesteEm     DateTime?
+  ultimoSyncEm      DateTime?
   // Central de Integrações (provedores por credencial, ex.: ASAAS):
   // `credenciais` = JSON dos campos secretos, cifrado inteiro em secrets.ts (nunca volta ao navegador);
   // `config` = campos NÃO sensíveis (ambiente, URL da loja...); `conectadoEm` = 1ª validação real.
-  credenciais   String?
-  config        Json?
-  conectadoEm   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  credenciais       String?
+  config            Json?
+  conectadoEm       DateTime?
+  // Importação automática (WooCommerce): próxima execução e trava entre instâncias (lease).
+  proximoSyncEm     DateTime?
+  syncLeaseExpiraEm DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@unique([empresaId, tipo])
   @@index([empresaId])
@@ -3608,21 +3612,24 @@ model ProdutoFilial {
 // `waMessageId` (wamid) é único por empresa: webhooks repetidos não duplicam nada.
 // `conteudo` guarda só o texto/resumo (até 1000 caracteres) — nunca token ou mídia.
 model WhatsappMensagem {
-  id           String   @id @default(cuid())
-  empresaId    String
-  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  direcao      String // ENVIADA | RECEBIDA
-  telefone     String // destinatário (enviada) ou remetente (recebida), só dígitos
-  nomeContato  String?
-  tipo         String // text | template | document | image | audio | ...
-  conteudo     String?
-  waMessageId  String?
-  status       String // ENVIANDO | ENVIADA | ENTREGUE | LIDA | FALHOU | RECEBIDA
-  erro         String?
-  origem       String   @default("CENTRAL") // CENTRAL | WEBHOOK | módulo que enviou
-  usuarioId    String?
-  createdAt    DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id            String   @id @default(cuid())
+  empresaId     String
+  empresa       Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  direcao       String // ENVIADA | RECEBIDA
+  telefone      String // destinatário (enviada) ou remetente (recebida), só dígitos
+  nomeContato   String?
+  tipo          String // text | template | document | image | audio | ...
+  conteudo      String?
+  waMessageId   String?
+  status        String // ENVIANDO | ENVIADA | ENTREGUE | LIDA | FALHOU | RECEBIDA
+  erro          String?
+  origem        String   @default("CENTRAL") // CENTRAL | WEBHOOK | módulo que enviou
+  // LGPD: base do envio. CLIENTE_INICIOU (o contato escreveu antes), DECLARADO (o usuário
+  // confirmou que o contato autorizou), FORNECEDOR (comunicação comercial B2B), RECEBIDA.
+  consentimento String?
+  usuarioId     String?
+  createdAt     DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
 
   @@unique([empresaId, waMessageId])
   @@index([empresaId, createdAt])
@@ -3645,4 +3652,18 @@ model EmailEnvio {
   createdAt DateTime @default(now())
 
   @@index([empresaId, createdAt])
+}
+
+// --- LGPD: contatos que pediram para NÃO receber mensagens do WhatsApp ------------
+// Entra quando o contato responde SAIR/PARAR/STOP (webhook) ou manualmente; sai com VOLTAR.
+// Nenhum envio (Central, Compras) vai para um número desta lista.
+model WhatsappDescadastro {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  telefone  String
+  origem    String // PALAVRA_CHAVE | MANUAL
+  createdAt DateTime @default(now())
+
+  @@unique([empresaId, telefone])
 }

@@ -12,10 +12,13 @@ import { z } from 'zod';
 import { permissaoMiddleware } from '../../../middlewares/auth.js';
 import { catalogoPublico } from './provedores.js';
 import { desconectar, estadosDaEmpresa, historico, obterConfiguracao, remover, resumir, salvar, testar, registrarEvento } from './central.service.js';
-import { assinaturaValida, desafioValido, enviarWhatsApp, listarMensagens, processarWebhook, verificarAssinaturaWebhook } from './whatsapp.service.js';
+import { assinaturaValida, definirDescadastro, desafioValido, enviarWhatsApp, listarDescadastros, listarMensagens, processarWebhook, verificarAssinaturaWebhook } from './whatsapp.service.js';
+import { prisma } from '../../../lib/prisma.js';
+import { ErroDeNegocio } from '../../../lib/erros.js';
 import { caixaDeEntrada, enviarEmail, listarEnvios } from './email.service.js';
 import { atualizarCobranca, conferirPagamento, credenciaisPorRegistro, gerarCobranca } from './cobrancas.service.js';
 import { importarPedidosWoo } from './woocommerce-pedidos.service.js';
+import { testarServidor } from './servidor.service.js';
 import { timingSafeEqual } from 'node:crypto';
 import { definirSistemaDaRequisicao } from '../../../lib/tenant-context.js';
 import { createRateLimiter } from '../../../middlewares/rateLimiter.js';
@@ -41,6 +44,7 @@ const EnvioWhats = z.object({
   tipo: z.enum(['TEXTO', 'MODELO']),
   texto: z.string().max(4096).optional(),
   modelo: z.object({ nome: z.string().max(512), idioma: z.string().max(10).default('pt_BR'), parametros: z.array(z.string().max(1024)).max(20).default([]) }).optional(),
+  consentimento: z.boolean().optional(),
 });
 const EnvioMail = z.object({
   para: z.array(z.string().max(254)).min(1).max(50),
@@ -94,6 +98,30 @@ export async function centralIntegracoesRoutes(app: FastifyInstance): Promise<vo
     gerarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id, PedidoCobranca.parse(req.body ?? {}), baseUrlPublica(req)));
   app.post('/financeiro/:id/cobranca/atualizar', { preHandler: [auth, fin, limiteConexao] }, async (req: any) =>
     atualizarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id));
+
+  // --- Integrações do servidor (Gemini, Resend): teste real da chave --------------------
+  app.post('/integracoes/servidor/:id/testar', { preHandler: [auth, editar, limiteConexao] }, async (req: any) =>
+    testarServidor(req.user.empresaId, req.user.id, z.object({ id: z.enum(['gemini', 'email-transacional']) }).parse(req.params).id));
+
+  // --- WhatsApp / LGPD: contatos que pediram para não receber mensagens ---------------
+  app.get('/integracoes/central/whatsapp/descadastros', { preHandler: [auth, ver] }, async (req: any) => ({ descadastros: await listarDescadastros(req.user.empresaId) }));
+  app.post('/integracoes/central/whatsapp/descadastros', { preHandler: [auth, editar] }, async (req: any) => {
+    const d = z.object({ telefone: z.string().min(8).max(30), descadastrar: z.boolean() }).parse(req.body ?? {});
+    return definirDescadastro(req.user.empresaId, d.telefone, d.descadastrar);
+  });
+
+  // --- WooCommerce: liga/desliga a importação automática (sem novo teste de credencial) ---
+  app.put('/integracoes/central/woocommerce/automatico', { preHandler: [auth, editar] }, async (req: any) => {
+    const d = z.object({ ativo: z.boolean(), filialId: z.string().min(1).max(40).optional() }).parse(req.body ?? {});
+    const reg = await prisma.integracaoExterno.findUnique({ where: { empresaId_tipo: { empresaId: req.user.empresaId, tipo: 'WOOCOMMERCE' } } });
+    if (!reg) throw new ErroDeNegocio('Configure a loja WooCommerce antes.', 409);
+    if (d.ativo) {
+      if (!d.filialId || !(await prisma.filial.findFirst({ where: { id: d.filialId, empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true } }))) throw new ErroDeNegocio('Escolha uma filial ativa desta empresa.', 400);
+    }
+    const config = { ...((reg.config ?? {}) as Record<string, string>), importarAutomatico: d.ativo ? 'SIM' : 'NAO', ...(d.ativo ? { filialPedidos: d.filialId! } : {}) };
+    await prisma.integracaoExterno.update({ where: { id: reg.id }, data: { config, ...(d.ativo ? { proximoSyncEm: new Date() } : {}) } });
+    return { importarAutomatico: config.importarAutomatico, filialPedidos: config.filialPedidos ?? null };
+  });
 
   // --- WooCommerce: importação de pedidos para Vendas (manual, por filial) ---------------
   app.post('/integracoes/central/woocommerce/pedidos/importar', { preHandler: [auth, editar, limiteConexao] }, async (req: any) => {

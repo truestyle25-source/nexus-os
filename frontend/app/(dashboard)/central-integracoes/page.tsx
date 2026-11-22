@@ -263,6 +263,7 @@ export default function CentralIntegracoes() {
   // Central de Integrações: catálogo + estados reais por provedor e a janela de configuração aberta.
   const [central, setCentral] = useState<Central | null>(null);
   const [modalProvedor, setModalProvedor] = useState<string | null>(null);
+  const [testandoServidor, setTestandoServidor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -455,6 +456,21 @@ export default function CentralIntegracoes() {
    * único com expiração) e devolve a authUrl oficial do Mercado Livre — o
    * navegador navega para lá e o ML nos devolve em GET /callback (público).
    */
+  // Gemini e Resend ficam no servidor: o botão faz um teste REAL da chave (leitura oficial).
+  async function testarServidor(vendorId: string) {
+    const id = vendorId === 'email' ? 'email-transacional' : 'gemini';
+    setTestandoServidor(vendorId);
+    try {
+      const { data } = await api.post<{ ok: boolean; mensagem: string }>(`/integracoes/servidor/${id}/testar`, {});
+      showToast(data.mensagem);
+      await load();
+    } catch (err) {
+      showToast(mensagemDeErroApi(err, 'Não foi possível testar.'));
+    } finally {
+      setTestandoServidor(null);
+    }
+  }
+
   async function conectarMercadoLivre() {
     setAcaoMl('conectar');
     setError(null);
@@ -603,7 +619,7 @@ export default function CentralIntegracoes() {
     const fora = (integracoes?.itens ?? []).filter((i) => i.categoria !== 'MERCADO_LIVRE' && i.categoria !== 'SHOPEE');
     const conectadas = (central?.resumo.conectadas ?? 0) + fora.filter((i) => i.status === 'CONECTADO').length;
     const comErro = (central?.resumo.comErro ?? 0) + fora.filter((i) => i.status === 'ERRO').length;
-    const naoConfiguradas = (central?.resumo.naoConfiguradas ?? 0) + fora.filter((i) => i.status === 'NAO_CONFIGURADO').length;
+    const naoConfiguradas = (central?.resumo.naoConfiguradas ?? 0) + fora.filter((i) => i.status === 'NAO_CONFIGURADO' || i.status === 'CREDENCIAIS_SALVAS').length;
     return { conectadas, comErro, naoConfiguradas, saude: saudeDaCentral(conectadas, comErro) };
   }, [integracoes, central]);
   const saude = resumo.saude;
@@ -884,6 +900,16 @@ export default function CentralIntegracoes() {
                               </button>
                             )}
                           </div>
+                        ) : (vendor.id === 'email' || vendor.id === 'gemini') && status !== 'NAO_CONFIGURADO' ? (
+                          <button
+                            type="button"
+                            onClick={() => void testarServidor(vendor.id)}
+                            disabled={testandoServidor !== null}
+                            title="Testa a chave configurada no servidor com uma leitura real"
+                            className="h-8 px-3 shrink-0 rounded-[10px] border border-[var(--nx-border)] text-[var(--nx-ink-2)] text-[12px] font-medium hover:border-[var(--nx-border-strong)] transition-colors disabled:opacity-40 inline-flex items-center"
+                          >
+                            {testandoServidor === vendor.id ? 'Testando…' : 'Testar'}
+                          </button>
                         ) : provedor?.disponibilidade === 'CREDENCIAIS' ? (
                           <button
                             type="button"

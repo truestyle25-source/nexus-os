@@ -7,6 +7,7 @@ import { Download } from 'lucide-react';
 import api from '@/lib/api';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
+import { comunicacaoApi } from '@/lib/integracoes-central';
 
 type Item = { pedido: string; vendaId: string | null; acao: string; detalhe?: string };
 type Resultado = { resumo: { consultados: number; importados: number; atualizados: number; duplicados: number; semVinculo: number; ignorados: number; erros: number }; relatorio: Item[] };
@@ -14,7 +15,9 @@ type Resultado = { resumo: { consultados: number; importados: number; atualizado
 const entrada = 'h-10 w-full rounded-[10px] border border-[var(--nx-border)] bg-[var(--nx-surface-2)] px-3 text-[13px] text-[var(--nx-ink)] focus:outline-none focus:border-[var(--nx-accent)]';
 const ROTULO: Record<string, string> = { importada: 'Importada', atualizada: 'Status atualizado', duplicada: 'Já existia', semVinculoProduto: 'Sem produto (SKU)', ignorado: 'Ignorado', moedaNaoSuportada: 'Moeda não suportada', erro: 'Erro' };
 
-export function ImportarPedidosWoo({ conectado, ultimoSyncEm }: { conectado: boolean; ultimoSyncEm: string | null }) {
+export function ImportarPedidosWoo({ conectado, ultimoSyncEm, config, onAlterado }: { conectado: boolean; ultimoSyncEm: string | null; config: Record<string, string>; onAlterado: () => void }) {
+  const automatico = config.importarAutomatico === 'SIM';
+  const [salvandoAuto, setSalvandoAuto] = useState(false);
   const [filiais, setFiliais] = useState<{ id: string; nome: string }[]>([]);
   const [filialId, setFilialId] = useState('');
   const [limite, setLimite] = useState(50);
@@ -27,6 +30,12 @@ export function ImportarPedidosWoo({ conectado, ultimoSyncEm }: { conectado: boo
       .then(({ data }) => { const l = Array.isArray(data) ? data : data.filiais ?? []; setFiliais(l); setFilialId((f) => f || l[0]?.id || ''); })
       .catch(() => setFiliais([]));
   }, []);
+
+  async function alternarAutomatico() {
+    setErro(null); setSalvandoAuto(true);
+    try { await comunicacaoApi.wooAutomatico(!automatico, filialId); onAlterado(); }
+    catch (e) { setErro(mensagemDeErroApi(e, 'Não foi possível alterar a importação automática.')); } finally { setSalvandoAuto(false); }
+  }
 
   async function importar() {
     setErro(null); setRes(null); setOcupado(true);
@@ -49,6 +58,7 @@ export function ImportarPedidosWoo({ conectado, ultimoSyncEm }: { conectado: boo
           <input className={`${entrada} mt-1`} type="number" min={1} max={200} value={limite} onChange={(e) => setLimite(Math.min(200, Math.max(1, Number(e.target.value) || 1)))} aria-label="Quantidade de pedidos" />
         </label>
       </div>
+      <label className="flex items-start gap-2 text-[12px] text-[var(--nx-ink-2)]"><input type="checkbox" checked={automatico} disabled={salvandoAuto || !filialId} onChange={() => void alternarAutomatico()} className="mt-0.5" aria-label="Importar automaticamente" />Importar automaticamente a cada 15 minutos{automatico && config.filialPedidos ? ` (filial: ${filiais.find((f) => f.id === config.filialPedidos)?.nome ?? config.filialPedidos})` : ' na filial escolhida acima'}.</label>
       <button type="button" onClick={importar} disabled={ocupado || !filialId} className="h-10 px-4 rounded-[10px] bg-[var(--nx-accent)] text-[13px] font-medium text-[var(--nx-ink)] hover:bg-[var(--nx-accent-2)] disabled:opacity-50 inline-flex items-center gap-2"><Download className="w-4 h-4" />{ocupado ? 'Importando…' : 'Importar pedidos'}</button>
       {erro && <p role="alert" className="rounded-[10px] border border-[color-mix(in_srgb,var(--nx-amber)_40%,var(--nx-border))] px-3 py-2 text-[12px] text-[var(--nx-amber)]">{erro}</p>}
       {res && (

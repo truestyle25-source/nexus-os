@@ -163,15 +163,23 @@ export async function testar(empresaId: string, usuarioId: string, id: string, c
   // Testou exatamente a configuração salva? Então o resultado vale como estado real.
   const mesmaConfig = reg?.credenciais && JSON.stringify(salvo.segredos) === JSON.stringify(segredos) && JSON.stringify(salvo.config) === JSON.stringify(config);
   if (reg && mesmaConfig) {
-    await prisma.integracaoExterno.update({ where: { id: reg.id }, data: { ultimoTesteEm: new Date(), ...estadoAposTeste(resultado, reg.conectadoEm) } });
+    await prisma.integracaoExterno.update({ where: { id: reg.id }, data: { ultimoTesteEm: new Date(), ...estadoAposTeste(resultado, reg.conectadoEm, { status: reg.status, mesmaCredencial: true }) } });
   }
   return { ok: resultado.ok, codigo: resultado.codigo, mensagem: resultado.mensagem, conta: resultado.conta ?? null };
 }
 
-function estadoAposTeste(resultado: ResultadoTeste, conectadoEm: Date | null | undefined) {
+/**
+ * Estado depois de um teste real. Falha PASSAGEIRA (timeout, provedor fora do ar, limite de
+ * requisições) com as MESMAS credenciais de uma integração já conectada não derruba o status:
+ * mantém CONECTADO e registra o aviso no campo erros ("Último erro"). Credencial recusada
+ * sempre vira ERRO.
+ */
+export function estadoAposTeste(resultado: ResultadoTeste, conectadoEm: Date | null | undefined, anterior?: { status?: string | null; mesmaCredencial: boolean }) {
   if (resultado.ok) return { status: 'CONECTADO', erros: Prisma.DbNull, accountName: resultado.conta?.nome ?? null, conectadoEm: conectadoEm ?? new Date() } as const;
   const transitorio = ['TIMEOUT', 'SERVICO_INDISPONIVEL', 'FALHA_COMUNICACAO', 'LIMITE_API'].includes(resultado.codigo);
-  return { status: transitorio ? 'CREDENCIAIS_SALVAS' : 'ERRO', erros: { code: resultado.codigo, message: resultado.mensagem } } as const;
+  const erros = { code: resultado.codigo, message: resultado.mensagem, transitorio };
+  if (transitorio && anterior?.mesmaCredencial && anterior.status === 'CONECTADO') return { status: 'CONECTADO', erros } as const;
+  return { status: transitorio ? 'CREDENCIAIS_SALVAS' : 'ERRO', erros } as const;
 }
 
 /** Valida, testa de verdade, cifra e persiste. */
@@ -182,7 +190,7 @@ export async function salvar(empresaId: string, usuarioId: string, id: string, c
   if (faltando.length) throw new ErroDeNegocio(`Preencha: ${faltando.join(', ')}.`, 400);
   const { resultado, duracaoMs } = await executarTeste(def, config, segredos);
   const trocouSegredo = def.campos.some((c) => c.secreto && typeof corpo[c.chave] === 'string' && (corpo[c.chave] as string).trim());
-  const estado = estadoAposTeste(resultado, reg?.conectadoEm);
+  const estado = estadoAposTeste(resultado, reg?.conectadoEm, { status: reg?.status, mesmaCredencial: Boolean(reg?.credenciais) && !trocouSegredo });
   const dados = {
     nome: def.nome, config, credenciais: encryptSecret(JSON.stringify(segredos)), ultimoTesteEm: new Date(),
     status: estado.status, erros: ('erros' in estado && estado.erros ? estado.erros : Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull,

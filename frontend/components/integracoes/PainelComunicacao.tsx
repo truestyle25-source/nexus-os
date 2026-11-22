@@ -34,6 +34,7 @@ export function EnvioWhatsApp({ conectado }: { conectado: boolean }) {
   const [modelo, setModelo] = useState('');
   const [idioma, setIdioma] = useState('pt_BR');
   const [parametros, setParametros] = useState('');
+  const [consentimento, setConsentimento] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
 
@@ -41,8 +42,8 @@ export function EnvioWhatsApp({ conectado }: { conectado: boolean }) {
     setAviso(null); setEnviando(true);
     try {
       const r = await comunicacaoApi.enviarWhats(tipo === 'TEXTO'
-        ? { para, tipo, texto }
-        : { para, tipo, modelo: { nome: modelo.trim(), idioma: idioma.trim(), parametros: parametros.split('|').map((p) => p.trim()).filter(Boolean) } });
+        ? { para, tipo, texto, consentimento }
+        : { para, tipo, consentimento, modelo: { nome: modelo.trim(), idioma: idioma.trim(), parametros: parametros.split('|').map((p) => p.trim()).filter(Boolean) } });
       setAviso(r.status === 'ENVIADA' ? { ok: true, texto: 'Mensagem aceita pela Meta. A entrega e a leitura aparecem no Histórico quando o webhook confirmar.' } : { ok: false, texto: r.erro ?? 'Falha no envio.' });
     } catch (e) { setAviso({ ok: false, texto: mensagemDeErroApi(e, erroPadrao) }); } finally { setEnviando(false); }
   }
@@ -66,6 +67,7 @@ export function EnvioWhatsApp({ conectado }: { conectado: boolean }) {
           <label className="block sm:col-span-3"><span className="text-[12px] text-[var(--nx-ink-2)]">Parâmetros do corpo (separe com |)</span><input className={`${entrada} mt-1`} value={parametros} onChange={(e) => setParametros(e.target.value)} placeholder="Mariana | Pedido 1047" aria-label="Parâmetros do modelo" /></label>
         </div>
       )}
+      <label className="flex items-start gap-2 text-[12px] text-[var(--nx-ink-2)]"><input type="checkbox" checked={consentimento} onChange={(e) => setConsentimento(e.target.checked)} className="mt-0.5" aria-label="Contato autorizou receber mensagens" />O contato autorizou receber mensagens da empresa pelo WhatsApp (dispensável se ele já escreveu para a empresa). Quem respondeu SAIR não recebe nada.</label>
       <button type="button" className={botaoPri} onClick={enviar} disabled={enviando || !para.trim() || (tipo === 'TEXTO' ? !texto.trim() : !modelo.trim())}><Send className="w-4 h-4" />{enviando ? 'Enviando…' : 'Enviar mensagem'}</button>
       {aviso && <Aviso {...aviso} />}
     </div>
@@ -90,8 +92,43 @@ export function HistoricoWhatsApp() {
                 <p className="text-[13px] text-[var(--nx-ink)]">{m.direcao === 'RECEBIDA' ? 'De' : 'Para'} {m.nomeContato ? `${m.nomeContato} · ` : ''}+{m.telefone}</p>
                 {m.conteudo && <p className="text-[12px] text-[var(--nx-ink-2)] break-words">{m.conteudo}</p>}
                 {m.erro && <p className="text-[12px] text-[var(--nx-amber)] break-words">{m.erro}</p>}
-                <p className="text-[11px] text-[var(--nx-ink-3)]">{formatDateTime(m.createdAt)} · <span style={{ color: corStatus(m.status) }}>{ROTULO_STATUS_MENSAGEM[m.status] ?? m.status}</span></p>
+                <p className="text-[11px] text-[var(--nx-ink-3)]">{formatDateTime(m.createdAt)} · <span style={{ color: corStatus(m.status) }}>{ROTULO_STATUS_MENSAGEM[m.status] ?? m.status}</span>{m.consentimento && m.direcao === 'ENVIADA' ? ` · base: ${BASES[m.consentimento] ?? m.consentimento}` : ''}</p>
               </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const BASES: Record<string, string> = { CLIENTE_INICIOU: 'cliente iniciou a conversa', DECLARADO: 'autorização declarada', FORNECEDOR: 'fornecedor (B2B)' };
+
+export function DescadastrosWhatsApp() {
+  const [itens, setItens] = useState<{ telefone: string; origem: string; createdAt: string }[] | null>(null);
+  const [novo, setNovo] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const carregar = useCallback(() => { comunicacaoApi.descadastros().then(setItens).catch((e) => { setErro(mensagemDeErroApi(e, erroPadrao)); setItens([]); }); }, []);
+  useEffect(() => { carregar(); }, [carregar]);
+  const definir = async (tel: string, descadastrar: boolean) => {
+    setErro(null);
+    try { await comunicacaoApi.definirDescadastro(tel, descadastrar); setNovo(''); carregar(); } catch (e) { setErro(mensagemDeErroApi(e, erroPadrao)); }
+  };
+  return (
+    <section className="space-y-2" aria-label="Contatos que não querem receber">
+      <h3 className="pt-2 text-[13px] font-semibold text-[var(--nx-ink)]">Não querem receber (LGPD)</h3>
+      <p className="text-[11px] text-[var(--nx-ink-3)]">Entram quando respondem SAIR, PARAR ou STOP e saem quando respondem VOLTAR. Nenhum envio vai para estes números.</p>
+      <div className="flex gap-2">
+        <input className={entrada} value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Telefone para descadastrar" aria-label="Telefone para descadastrar" inputMode="tel" />
+        <button type="button" className={botaoSec} onClick={() => void definir(novo, true)} disabled={novo.replace(/\D/g, '').length < 10}>Descadastrar</button>
+      </div>
+      {erro && <Aviso ok={false} texto={erro} />}
+      {itens && itens.length > 0 && (
+        <ul className="divide-y divide-[var(--nx-border)]">
+          {itens.map((d) => (
+            <li key={d.telefone} className="py-2 flex items-center justify-between gap-2 text-[12px]">
+              <span className="text-[var(--nx-ink)]">+{d.telefone} <span className="text-[var(--nx-ink-3)]">· {d.origem === 'PALAVRA_CHAVE' ? 'pediu pelo WhatsApp' : 'manual'} · {formatDateTime(d.createdAt)}</span></span>
+              <button type="button" className={botaoSec} onClick={() => void definir(d.telefone, false)}>Reativar</button>
             </li>
           ))}
         </ul>

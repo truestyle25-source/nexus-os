@@ -11,6 +11,7 @@
  */
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { request as httpsRequest } from 'node:https';
 
 export class DestinoBloqueado extends Error {}
 
@@ -69,3 +70,35 @@ export async function exigirUrlHttpsPublica(bruta: string): Promise<URL> {
 
 export const PORTAS_SMTP = [25, 465, 587, 2525];
 export const PORTAS_IMAP = [143, 993];
+
+/** Como exigirUrlHttpsPublica, mas devolve também o IP validado (para conexão fixada). */
+export async function resolverUrlHttpsPublica(bruta: string): Promise<{ url: URL; ip: string }> {
+  const url = await exigirUrlHttpsPublica(bruta);
+  return { url, ip: await exigirHostPublico(url.hostname) };
+}
+
+/**
+ * GET HTTPS fixado no IP já validado: a conexão vai direto ao IP (sem nova consulta DNS) e o
+ * nome original fica no TLS (SNI e conferência do certificado) e no cabeçalho Host. Fecha a
+ * brecha de DNS rebinding entre a checagem e a conexão. Não segue redirecionamentos; corpo
+ * limitado a `limiteBytes`; timeout total.
+ */
+export function getHttpsFixado(url: URL, ip: string, cabecalhos: Record<string, string>, opcoes: { timeoutMs?: number; limiteBytes?: number } = {}): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; corpo: string }> {
+  const timeoutMs = opcoes.timeoutMs ?? 20_000;
+  const limite = opcoes.limiteBytes ?? 10 * 1024 * 1024;
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest({
+      host: ip, servername: url.hostname, port: url.port ? Number(url.port) : 443, method: 'GET',
+      path: `${url.pathname}${url.search}`, headers: { Host: url.host, ...cabecalhos }, timeout: timeoutMs,
+      minVersion: 'TLSv1.2',
+    }, (res) => {
+      const partes: Buffer[] = []; let total = 0;
+      res.on('data', (c: Buffer) => { total += c.length; if (total > limite) { req.destroy(new Error('Resposta grande demais.')); return; } partes.push(c); });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, corpo: Buffer.concat(partes).toString('utf8') }));
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { name: 'TimeoutError' })));
+    req.on('error', reject);
+    req.end();
+  });
+}

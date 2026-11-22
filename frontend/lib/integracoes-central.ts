@@ -64,17 +64,20 @@ export function camposFaltando(campos: CampoProvedor[], valores: Record<string, 
 }
 
 // --- Fase B: WhatsApp Business e E-mail da empresa -------------------------------------
-export interface MensagemWhats { id: string; direcao: 'ENVIADA' | 'RECEBIDA'; telefone: string; nomeContato: string | null; tipo: string; conteudo: string | null; status: string; erro: string | null; origem: string; createdAt: string }
+export interface MensagemWhats { id: string; direcao: 'ENVIADA' | 'RECEBIDA'; telefone: string; nomeContato: string | null; tipo: string; conteudo: string | null; status: string; erro: string | null; origem: string; consentimento?: string | null; createdAt: string }
 export interface EnvioEmailRegistro { id: string; para: string; assunto: string; anexos: number; status: 'ENVIADO' | 'FALHOU'; erro: string | null; origem: string; createdAt: string }
 export interface MensagemCaixa { uid: number; de: string | null; assunto: string | null; data: string | null; lida: boolean }
 export interface ResultadoEnvio { id: string; status: string; erro?: string }
 
 export const comunicacaoApi = {
   mensagensWhats: () => api.get<{ mensagens: MensagemWhats[] }>('/integracoes/central/whatsapp/mensagens').then((r) => r.data.mensagens),
-  enviarWhats: (corpo: { para: string; tipo: 'TEXTO' | 'MODELO'; texto?: string; modelo?: { nome: string; idioma: string; parametros: string[] } }) =>
+  enviarWhats: (corpo: { para: string; tipo: 'TEXTO' | 'MODELO'; texto?: string; modelo?: { nome: string; idioma: string; parametros: string[] }; consentimento?: boolean }) =>
     api.post<ResultadoEnvio>('/integracoes/central/whatsapp/mensagens', corpo).then((r) => r.data),
   enviosEmail: () => api.get<{ envios: EnvioEmailRegistro[] }>('/integracoes/central/email/envios').then((r) => r.data.envios),
   enviarEmail: (corpo: { para: string[]; assunto: string; texto?: string; html?: string }) => api.post<ResultadoEnvio>('/integracoes/central/email/enviar', corpo).then((r) => r.data),
+  descadastros: () => api.get<{ descadastros: { telefone: string; origem: string; createdAt: string }[] }>('/integracoes/central/whatsapp/descadastros').then((r) => r.data.descadastros),
+  definirDescadastro: (telefone: string, descadastrar: boolean) => api.post('/integracoes/central/whatsapp/descadastros', { telefone, descadastrar }).then((r) => r.data),
+  wooAutomatico: (ativo: boolean, filialId?: string) => api.put<{ importarAutomatico: string; filialPedidos: string | null }>('/integracoes/central/woocommerce/automatico', { ativo, ...(filialId ? { filialId } : {}) }).then((r) => r.data),
   caixa: () => api.get<{ mensagens: MensagemCaixa[] }>('/integracoes/central/email/caixa').then((r) => r.data.mensagens),
 };
 
