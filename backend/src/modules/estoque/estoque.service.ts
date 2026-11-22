@@ -49,6 +49,8 @@ export interface MovimentoInput {
   custoUnitario?: number;
   /** Baixa de componente pela venda de um KIT: o kit vendido (origem da movimentação). */
   kitProdutoId?: string | null;
+  /** Entrada gerada por recebimento de compra (rastreio pedido → recebimento → movimentação). */
+  recebimentoId?: string | null;
 }
 
 /**
@@ -140,6 +142,7 @@ export async function aplicarMovimento(tx: Tx, input: MovimentoInput) {
       saldoPosterior: novaQtd,
       custoUnitario: input.custoUnitario ?? Number(produto.custo),
       kitProdutoId: input.kitProdutoId ?? null,
+      recebimentoId: input.recebimentoId ?? null,
     },
   });
 

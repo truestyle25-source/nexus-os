@@ -12,6 +12,7 @@ import { aplicarMovimento } from '../estoque/estoque.service.js';
 import { converterParaUnidadeBaseCompra } from '../estoque/conversao.service.js';
 import { recalcularCustoDosKits } from '../produtos/kit.service.js';
 import { STATUS_QUE_RECEBEM_PEDIDO, proximoCodigo } from '../fornecedores/fornecedor-ficha.service.js';
+import { EDITAVEIS, ROTULO_STATUS, confirmarRecebimento, proximoNumeroCompra } from './compra.service.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 
@@ -172,7 +173,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         .object({
           filialId: z.string().optional(),
           fornecedorId: z.string().optional(),
-          status: z.enum(['SOLICITADA', 'PEDIDO', 'RECEBIDA', 'CANCELADA']).optional(),
+          status: z.enum(['SOLICITADA', 'PEDIDO', 'RECEBIDA', 'CANCELADA', 'RASCUNHO', 'AGUARDANDO_APROVACAO', 'APROVADA', 'ENVIADA', 'PARCIAL', 'CONCLUIDA']).optional(),
           take: z.coerce.number().int().min(1).max(200).default(50),
           skip: z.coerce.number().int().min(0).default(0),
         })
@@ -293,18 +294,21 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         };
       }));
 
-      const compra = await prisma.compra.create({
+      const compra = await prisma.$transaction(async (tx) => tx.compra.create({
         data: {
           empresaId: req.user.empresaId,
           filialId: data.filialId,
           fornecedorId: data.fornecedorId,
           valorTotal,
+          valorProdutos: valorTotal,
           condPagamento: data.condPagamento,
           origem: data.origem,
+          numero: await proximoNumeroCompra(tx, req.user.empresaId),
+          responsavelId: req.user.id, criadoPorId: req.user.id, atualizadoPorId: req.user.id, atualizadoEm: new Date(),
           itens: { create: itensComConversao },
         },
         include: { itens: true },
-      });
+      }));
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -331,7 +335,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const data = schema.parse(req.body);
       const anterior = await prisma.compra.findFirst({ where: { id, empresaId: req.user.empresaId }, include: { itens: true } });
       if (!anterior) throw NaoEncontrado('Compra não encontrada nesta empresa.');
-      if (anterior.status !== 'SOLICITADA') throw new ErroDeNegocio('Só é possível editar uma compra enquanto o status for SOLICITADA.', 409);
+      if (!EDITAVEIS.includes(anterior.status)) throw new ErroDeNegocio(`Só é possível editar uma compra em rascunho (status atual: ${ROTULO_STATUS[anterior.status] ?? anterior.status}).`, 409);
       if (data.itens) {
         for (const item of data.itens) {
           const produto = await prisma.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId } });
@@ -346,7 +350,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         }
         return tx.compra.update({
           where: { id },
-          data: { condPagamento: data.condPagamento, valorTotal },
+          data: { condPagamento: data.condPagamento, valorTotal, ...(data.itens ? { valorProdutos: valorTotal } : {}), atualizadoPorId: req.user.id, atualizadoEm: new Date() },
           include: { itens: true },
         });
       });
@@ -373,8 +377,8 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const compra = await prisma.compra.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!compra) throw NaoEncontrado('Compra não encontrada.');
-      if (compra.status !== 'SOLICITADA') throw new ErroDeNegocio(`Não é possível confirmar uma compra com status ${compra.status}.`, 409);
-      const atualizada = await prisma.compra.update({ where: { id }, data: { status: 'PEDIDO' } });
+      if (!['SOLICITADA', 'APROVADA', 'ENVIADA'].includes(compra.status)) throw new ErroDeNegocio(`Não é possível confirmar uma compra com status ${compra.status}.`, 409);
+      const atualizada = await prisma.compra.update({ where: { id }, data: { status: 'PEDIDO', confirmadoEm: new Date(), atualizadoPorId: req.user.id, atualizadoEm: new Date() } });
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -400,114 +404,16 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate, await permissaoMiddleware('compras', 'editar')] },
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
-      const compraAtualizada = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // Trava a linha da compra até o fim da transação. Sem isto, recebimentos
-        // simultâneos (duplo clique, dois operadores) liam o status ao mesmo tempo,
-        // todos passavam na checagem e cada um gravava movimentação de estoque e
-        // lançamento financeiro — 5 cliques = 5 contas a pagar.
-        await tx.$queryRaw`SELECT "id" FROM "Compra" WHERE "id" = ${id} AND "empresaId" = ${req.user.empresaId} FOR UPDATE`;
-        const compra = await tx.compra.findFirst({ where: { id, empresaId: req.user.empresaId }, include: { itens: true } });
-        if (!compra) throw NaoEncontrado('Compra não encontrada.');
-        if (compra.status === 'RECEBIDA') throw new ErroDeNegocio('Compra já recebida.', 409);
-        if (compra.status === 'CANCELADA') throw new ErroDeNegocio('Compra cancelada não pode ser recebida.', 409);
-
-        for (const item of compra.itens) {
-          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId } });
-          if (!produto) throw NaoEncontrado('Produto da compra não pertence à empresa.');
-          // Saldo e valor ANTES do movimento: são a base do custo médio ponderado.
-          // (Antes esta leitura era feita DEPOIS de aplicarMovimento, que já soma a
-          // quantidade — o recebimento somava de novo e DOBRAVA o estoque, e o custo
-          // médio saía errado.)
-          // FOR UPDATE: duas compras DIFERENTES do mesmo produto recebidas juntas
-          // não podem ler o mesmo saldo e sobrescrever o custo uma da outra.
-          const [estoqueAntes] = await tx.$queryRaw<Array<{ quantidade: Prisma.Decimal; valorTotal: Prisma.Decimal }>>`
-            SELECT "quantidade", "valorTotal" FROM "Estoque"
-            WHERE "filialId" = ${compra.filialId} AND "produtoId" = ${produto.id}
-            FOR UPDATE`;
-          // preco por unidade base = valorUnit / fatorAplicado (se houver fator)
-          const fator = item.fatorAplicado && Number(item.fatorAplicado) > 0 ? Number(item.fatorAplicado) : 1;
-          const precoUnitarioBase = Number(item.valorUnit) / fator;
-          await aplicarMovimento(tx, {
-            empresaId: req.user.empresaId,
-            filialId: compra.filialId,
-            produtoId: item.produtoId,
-            usuarioId: req.user.id,
-            tipo: 'COMPRA',
-            quantidade: Number(item.quantidadeBase ?? item.quantidade),
-            motivo: `Recebimento compra ${id}`,
-            documento: id,
-            origem: compra.origem,
-            custoUnitario: precoUnitarioBase,
-          });
-          // Etapa 4 — custo médio ponderado (política aprovada).
-
-          const qtdAtual = Number(estoqueAntes?.quantidade ?? 0);
-          const valorAtual = Number(estoqueAntes?.valorTotal ?? 0);
-
-          const novaQtd = qtdAtual + Number(item.quantidadeBase ?? item.quantidade);
-          const novoValorTotal = valorAtual + (Number(item.quantidadeBase ?? item.quantidade) * precoUnitarioBase);
-          const custoMedio = novaQtd > 0 ? novoValorTotal / novaQtd : precoUnitarioBase;
-          // Política de custo do cadastro (antes ignorada: sempre média ponderada).
-          // MEDIO_PONDERADO (padrão) mantém o comportamento anterior.
-          const novoCusto = produto.politicaCusto === 'ULTIMO_CUSTO'
-            ? precoUnitarioBase
-            : produto.politicaCusto === 'PADRAO' ? Number(produto.custo) : custoMedio;
-
-          await tx.produto.update({
-            where: { id: produto.id },
-            data: { custo: novoCusto, ultimoCustoAquisicao: precoUnitarioBase, precoCompra: Number(item.valorUnit) },
-          });
-          await registrarHistoricoPrecos(tx, {
-            empresaId: req.user.empresaId, produtoId: produto.id, usuarioId: req.user.id, filialId: compra.filialId,
-            anterior: produto, novo: { custo: novoCusto, precoCompra: Number(item.valorUnit) },
-            justificativa: `Recebimento da compra ${id}`, origem: 'COMPRA',
-          });
-          // aplicarMovimento já gravou a quantidade (= novaQtd) e garantiu que a
-          // linha de estoque existe; aqui só se corrige o valor pelo custo médio.
-          await tx.estoque.update({
-            where: { filialId_produtoId: { filialId: compra.filialId, produtoId: produto.id } },
-            data: { quantidade: novaQtd, valorTotal: produto.politicaCusto === 'MEDIO_PONDERADO' ? novoValorTotal : novaQtd * novoCusto },
-          });
-        }
-
-        // Vínculo fornecedor × produto (aba Produtos do Fornecedor): último preço de compra (por
-        // unidade base) e histórico. Só atualiza vínculos existentes — não cria vínculo sozinho.
-        for (const item of compra.itens) {
-          const vinculo = await tx.fornecedorProduto.findFirst({ where: { empresaId: req.user.empresaId, fornecedorId: compra.fornecedorId, produtoId: item.produtoId } });
-          if (!vinculo) continue;
-          const qtdBase = Number(item.quantidadeBase ?? item.quantidade);
-          const precoBase = qtdBase > 0 ? (Number(item.valorUnit) * Number(item.quantidade)) / qtdBase : Number(item.valorUnit);
-          await tx.fornecedorProduto.update({ where: { id: vinculo.id }, data: { ultimoPrecoCompra: precoBase } });
-          await tx.fornecedorPrecoHistorico.create({
-            data: {
-              empresaId: req.user.empresaId, fornecedorId: compra.fornecedorId, produtoId: item.produtoId, campo: 'ULTIMA_COMPRA',
-              valorAnterior: vinculo.ultimoPrecoCompra, valorNovo: precoBase, origem: 'COMPRA', documento: id, usuarioId: req.user.id,
-            },
-          });
-        }
-
-        // Kits (tipo KIT) que usam algum produto recebido: o custo do kit acompanha o novo custo
-        // dos componentes. O preço de venda NÃO muda (só custo, margem e histórico).
-        await recalcularCustoDosKits(tx, req.user.empresaId, [...new Set(compra.itens.map((i) => i.produtoId))], {
-          usuarioId: req.user.id, justificativa: `Componente atualizado no recebimento da compra ${id}`, origem: 'COMPRA',
-        });
-
-        const atualizada = await tx.compra.update({ where: { id }, data: { status: 'RECEBIDA', dataRecebimento: new Date() } });
-        await tx.financeiro.create({
-          data: {
-            empresaId: req.user.empresaId,
-            filialId: compra.filialId,
-            tipo: 'DESPESA',
-            categoria: 'fornecedores',
-            descricao: `Compra ${id}`,
-            valor: compra.valorTotal,
-            status: 'PENDENTE',
-            compraId: id,
-            origem: compra.origem,
-          },
-        });
-        return atualizada;
-      });
+      // Recebimento TOTAL de tudo o que está pendente. A lógica (trava da compra, entrada no
+      // estoque com conversão, custo pela política do produto, vínculo fornecedor×produto, custo
+      // dos kits, status e contas a pagar) vive em compra.service.ts e é a mesma do recebimento
+      // parcial (POST /api/v1/compras/:id/recebimentos). Chave única por chamada: a proteção contra
+      // repetição aqui é o status (compra já RECEBIDA → 409), como antes.
+      const resultado = await prisma.$transaction((tx) => confirmarRecebimento(tx, {
+        empresaId: req.user.empresaId, usuarioId: req.user.id, compraId: id, itens: 'TOTAL',
+        idempotencyKey: `total-${id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      }));
+      const compraAtualizada = resultado.duplicado ? await prisma.compra.findUniqueOrThrow({ where: { id } }) : resultado.compra;
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -531,11 +437,15 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate, await permissaoMiddleware('compras', 'editar')] },
     async (req: FastifyRequest) => {
       const { id } = req.params as { id: string };
+      const { motivo } = z.object({ motivo: z.string().trim().min(3).max(300).optional() }).parse(req.body ?? {});
       const compra = await prisma.compra.findFirst({ where: { id, empresaId: req.user.empresaId } });
       if (!compra) throw NaoEncontrado('Compra não encontrada.');
-      if (compra.status === 'RECEBIDA') throw new ErroDeNegocio('Compra já recebida não pode ser cancelada (use um fluxo de devolução ao fornecedor).', 409);
+      if (['RECEBIDA', 'CONCLUIDA'].includes(compra.status)) throw new ErroDeNegocio('Compra já recebida não pode ser cancelada (use um fluxo de devolução ao fornecedor).', 409);
+      // Parcialmente recebida: as entradas já feitas NÃO são apagadas. Para encerrar o saldo
+      // pendente, use "Concluir" (POST /api/v1/compras/:id/acao { acao: 'CONCLUIR' }).
+      if (compra.status === 'PARCIAL') throw new ErroDeNegocio('Compra parcialmente recebida não pode ser cancelada: as entradas no estoque são mantidas. Use "Concluir" para encerrar o saldo pendente.', 409);
       if (compra.status === 'CANCELADA') throw new ErroDeNegocio('Compra já está cancelada.', 409);
-      const atualizada = await prisma.compra.update({ where: { id }, data: { status: 'CANCELADA' } });
+      const atualizada = await prisma.compra.update({ where: { id }, data: { status: 'CANCELADA', motivoCancelamento: motivo ?? null, atualizadoPorId: req.user.id, atualizadoEm: new Date() } });
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
@@ -543,9 +453,10 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
         entidade: 'Compra',
         entidadeId: id,
         valorAnterior: { status: compra.status },
-        valorNovo: { status: 'CANCELADA' },
+        valorNovo: { status: 'CANCELADA', motivo: motivo ?? null },
         origem: 'MANUAL',
         ip: req.ip,
+        contexto: `Pedido cancelado${motivo ? ` — ${motivo}` : ''}`,
       });
       return atualizada;
     },

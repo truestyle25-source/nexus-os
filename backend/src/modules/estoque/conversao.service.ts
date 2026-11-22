@@ -65,7 +65,10 @@ async function buscarFatorConversao({
       unidadeOrigemId,
       unidadeDestinoId,
       ativo: true,
-      ...(fornecedorId ? { fornecedorId } : { fornecedorId: null }),
+      // Fator do próprio fornecedor tem prioridade; sem ele, vale o fator geral do produto
+      // (fornecedorId nulo, cadastrado na ficha). Antes, com fornecedor informado (compras), o fator
+      // geral era ignorado e toda compra em embalagem (CX → UN) era recusada.
+      ...(fornecedorId ? { OR: [{ fornecedorId }, { fornecedorId: null }] } : { fornecedorId: null }),
       // Vigência aberta (null) vale: o fator cadastrado na ficha tem vigenciaAte nula enquanto
       // estiver em uso. Antes, `vigenciaAte: { gte }` excluía exatamente esses fatores e toda
       // conversão por embalagem (ex.: 1 CX = 6 UN) era recusada.
@@ -74,7 +77,7 @@ async function buscarFatorConversao({
         { OR: [{ vigenciaAte: null }, { vigenciaAte: { gte: agora } }] },
       ],
     },
-    orderBy: [{ fornecedorId: fornecedorId ? 'desc' : 'asc' }, { createdAt: 'desc' }],
+    orderBy: [{ fornecedorId: { sort: fornecedorId ? 'desc' : 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
   });
 }
 

@@ -27,12 +27,18 @@ export function mascararEmail(email: string): string {
   return `${usuario.slice(0, 2)}***@${dominio}`;
 }
 
-interface ResultadoEnvio {
+export interface ResultadoEnvio {
   enviado: boolean;
   erro?: string;
+  /** Id da mensagem no provedor (Resend), quando aceita. */
+  id?: string;
 }
 
-async function enviarEmail(params: { para: string; assunto: string; html: string; texto: string }): Promise<ResultadoEnvio> {
+/** Anexo (conteúdo em base64), no formato aceito pela API da Resend. */
+export interface AnexoEmail { nome: string; base64: string }
+
+/** Exportado para outros módulos (ex.: envio do pedido de compra ao fornecedor). */
+export async function enviarEmail(params: { para: string; assunto: string; html: string; texto: string; anexos?: AnexoEmail[]; responderPara?: string }): Promise<ResultadoEnvio> {
   const apiKey = process.env.RESEND_API_KEY;
   const remetente = process.env.EMAIL_FROM || 'NEXUS OS <onboarding@resend.dev>';
 
@@ -54,6 +60,8 @@ async function enviarEmail(params: { para: string; assunto: string; html: string
         subject: params.assunto,
         html: params.html,
         text: params.texto,
+        ...(params.anexos?.length ? { attachments: params.anexos.map((a) => ({ filename: a.nome, content: a.base64 })) } : {}),
+        ...(params.responderPara ? { reply_to: params.responderPara } : {}),
       }),
     });
 
@@ -63,7 +71,8 @@ async function enviarEmail(params: { para: string; assunto: string; html: string
       return { enviado: false, erro: `HTTP ${resposta.status}` };
     }
 
-    return { enviado: true };
+    const corpo = (await resposta.json().catch(() => ({}))) as { id?: string };
+    return { enviado: true, id: corpo.id };
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
     log.error({ para: mascararEmail(params.para), mensagem, evento: 'integracao_falhou', integracao: 'resend' }, 'erro de rede ao enviar e-mail');
