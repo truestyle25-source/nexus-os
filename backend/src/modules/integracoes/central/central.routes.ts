@@ -15,6 +15,7 @@ import { desconectar, estadosDaEmpresa, historico, obterConfiguracao, remover, r
 import { assinaturaValida, desafioValido, enviarWhatsApp, listarMensagens, processarWebhook, verificarAssinaturaWebhook } from './whatsapp.service.js';
 import { caixaDeEntrada, enviarEmail, listarEnvios } from './email.service.js';
 import { atualizarCobranca, conferirPagamento, credenciaisPorRegistro, gerarCobranca } from './cobrancas.service.js';
+import { importarPedidosWoo } from './woocommerce-pedidos.service.js';
 import { timingSafeEqual } from 'node:crypto';
 import { definirSistemaDaRequisicao } from '../../../lib/tenant-context.js';
 import { createRateLimiter } from '../../../middlewares/rateLimiter.js';
@@ -93,6 +94,12 @@ export async function centralIntegracoesRoutes(app: FastifyInstance): Promise<vo
     gerarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id, PedidoCobranca.parse(req.body ?? {}), baseUrlPublica(req)));
   app.post('/financeiro/:id/cobranca/atualizar', { preHandler: [auth, fin, limiteConexao] }, async (req: any) =>
     atualizarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id));
+
+  // --- WooCommerce: importação de pedidos para Vendas (manual, por filial) ---------------
+  app.post('/integracoes/central/woocommerce/pedidos/importar', { preHandler: [auth, editar, limiteConexao] }, async (req: any) => {
+    const d = z.object({ filialId: z.string().min(1).max(40), limite: z.number().int().min(1).max(200).default(50) }).parse(req.body ?? {});
+    return importarPedidosWoo(req.user.empresaId, req.user.id, d.filialId, d.limite);
+  });
 
   app.get('/integracoes/central/email/caixa', { preHandler: [auth, ver, limiteConexao] }, async (req: any) =>
     ({ mensagens: await caixaDeEntrada(req.user.empresaId) }));

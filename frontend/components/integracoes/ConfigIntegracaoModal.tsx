@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { CheckCircle2, ChevronDown, Copy, ExternalLink, Eye, EyeOff, Info, Lock, Wifi, X, AlertTriangle } from 'lucide-react';
 import { EnvioEmail, EnvioWhatsApp, HistoricoEmail, HistoricoWhatsApp } from './PainelComunicacao';
+import { ImportarPedidosWoo } from './PainelWoo';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
 import {
@@ -226,7 +227,8 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
 
           {aba === 'sync' && provedor.id === 'whatsapp' && <EnvioWhatsApp conectado={status === 'CONECTADO'} />}
           {aba === 'sync' && provedor.id === 'email-conta' && <EnvioEmail conectado={status === 'CONECTADO'} recebe={estado?.configuracao?.config.receber === 'SIM'} />}
-          {aba === 'sync' && !comunicacao && (
+          {aba === 'sync' && provedor.id === 'woocommerce' && <ImportarPedidosWoo conectado={status === 'CONECTADO'} ultimoSyncEm={estado?.ultimoSyncEm ?? null} />}
+          {aba === 'sync' && !comunicacao && provedor.id !== 'woocommerce' && (
             oauth?.sincronizacao ?? (
               <div className="space-y-2 text-[13px] text-[var(--nx-ink-2)]">
                 <p>Última validação: {estado?.ultimoTesteEm ? formatDateTime(estado.ultimoTesteEm) : '—'}</p>
