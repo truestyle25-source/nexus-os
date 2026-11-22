@@ -33,11 +33,12 @@ export interface FichaCompra {
   financeiro: { cronogramaPrevisto: Array<{ parcela: number; de: number; vencimento: string; valor: number }>; contas: Array<{ id: Id; descricao: string; valor: number; vencimento: string | null; status: string }> | null };
   recebimentos: Array<{ id: Id; numero: number; data: string; usuario: string | null; valorRecebido: number; observacoes: string | null; notaFiscal: string | null; itens: Array<{ compraItemId: Id; produtoId: Id; recebida: number; base: number; avariada: number; recusada: number; divergencia: string | null }>; movimentacoes: Array<{ id: Id; produtoId: Id; quantidade: number; saldoPosterior: number | null; createdAt: string }> }>;
   notasFiscais: Array<Record<string, any> & { id: Id; numero: string }>;
-  envios: Array<{ id: Id; canal: string; destinatario: string; status: string; erro: string | null; createdAt: string }>;
+  envios: Array<{ id: Id; canal: string; destinatario: string; status: string; provedor?: string | null; erro: string | null; createdAt: string; entrega?: { status: string; erro: string | null } | null }>;
   documentos: Array<{ id: Id; entidadeTipo: string; entidadeId: Id; nome: string; descricao: string | null; tamanho: number; enviadoPor: string | null; enviadoEm: string }>;
   acoes: Acao[]; editavel: boolean; exigeAprovacao: boolean;
   permissoes: { custo: boolean; financeiro: boolean; aprovar: boolean };
-  canais: { email: { configurado: boolean; provedor: string; remetente: string | null }; whatsapp: { configurado: boolean; provedor: string; template: string | null } };
+  // origem: CENTRAL = conta da empresa na Central de Integrações; SERVIDOR = variáveis do servidor (reserva).
+  canais: { email: { configurado: boolean; provedor: string; remetente: string | null; origem?: 'CENTRAL' | 'SERVIDOR' | null }; whatsapp: { configurado: boolean; provedor: string; template: string | null; origem?: 'CENTRAL' | 'SERVIDOR' | null } };
   storageConfigurado: boolean;
   auditoria: { criadoPor: string | null; criadoEm: string; atualizadoPor: string | null; atualizadoEm: string };
 }

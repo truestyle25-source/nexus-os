@@ -165,3 +165,52 @@ export async function processarWebhook(empresaId: string, phoneNumberId: string,
   }
   return res;
 }
+
+/**
+ * Documento (PDF) pela conta da empresa — usado por módulos como Compras.
+ * 1) POST /<PHONE_NUMBER_ID>/media (multipart) → id da mídia;
+ * 2) mensagem: modelo aprovado com cabeçalho de DOCUMENTO e 1 parâmetro no corpo, quando
+ *    configurado em "Modelo para documentos" (entrega fora da janela de 24 h); senão
+ *    documento com legenda (só dentro da janela de 24 h).
+ * Registra em WhatsappMensagem (origem = módulo) para o histórico e o status de entrega.
+ */
+export async function enviarDocumentoWhatsApp(empresaId: string, usuarioId: string | null, p: { para: string; legenda: string; pdf: { nome: string; base64: string }; origem: string }) {
+  const cred = await credenciaisInternas(empresaId, 'whatsapp');
+  if (!cred || cred.status !== 'CONECTADO') return { status: 'NAO_CONECTADO' as const };
+  const para = telefoneWhatsApp(p.para);
+  if (!para) return { status: 'FALHOU' as const, erro: 'Telefone inválido para WhatsApp.' };
+  const base = `https://graph.facebook.com/${versaoGraph(cred.config)}/${cred.config.phoneNumberId}`;
+  const auth = { Authorization: `Bearer ${cred.segredos.accessToken}` };
+  const modelo = /^[a-z0-9_]{1,512}$/.test(cred.config.modeloDocumento ?? '') ? cred.config.modeloDocumento : null;
+  const msg = await prisma.whatsappMensagem.create({ data: { empresaId, direcao: 'ENVIADA', telefone: para, tipo: modelo ? 'template' : 'document', conteudo: `${p.pdf.nome} — ${p.legenda}`.slice(0, 1000), status: 'ENVIANDO', origem: p.origem, usuarioId } });
+  const falhar = async (erro: string) => {
+    await prisma.whatsappMensagem.update({ where: { id: msg.id }, data: { status: 'FALHOU', erro } });
+    return { status: 'FALHOU' as const, erro, mensagemId: msg.id };
+  };
+  try {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'application/pdf');
+    form.append('file', new Blob([Buffer.from(p.pdf.base64, 'base64')], { type: 'application/pdf' }), p.pdf.nome);
+    const up = await fetch(`${base}/media`, { method: 'POST', headers: auth, body: form, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    if (!up.ok) { const e = await lerErroGraph(up); return falhar(`Upload do PDF recusado pela Meta${e.code ? ` (erro ${e.code})` : ''}.`); }
+    const mediaId = ((await up.json().catch(() => ({}))) as { id?: string }).id;
+    if (!mediaId) return falhar('A Meta não devolveu o id da mídia.');
+    const corpo = modelo
+      ? { messaging_product: 'whatsapp', recipient_type: 'individual', to: para, type: 'template', template: { name: modelo, language: { code: cred.config.idiomaModelo || 'pt_BR' }, components: [
+          { type: 'header', parameters: [{ type: 'document', document: { id: mediaId, filename: p.pdf.nome } }] },
+          { type: 'body', parameters: [{ type: 'text', text: p.legenda.slice(0, 1000) }] },
+        ] } }
+      : { messaging_product: 'whatsapp', recipient_type: 'individual', to: para, type: 'document', document: { id: mediaId, filename: p.pdf.nome, caption: p.legenda.slice(0, 1000) } };
+    const r = await fetch(`${base}/messages`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) {
+      const e = await lerErroGraph(r);
+      return falhar(e.code === 131047 ? 'Fora da janela de 24 h: configure um modelo aprovado para documentos na Central de Integrações.' : `Recusado pela Meta${e.code ? ` (erro ${e.code})` : ''}: ${(e.message ?? `HTTP ${r.status}`).slice(0, 200)}`);
+    }
+    const wamid = ((await r.json().catch(() => ({}))) as { messages?: { id: string }[] }).messages?.[0]?.id ?? null;
+    await prisma.whatsappMensagem.update({ where: { id: msg.id }, data: { status: 'ENVIADA', waMessageId: wamid } });
+    return { status: 'ENVIADA' as const, waMessageId: wamid, mensagemId: msg.id };
+  } catch {
+    return falhar('Sem comunicação com a Meta (timeout ou rede).');
+  }
+}
