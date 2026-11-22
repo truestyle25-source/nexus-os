@@ -244,6 +244,8 @@
 
 /* Entradas dentro de tabelas: largura mínima legível; a tabela rola dentro da própria caixa em telas estreitas. */
 .entradaTabela { min-width: 96px; }
+/* Seletor de unidade na composição do kit: cabe "UN — Unidade", "mL — Mililitro". */
+.entradaUnidade { min-width: 168px; }
 @media (max-width: 760px) {
   /* Campos empilhados: nada a alinhar lateralmente. */
   .alinharCampo { padding-top: 0; }
