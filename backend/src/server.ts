@@ -53,6 +53,7 @@ import { ttsRoutes } from './modules/tts/tts.controller.js';
 import { relatoriosRoutes } from './modules/relatorios/relatorios.routes.js';
 import { fornecedoresRoutes } from './modules/fornecedores/fornecedores.routes.js';
 import { fornecedorFichaRoutes } from './modules/fornecedores/fornecedor-ficha.routes.js';
+import { compraFichaRoutes } from './modules/compras/compra-ficha.routes.js';
 import { produtoFichaRoutes } from './modules/produtos/produto-ficha.routes.js';
 import { radarRoutes } from './modules/radar/radar.routes.js';
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
@@ -278,6 +279,7 @@ await app.register(ttsRoutes);
 await app.register(relatoriosRoutes);
 await app.register(fornecedoresRoutes);
 await app.register(fornecedorFichaRoutes);
+await app.register(compraFichaRoutes);
 // Ficha completa do produto (cadastro ERP por abas).
 await app.register(produtoFichaRoutes);
 await app.register(fiscalRoutes);

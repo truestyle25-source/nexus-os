@@ -275,6 +275,8 @@ console.log('\n7. Persistencia apos recarregar');
   } finally {
     await prisma.financeiro.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.estoqueMovimentacao.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
+    // Recebimentos (2026-11-21) guardam referência aos itens: saem antes deles.
+    await prisma.compraRecebimento.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.compraItem.deleteMany({ where: { compra: { empresaId: { in: [empresa.id, empresa2.id] } } } });
     await prisma.compra.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });
     await prisma.estoque.deleteMany({ where: { empresaId: { in: [empresa.id, empresa2.id] } } });

@@ -37,3 +37,7 @@
 
 /* Botão de ação compacto dentro da linha de tabela. */
 .acoesLinha { display: flex; gap: var(--pf-1); flex-wrap: nowrap; }
+
+/* Duas colunas (formulário + resumo), como na ficha de compra; uma coluna em telas pequenas. */
+.duasColunas { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--pf-4); align-items: stretch; }
+@media (max-width: 1000px) { .duasColunas { grid-template-columns: minmax(0, 1fr); } }

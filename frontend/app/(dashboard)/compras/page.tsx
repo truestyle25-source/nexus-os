@@ -1,572 +1,197 @@
 ﻿'use client';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// Compras — tela principal: indicadores, Pedidos, Recebimentos, Notas Fiscais e Histórico.
+// A ficha completa (Nova compra / editar / visualizar) abre em /compras/[id]; nunca fica aberta aqui.
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, Eye, ArrowRight, X, ShoppingCart, Package, Truck, CheckCircle2, Ban, AlertTriangle, Building2, Users, Calendar, DollarSign, TrendingDown, ChevronRight, Boxes, FileText, Zap, Clock3 } from 'lucide-react';
-import api, { getToken } from '@/lib/api';
-import { formatBRL as fmtBRL, formatDate as fmtDate } from '@/lib/format';
-import { t as traduzir, tMenu } from '@/lib/i18n';
+import { Alternador, Aviso, Botao, Metrica, Secao, Selo, Tabela, cx, estilos as s } from '@/components/produto/ui';
+import { fmtData, fmtNum, fmtQtd, mensagemDeErro } from '@/lib/produto-ficha';
+import { ROTULO_STATUS, TOM_STATUS, compraApi, type Painel } from '@/lib/compra-ficha';
 
-type Status = 'SOLICITADA' | 'PEDIDO' | 'RECEBIDA' | 'CANCELADA';
-type NewItem = { produto: string; sku: string; qtd: number; valorUnit: number };
-type PItem = { produto: string; sku: string; qtd: number; valorUnit: number };
-type Purchase = { id: string; data: string; filialId: string; filialNome: string; fornecedorId: string; fornecedorNome: string; cnpj: string; itens: PItem[]; cond: string; status: Status };
-type Toast = { id: number; msg: string; kind: 'success' | 'error' | 'info' };
-
-// Filiais e fornecedores NÃO são mais listas fixas neste arquivo. Antes havia
-// `FILIAIS = [matriz, filial-rj, cd-campinas]` e `FORNECEDORES = [f1..f4]` com
-// ids inventados, e o modal de "Nova Compra" enviava esses ids ao backend. Como
-// o banco usa cuid, TODO envio era rejeitado com "Filial inválida para esta
-// empresa" — o botão "Registrar SOLICITADA" não funcionava. Agora as duas listas
-// vêm de `GET /compras`, que as devolve no mesmo payload.
-// Ordem do fluxo de Status possíveis de uma compra (SOLICITADA -> PEDIDO ->
-// RECEBIDA). É a ordem do processo, não um dado de exemplo.
-const WORKFLOW: Status[] = ['SOLICITADA', 'PEDIDO', 'RECEBIDA'];
-
-const STATUS_CONFIG: Record<Status, { label: string; color: string; bg: string; dot: string; border: string }> = {
-  SOLICITADA: { label: 'SOLICITADA', color: 'var(--nx-amber)', bg: 'rgba(var(--nx-amber-rgb), 0.10)', dot: 'var(--nx-amber)', border: 'rgba(var(--nx-amber-rgb), 0.30)' },
-  PEDIDO: { label: 'PEDIDO', color: 'var(--nx-accent)', bg: 'rgba(var(--nx-accent-rgb), 0.10)', dot: 'var(--nx-accent)', border: 'rgba(var(--nx-accent-rgb), 0.35)' },
-  RECEBIDA: { label: 'RECEBIDA', color: 'var(--nx-green)', bg: 'rgba(var(--nx-green-rgb), 0.10)', dot: 'var(--nx-green)', border: 'rgba(var(--nx-green-rgb), 0.30)' },
-  CANCELADA: { label: 'CANCELADA', color: 'var(--nx-red)', bg: 'rgba(var(--nx-red-rgb), 0.10)', dot: 'var(--nx-red)', border: 'rgba(var(--nx-red-rgb), 0.30)' },
-};
-// Moeda e data seguem a preferência "Moeda" / "Formato data" da aba
-// Configurações (lib/format) — antes fixavam BRL/pt-BR aqui.
-const formatBRL = (v: number | string | null | undefined): string => fmtBRL(v);
-const formatDate = (iso: string | Date | null | undefined): string => {
-  if (!iso) return '--';
-  // Datas "2025-09-22" sem hora são interpretadas como UTC pelo navegador e
-  // podem voltar um dia; o T12:00:00 ancora no meio-dia local.
-  const d = typeof iso === 'string' ? new Date(iso + (iso.length === 10 ? 'T12:00:00' : '')) : iso;
-  return fmtDate(d);
-};
-function totalOf(p: Purchase): number { return p.itens.reduce((s, i) => s + i.qtd * i.valorUnit, 0); }
-// O painel de detalhe usava `calcNovoCustoMedio(estoqueAntes, custoMedioAntes,
-// ...)`. Nem `estoqueAntes` nem `custoMedioAntes` vinham da API — os dois caíam
-// no default e o cálculo devolvia sempre o próprio valorUnit, rotulado como
-// "novo medio". Ou seja: um número sem origem, apresentado como projeção.
-// Removido — o custo do produto é atualizado no recebimento e quem manda nele
-// é a aba Estoque.
-function getProgressColor(pct: number): string { if (pct >= 100) return 'var(--success)'; if (pct >= 50) return 'var(--primary)'; return 'var(--warningText)'; }
-
-function Card(p: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <div style={{ background: 'var(--card)', border: '1px solid var(--borderLight)', borderRadius: 20, padding: 24, boxShadow: '0 8px 32px rgba(0,0,0,0.10)', transition: 'all 200ms', overflow: 'hidden', position: 'relative', ...(p.style || {}) }}>{p.children}</div>;
-}
-function Badge(p: { status: Status }) {
-  const c = STATUS_CONFIG[p.status];
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 10px', height: 24, borderRadius: 999, border: '1px solid ' + c.border, background: c.bg, color: c.color, fontSize: 10.5, fontWeight: 700 }}><span style={{ width: 6, height: 6, borderRadius: 999, background: c.dot }} />{c.label}</span>;
-}
-function FieldLabel(p: { children: React.ReactNode }) {
-  return <label style={{ display: 'block', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, color: 'var(--nexus-muted)', marginBottom: 6 }}>{p.children}</label>;
-}
-const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function InputInner(p, ref) {
-  const { style, ...rest } = p;
-  return <input ref={ref} {...rest} style={{ background: 'var(--cardInput)', border: '1px solid var(--borderLight2)', borderRadius: 12, height: 44, padding: '0 14px', fontSize: 12, color: 'var(--nexus-text)', width: '100%', outline: 'none', ...(style || {}) }} />;
-});
-function Select(p: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  const { style, children, ...rest } = p;
-  return <select {...rest} style={{ background: 'var(--cardInput)', border: '1px solid var(--borderLight2)', borderRadius: 12, height: 44, padding: '0 12px', fontSize: 12, color: 'var(--nexus-text)', width: '100%', outline: 'none', ...(style || {}) }}>{children}</select>;
-}
-function Row(p: { children: React.ReactNode; onClick?: () => void }) {
-  return <tr onClick={p.onClick} style={{ borderBottom: '1px solid var(--borderLight)', height: 52, transition: 'all 150ms', cursor: 'pointer' }} onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = 'var(--nexus-panel-2)'; }} onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}>{p.children}</tr>;
-}
-function KPI(p: { label: string; value: string; icon: React.ReactNode; delta?: string; deltaColor?: string }) {
-  return (
-    <Card style={{ padding: 16 }}>
-      <div style={{ position: 'absolute', width: 80, height: 80, right: -20, top: -20, borderRadius: 999, background: 'rgba(var(--nx-accent-rgb),0.10)', filter: 'blur(20px)' }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.2, color: 'var(--nexus-muted)', fontWeight: 600 }}>{p.label}</span>
-        <span style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(var(--nx-green-rgb),0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{p.icon}</span>
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--nexus-text)', marginTop: 8 }}>{p.value}</div>
-      {p.delta ? <span style={{ display: 'inline-block', marginTop: 6, fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 8px', background: 'var(--nexus-panel-2)', color: p.deltaColor || 'var(--nexus-text)' }}>{p.delta}</span> : null}
-    </Card>
-  );
-}
-function Stepper(p: { current: Status }) {
-  if (p.current === 'CANCELADA') return <div style={{ fontSize: 11, color: 'var(--nexus-muted)' }}>Compra cancelada</div>;
-  const idx = WORKFLOW.indexOf(p.current);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
-      {WORKFLOW.map((s, i) => {
-        const done = i <= idx;
-        return (
-          <React.Fragment key={s}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 28, height: 28, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontFamily: 'monospace', background: done ? 'var(--nexus-accent)' : 'var(--nexus-panel-2)', color: '#fff', border: '1px solid ' + (done ? 'var(--nexus-accent)' : 'var(--nexus-border)') }}>{done ? '✓' : (i + 1)}</span>
-              <span style={{ fontSize: 10.5, color: done ? 'var(--nexus-accent-2)' : 'var(--nexus-muted)', fontWeight: 700 }}>{s}</span>
-            </div>
-            {i < WORKFLOW.length - 1 ? <div style={{ height: 2, flex: 1, margin: '0 8px', minWidth: 20, background: i < idx ? 'rgba(var(--nx-accent-rgb),0.60)' : 'var(--nexus-border)' }} /> : null}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
-function EmptyState(p: { onNew: () => void }) {
-  return <div style={{ textAlign: 'center', padding: '40px 20px' }}><Package size={28} color="var(--nexus-muted)" /><p style={{ color: 'var(--nexus-muted)', fontSize: 13, margin: '10px 0' }}>Nenhuma compra encontrada.</p><button type="button" onClick={p.onNew} style={{ background: 'linear-gradient(135deg,var(--primary),var(--primaryHover))', border: 'none', borderRadius: 12, height: 40, padding: '0 18px', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Nova compra</button></div>;
-}
-function ErrorState(p: { msg: string; retry: () => void }) {
-  return <div role="alert" style={{ textAlign: 'center', padding: '40px 20px' }}><AlertTriangle size={28} color="var(--nx-amber)" /><p style={{ color: 'var(--nexus-text)', fontSize: 13, margin: '10px 0' }}>{p.msg}</p><button type="button" onClick={p.retry} style={{ background: 'transparent', border: '1px solid var(--nexus-border)', borderRadius: 12, height: 40, padding: '0 18px', color: 'var(--nexus-text)', fontSize: 12, cursor: 'pointer' }}>Tentar novamente</button></div>;
-}
+type Aba = 'pedidos' | 'recebimentos' | 'notas' | 'historico';
+const ABAS: Array<[Aba, string]> = [['pedidos', 'Pedidos'], ['recebimentos', 'Recebimentos'], ['notas', 'Notas Fiscais'], ['historico', 'Histórico']];
+const brl = (v: number | null | undefined) => (v == null ? '—' : `R$ ${fmtNum(v)}`);
+const t = (v: string | null | undefined) => v || '—';
 
 export default function ComprasPage() {
   const router = useRouter();
-  // Começa VAZIO de propósito. Antes a tela nascia com `MOCKS` (cinco compras
-  // fictícias) e só trocava pela lista real quando a API devolvia alguma coisa
-  // — ou seja, uma empresa sem compras via compras inventadas. Agora a lista
-  // nasce vazia e é preenchida só com `GET /compras`.
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [search, setSearch] = useState('');
-  const [searchDeb, setSearchDeb] = useState('');
-  const [statusFilter, setStatusFilter] = useState('TODOS');
-  const [filialFilter, setFilialFilter] = useState('TODOS');
-  const [fornecedorFilter, setFornecedorFilter] = useState('TODOS');
-  const [periodo] = useState('30d');
-  const [selected, setSelected] = useState<Purchase | null>(null);
-  const [showNew, setShowNew] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [newFilial, setNewFilial] = useState('');
-  const [newForn, setNewForn] = useState('');
-  const [newCond, setNewCond] = useState('30 DDL');
-  const [newItems, setNewItems] = useState<NewItem[]>([{ produto: '', sku: '', qtd: 1, valorUnit: 0 }]);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const [backendOk, setBackendOk] = useState(false);
-  // Catálogos vindos do backend. `filiais`/`fornecedores` não podem mais ter id
-  // fixo, então o valor inicial dos selects é string vazia e o primeiro item real
-  // que chegar vira o selecionado.
-  const [filiais, setFiliais] = useState<Array<{ id: string; nome: string }>>([]);
-  const [fornecedores, setFornecedores] = useState<Array<{ id: string; nome: string; cnpj: string | null; status: string }>>([]);
-  // Trava de envio: sem ela, dois cliques em "Registrar SOLICITADA" criam DUAS
-  // compras — o POST não é idempotente e o backend não rejeita o segundo.
-  const [salvando, setSalvando] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const toastId = useRef(0);
-  const pushToast = useCallback((msg: string, kind: Toast['kind']) => {
-    toastId.current += 1;
-    const id = toastId.current;
-    setToasts((t) => [...t, { id, msg, kind }]);
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2900);
+  const [aba, setAba] = useState<Aba>('pedidos');
+  const [painel, setPainel] = useState<Painel | null>(null);
+  const [erro, setErro] = useState('');
+  const [mensagem, setMensagem] = useState<{ texto: string; erro?: boolean } | null>(null);
+  const [filtros, setFiltros] = useState({ busca: '', status: '', fornecedorId: '', filialId: '', responsavelId: '', de: '', ate: '', situacao: 'TODOS' });
+  const [linhas, setLinhas] = useState<any[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const avisar = (texto: string, e?: boolean) => { setMensagem({ texto, erro: e }); setTimeout(() => setMensagem(null), e ? 8000 : 4000); };
+
+  const carregarPainel = useCallback(async () => {
+    try { setPainel(await compraApi.painel()); } catch (e) { setErro(mensagemDeErro(e)); }
   }, []);
-  useEffect(() => {
-    const h = window.setTimeout(() => setSearchDeb(search), 300);
-    return () => window.clearTimeout(h);
-  }, [search]);
-  const load = useCallback(async () => {
+  useEffect(() => { void carregarPainel(); }, [carregarPainel]);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    const p = Object.fromEntries(Object.entries(filtros).filter(([, v]) => v));
     try {
-      const res = await api.get('/compras');
-      const list = (res as { data: unknown }).data as { compras?: unknown[] } | unknown[];
-      const arr = Array.isArray(list) ? list : (list as { compras?: unknown[] }).compras;
-      const fil = (list as { filiais?: Array<{ id: string; nome: string }> }).filiais;
-      const forn = (list as { fornecedores?: Array<{ id: string; nome: string; cnpj: string | null; status: string }> }).fornecedores;
-      // Catálogos: uma resposta bem-sucedida sempre repõe as listas, mesmo
-      // quando estão vazias — caso contrário o select ficaria mostrando a filial
-      // de uma empresa anterior.
-      setFiliais(Array.isArray(fil) ? fil : []);
-      setFornecedores(Array.isArray(forn) ? forn : []);
-      // `length > 0` no if já era um bug: uma empresa legitimamente sem compras
-      // nunca marcava o backend como conectado e nunca limpava a lista anterior.
-      // Uma resposta válida — inclusive vazia — é sucesso.
-      const mapped: Purchase[] = (Array.isArray(arr) ? arr : []).map((c: unknown) => {
-        const r = c as Record<string, unknown>;
-        const fornRel = r.fornecedor as Record<string, unknown> | undefined;
-        const filialRel = r.filial as Record<string, unknown> | undefined;
-        const itens = r.itens as Array<Record<string, unknown>> | undefined;
-        return {
-          // Todo campo vem do banco. Antes havia um por um de defaults que
-          // fabricavam registro: `sem-id-0`, data fixa '2025-09-20', filial
-          // 'Matriz Sao Paulo', fornecedor 'f1' e status 'SOLICITADA' — se um
-          // campo viesse vazio, a tela mostrava um dado inventado como se fosse real.
-          id: String(r.id ?? ''),
-          data: String(r.dataCompra ?? r.createdAt ?? ''),
-          filialId: String(r.filialId ?? ''),
-          filialNome: String(filialRel?.nome ?? '—'),
-          fornecedorId: String(r.fornecedorId ?? ''),
-          fornecedorNome: String(fornRel?.nome ?? '—'),
-          cnpj: String(fornRel?.cnpj ?? '—'),
-          // O backend inclui `produto: { nome, sku }` no item. A tela lia
-          // `it.produto` direto e caía no default 'Item', mostrando
-          // "[object Object]" no painel de detalhe.
-          itens: (itens ?? []).map((it) => {
-            const prod = it.produto as Record<string, unknown> | undefined;
-            return {
-              produto: String(prod?.nome ?? '—'),
-              sku: String(prod?.sku ?? '—'),
-              qtd: Number(it.quantidade ?? 0),
-              valorUnit: Number(it.valorUnit ?? 0),
-            };
-          }),
-          cond: String(r.condPagamento ?? '—'),
-          status: (r.status as Status) ?? 'SOLICITADA',
-        };
-      });
-      setPurchases(mapped);
-      // Re-sincroniza o painel de detalhe com a lista recem-carregada. Sem isto,
-      // quem clica em "Confirmar Recebimento" dentro do drawer continua vendo o
-      // status antigo na Badge e no Stepper ate fechar e reabrir a compra.
-      setSelected((s) => (s ? mapped.find((p) => p.id === s.id) ?? s : s));
-      setBackendOk(true);
-      setLoadError(null);
-    } catch (e) {
-      // Antes: `catch { setLoadError(null) }` — o catch fazia o CONTRARIO do
-      // nome. Um 403/500 deixava a tela vazia, sem nenhuma mensagem e sem o
-      // "Tentar novamente", parecendo uma empresa sem compras.
-      setBackendOk(false);
-      setLoadError(e instanceof Error && e.message ? e.message : 'Não foi possível carregar as compras.');
-    }
-  }, []);
-  useEffect(() => {
-    if (!getToken()) { router.replace('/'); return; }
-    void load();
-  }, [router, load]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setShowNew(false); setSelected(null); }
-      if ((e.key === 'n' || e.key === 'N') && !showNew && !selected && (document.activeElement?.tagName !== 'INPUT')) { setShowNew(true); }
-      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') { e.preventDefault(); searchRef.current?.focus(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showNew, selected]);
-  useEffect(() => {
-    document.body.style.overflow = (showNew || selected) ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [showNew, selected]);
+      if (aba === 'pedidos') setLinhas(await compraApi.listar(p));
+      else if (aba === 'recebimentos') setLinhas(await compraApi.recebimentos(p));
+      else if (aba === 'notas') setLinhas(await compraApi.notas({ busca: filtros.busca || undefined, fornecedorId: filtros.fornecedorId || undefined }));
+      else setLinhas(await compraApi.historico());
+    } catch (e) { avisar(mensagemDeErro(e), true); } finally { setCarregando(false); }
+  }, [aba, filtros]);
+  useEffect(() => { const h = setTimeout(() => void carregar(), 250); return () => clearTimeout(h); }, [carregar]);
 
-  const filtered = useMemo(() => {
-    const q = searchDeb.trim().toLowerCase();
-    return purchases.filter((p) => {
-      if (statusFilter !== 'TODOS' && p.status !== statusFilter) return false;
-      if (filialFilter !== 'TODOS' && p.filialId !== filialFilter) return false;
-      if (fornecedorFilter !== 'TODOS' && p.fornecedorId !== fornecedorFilter) return false;
-      if (!q) return true;
-      return (p.id + ' ' + p.fornecedorNome + ' ' + p.itens.map((i) => i.produto + ' ' + i.sku).join(' ')).toLowerCase().includes(q);
-    });
-  }, [purchases, searchDeb, statusFilter, filialFilter, fornecedorFilter]);
-  // "Recebidas no mes" contava TODAS as compras RECEBIDA, de qualquer data —
-  // o rótulo prometia o mês e o número não era do mês.
-  const recebidasMes = useMemo(() => {
-    const hoje = new Date();
-    return purchases.filter((p) => {
-      if (p.status !== 'RECEBIDA') return false;
-      const d = new Date(p.data);
-      return !Number.isNaN(d.getTime()) && d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth();
-    }).length;
-  }, [purchases]);
-  // A métrica real desta tela: quanto ainda está comprometido com o fornecedor e
-  // ainda não virou estoque. Substitui o KPI "Economia", que dependia de
-  // `custoMedioAntes` — campo que a API nunca devolve, então valia sempre
-  // R$ 0,00 apresentado como economia real.
-  const emAberto = useMemo(() => purchases.filter((p) => p.status === 'SOLICITADA' || p.status === 'PEDIDO').reduce((s, p) => s + totalOf(p), 0), [purchases]);
-  const kpis = useMemo(() => {
-    const totalSolicitado = purchases.filter((p) => p.status !== 'CANCELADA').reduce((s, p) => s + totalOf(p), 0);
-    const aguardando = purchases.filter((p) => p.status === 'SOLICITADA' || p.status === 'PEDIDO').length;
-    return { totalSolicitado, aguardando, recebidasMes, emAberto };
-  }, [purchases, recebidasMes, emAberto]);
-  const advanceStatus = useCallback((id: string) => {
-    const atual = purchases.find((p) => p.id === id);
-    if (!atual) return;
-    const next = atual.status === 'SOLICITADA' ? 'PEDIDO' : atual.status === 'PEDIDO' ? 'RECEBIDA' : null;
-    if (!next) return;
-    api.post(`/compras/${id}/${next === 'PEDIDO' ? 'confirmar' : 'receber'}`)
-      .then(() => {
-        setPurchases((prev) => prev.map((p) => p.id === id ? { ...p, status: next } : p));
-        setSelected((s) => (s && s.id === id ? { ...s, status: next } : s));
-        pushToast(`Status atualizado para ${next}`, 'success');
-      })
-      .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'Não foi possível atualizar a compra', 'error');
-      });
-  }, [purchases, pushToast]);
-  const cancelPurchase = useCallback((id: string) => {
-    api.post(`/compras/${id}/cancelar`)
-      .then(() => {
-        setPurchases((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'CANCELADA' as Status } : p)));
-        setSelected((s) => (s && s.id === id ? { ...s, status: 'CANCELADA' as Status } : s));
-        pushToast('Compra cancelada no backend.', 'info');
-      })
-      .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'Não foi possível cancelar a compra', 'error');
-      });
-  }, [pushToast]);
-  const confirmRecebimento = useCallback((id: string) => {
-    api.post(`/compras/${id}/receber`)
-      .then(() => {
-        // Receber muda estoque, custo do produto e financeiro no servidor. A
-        // atualização otimista de status sozinha deixaria a tela com dado velho,
-        // então recarrega a lista para o que aparece ser o que está gravado.
-        setPurchases((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'RECEBIDA' as Status } : p)));
-        void load();
-        pushToast('Recebimento confirmado: estoque, custo e despesa gravados.', 'success');
-      })
-      .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'Não foi possível confirmar o recebimento', 'error');
-      });
-  }, [pushToast, load]);
-  const handleAddNew = useCallback(() => {
-    if (salvando) return;
-    if (!newFilial) { pushToast('Selecione a filial da compra.', 'error'); return; }
-    if (!newForn) { pushToast('Selecione um fornecedor cadastrado.', 'error'); return; }
-    const valid = newItems.filter((i) => i.qtd > 0 && i.valorUnit > 0 && (i.produto.trim() || i.sku.trim()));
-    if (valid.length === 0) { pushToast('Adicione ao menos 1 item valido.', 'error'); return; }
-    // A validação do fornecedor olha a lista REAL do backend. Antes apontava
-    // para a constante FORNECEDORES (f1..f4), que passava sempre e deixava o
-    // próprio id inválido ser enviado para o banco.
-    const forn = fornecedores.find((f) => f.id === newForn);
-    if (!forn) {
-      pushToast('Selecione um fornecedor cadastrado no backend antes de registrar a compra.', 'error');
-      return;
-    }
-    // O POST /compras só aceita fornecedor Ativo (regra do próprio backend).
-    if (forn.status && forn.status !== 'Ativo') {
-      pushToast(`O fornecedor ${forn.nome} está ${forn.status} e não aceita nova compra.`, 'error');
-      return;
-    }
-    setSalvando(true);
-    api.get('/produtos?take=200')
-      .then((resp) => {
-        const produtos = (resp.data as { produtos?: Array<Record<string, unknown>> })?.produtos ?? [];
-        const itens = valid.map((item) => {
-          const alvoNome = item.produto.trim().toLowerCase();
-          const alvoSku = item.sku.trim().toLowerCase();
-          // Casamento por SKU exato tem prioridade; o nome só entra como
-          // segunda opção, e SEM o `includes()` que existia antes. Com ele, um
-          // item sem nome ("") casava com o primeiro produto da lista porque
-          // `nome.includes('')` é sempre verdadeiro — a compra saía com o
-          // produto errado, sem aviso.
-          const match = produtos.find((p) => String(p.sku ?? '').toLowerCase() === alvoSku && alvoSku !== '')
-            ?? (alvoNome ? produtos.find((p) => String(p.nome ?? '').toLowerCase() === alvoNome) : undefined);
-          if (!match) throw new Error(`Produto não encontrado: ${item.produto || item.sku || 'item'}`);
-          return { produtoId: String(match.id), quantidade: Number(item.qtd), valorUnit: Number(item.valorUnit) };
-        });
+  const f = (k: keyof typeof filtros, v: string) => setFiltros((x) => ({ ...x, [k]: v }));
+  const abrir = (id: string, extra = '') => router.push(`/compras/${id}${extra}`);
 
-        return api.post('/compras', {
-          filialId: newFilial,
-          fornecedorId: newForn,
-          condPagamento: newCond,
-          itens,
-          origem: 'MANUAL',
-        });
-      })
-      .then(() => {
-        void load();
-        setShowNew(false);
-        setNewItems([{ produto: '', sku: '', qtd: 1, valorUnit: 0 }]);
-        pushToast('Compra registrada como SOLICITADA no backend.', 'success');
-      })
-      .catch((error) => {
-        pushToast(error instanceof Error ? error.message : 'Não foi possível registrar a compra', 'error');
-      })
-      .finally(() => { setSalvando(false); });
-  }, [newItems, newFilial, newForn, newCond, load, pushToast, salvando, fornecedores]);
-  const newTotal = useMemo(() => newItems.reduce((s, i) => s + Number(i.qtd || 0) * Number(i.valorUnit || 0), 0), [newItems]);
+  async function duplicar(id: string) {
+    try { const r = await compraApi.duplicar(id); avisar(`Pedido duplicado: ${r.numero}.`); router.push(`/compras/${r.id}?editar=1`); } catch (e) { avisar(mensagemDeErro(e), true); }
+  }
+  async function cancelar(id: string, numero: string) {
+    const motivo = window.prompt(`Motivo do cancelamento de ${numero}:`);
+    if (!motivo || motivo.trim().length < 3) return;
+    try { await compraApi.cancelar(id, motivo.trim()); avisar('Pedido cancelado.'); await Promise.all([carregar(), carregarPainel()]); } catch (e) { avisar(mensagemDeErro(e), true); }
+  }
+  async function alternarAprovacao(v: boolean) {
+    try { await compraApi.configuracao(v); await carregarPainel(); avisar(v ? 'Aprovação de compras ativada.' : 'Aprovação de compras desativada.'); } catch (e) { avisar(mensagemDeErro(e), true); }
+  }
 
-  const btnP: React.CSSProperties = { background: 'linear-gradient(135deg,var(--primary),var(--primaryHover))', boxShadow: 'var(--shadowPrimary)', borderRadius: 12, height: 44, padding: '0 20px', fontSize: 12, fontWeight: 700, color: '#fff', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 };
-  const iconBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: '1px solid var(--borderLight2)', background: 'transparent', color: 'var(--nexus-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
+  if (erro) return <div className={s.ficha}><Aviso tom="erro">Não foi possível abrir Compras: {erro}</Aviso></div>;
+  const ind = painel?.indicadores;
+  const fornecedores = painel?.fornecedores ?? [];
+
   return (
-    <div style={{ background: 'var(--bg)', minHeight: '100vh', fontFamily: "'Inter',sans-serif" }}>
-      <style>{':root{--card:var(--nexus-panel);--card2:var(--nexus-panel-2);--card3:var(--nexus-panel);--cardInput:var(--nexus-panel-2);--borderLight:var(--nexus-border);--borderLight2:var(--nexus-border);--primary:var(--nexus-accent);--primaryHover:var(--nexus-accent-2);--warningText:var(--nx-amber);--shadowPrimary:0 0 20px rgba(var(--nx-accent-rgb),0.25)}'}</style>
-      <nav style={{ position: 'sticky', top: 0, zIndex: 20, backdropFilter: 'blur(20px)', background: 'var(--nexus-panel)', borderBottom: '1px solid var(--borderLight)' }}>
-        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--nexus-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800 }}>N</span>
-            <strong style={{ color: 'var(--nexus-text)', fontSize: 14 }}>NEXUS OS <span style={{ color: 'var(--nexus-muted)', fontWeight: 400 }}>/ Compras</span></strong>
-            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', background: 'var(--nexus-panel-2)', border: '1px solid var(--borderLight)', borderRadius: 999, padding: '0 12px', height: 28, display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--nx-green)' }} />API ERP v2.4</span>
-          </div>
-          <span style={{ fontSize: 11, color: backendOk ? 'var(--nx-green)' : 'var(--nx-amber)', fontFamily: 'monospace' }}>{backendOk ? 'backend conectado' : 'backend indisponivel'} {periodo}</span>
+    <div className={s.ficha}>
+      <header className={s.cabecalho}>
+        <div>
+          <h1 className={s.titulo}>Compras</h1>
+          <div className={s.subtitulo}>Pedidos, recebimentos, notas fiscais e histórico — dados reais da empresa</div>
         </div>
-      </nav>
-      <main style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 24px 60px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-          <div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--nexus-text)', margin: 0 }}>Compras</h1>
-            <p style={{ fontSize: 13, color: 'var(--nexus-muted)', margin: '6px 0 0' }}>Solicitada para Pedido para Recebida ou Cancelada.</p>
-          </div>
-          <button type="button" onClick={() => setShowNew(true)} style={{ ...btnP, height: 40 }}><Plus size={15} /> Nova Compra</button>
+        <div className={s.acoes}>
+          <Botao primario onClick={() => router.push('/compras/nova')}>+ Nova compra</Botao>
         </div>
+      </header>
+      {mensagem && <Aviso tom={mensagem.erro ? 'erro' : 'ok'}>{mensagem.texto}</Aviso>}
 
-        <div role="tablist" aria-label="Workflow" style={{ display: 'flex', gap: 6, marginBottom: 16, fontSize: 12.5, color: 'var(--nexus-muted)' }}>
-          {WORKFLOW.map((s, i) => (
-            <span key={s} role="tab" aria-selected={false} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 7, height: 7, borderRadius: 999, background: i === 0 ? 'var(--nx-amber)' : i === 1 ? 'var(--nexus-accent)' : 'var(--nx-green)' }} />
-              <span style={{ fontFamily: 'monospace' }}>{s}</span>
-              {i < 2 ? <ChevronRight size={12} /> : null}
-            </span>
-          ))}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
-          <KPI label="Total Solicitado" value={formatBRL(kpis.totalSolicitado)} icon={<DollarSign size={16} color="var(--nx-green)" />} delta={filtered.length + ' registros'} />
-          <KPI label={traduzir('aguardando', "Aguardando")} value={String(kpis.aguardando)} icon={<Clock3 size={16} color="var(--nx-amber)" />} delta="solicitada + pedido" deltaColor="var(--nx-amber)" />
-          <KPI label="Recebidas no mes" value={String(kpis.recebidasMes)} icon={<CheckCircle2 size={16} color="var(--nx-green)" />} delta="baixa OK" deltaColor="var(--nx-green)" />
-          <KPI label="A receber" value={formatBRL(kpis.emAberto)} icon={<TrendingDown size={16} color="var(--nexus-accent-2)" />} delta="solicitada + pedido" deltaColor="var(--nexus-accent-2)" />
-        </div>
-        <Card style={{ padding: 12, marginBottom: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 10 }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--nexus-muted)' }} />
-              <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar ID, fornecedor, produto, SKU..." aria-label="Buscar compras" style={{ paddingLeft: 36, height: 36 }} />
-            </div>
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filtro status" style={{ height: 36 }}><option value="TODOS">TODOS</option><option value="SOLICITADA">SOLICITADA</option><option value="PEDIDO">PEDIDO</option><option value="RECEBIDA">RECEBIDA</option><option value="CANCELADA">CANCELADA</option></Select>
-            <Select value={filialFilter} onChange={(e) => setFilialFilter(e.target.value)} aria-label="Filtro filial" style={{ height: 36 }}><option value="TODOS">TODOS</option>{filiais.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}</Select>
-            <Select value={fornecedorFilter} onChange={(e) => setFornecedorFilter(e.target.value)} aria-label="Filtro fornecedor" style={{ height: 36 }}><option value="TODOS">TODOS</option>{fornecedores.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}</Select>
-          </div>
-        </Card>
-
-        <div style={{ background: 'var(--card)', border: '1px solid var(--borderLight)', borderRadius: 14, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table role="table" aria-label="Compras" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ position: 'sticky', top: 0, background: 'var(--card)', zIndex: 10 }}>
-                <tr style={{ height: 36 }}>
-                  {['ID', 'Data', 'Filial', 'Fornecedor', 'Itens', 'Total', 'Cond', 'Status', 'Acoes'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '0 16px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: 'var(--nexus-muted)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => (
-                  <Row key={p.id} onClick={() => setSelected(p)}>
-                    <td style={{ padding: '0 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--nexus-text)' }}>{p.id}</td>
-                    <td style={{ padding: '0 16px', fontSize: 12.5, color: 'var(--nexus-muted)' }}>{formatDate(p.data)}</td>
-                    <td style={{ padding: '0 16px', fontSize: 12, color: 'var(--nexus-muted)' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Building2 size={14} />{p.filialNome}</span></td>
-                    <td style={{ padding: '8px 16px' }}><div style={{ fontSize: 12.5, color: 'var(--nexus-text)' }}>{p.fornecedorNome}</div><div style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--nexus-muted)' }}>{p.cnpj}</div></td>
-                    <td style={{ padding: '0 16px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 999, padding: '0 8px', height: 24, background: 'var(--nexus-panel-2)', fontSize: 11, color: 'var(--nexus-text)' }}><Package size={12} />{p.itens.length}</span></td>
-                    <td style={{ padding: '0 16px', fontSize: 12.5, fontWeight: 600, color: 'var(--nexus-text)' }}>{formatBRL(totalOf(p))}</td>
-                    <td style={{ padding: '0 16px', fontSize: 11.5, fontFamily: 'monospace', color: 'var(--nexus-muted)' }}>{p.cond}</td>
-                    <td style={{ padding: '0 16px' }}><Badge status={p.status} /></td>
-                    <td style={{ padding: '0 16px' }}>
-                      <span style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                        <button type="button" aria-label={'Ver ' + p.id} onClick={() => setSelected(p)} style={iconBtn}><Eye size={13} /></button>
-                        {p.status !== 'RECEBIDA' && p.status !== 'CANCELADA' ? <button type="button" aria-label="Avancar" onClick={() => advanceStatus(p.id)} style={iconBtn}><ArrowRight size={13} /></button> : null}
-                        {p.status !== 'RECEBIDA' && p.status !== 'CANCELADA' ? <button type="button" aria-label={traduzir('cancelar', "Cancelar")} onClick={() => cancelPurchase(p.id)} style={iconBtn}><Ban size={13} /></button> : null}
-                      </span>
-                    </td>
-                  </Row>
-                ))}
-              </tbody>
-            </table>
-            {filtered.length === 0 ? <EmptyState onNew={() => setShowNew(true)} /> : null}
-            {loadError ? <ErrorState msg={loadError} retry={() => void load()} /> : null}
-          </div>
-          <div style={{ borderTop: '1px solid var(--borderLight)', background: 'var(--nexus-panel-2)', padding: '12px 16px', fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Zap size={13} /> backend: GET /compras · POST /compras · POST /compras/:id/confirmar|receber|cancelar · {filtered.length} registros · {periodo}
-          </div>
-        </div>
-      </main>
-
-      {selected ? (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(4px)' }} onClick={() => setSelected(null)}>
-          <aside role="dialog" aria-label={'Detalhe ' + selected.id} onClick={(e) => e.stopPropagation()} style={{ width: 480, maxWidth: '92vw', height: '100%', background: 'var(--card3)', borderLeft: '1px solid var(--borderLight2)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ height: 64, padding: '0 24px', borderBottom: '1px solid var(--borderLight)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--nexus-text)', fontWeight: 700, fontSize: 13 }}><FileText size={15} />{selected.id}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Badge status={selected.status} />
-                <button type="button" aria-label={traduzir('fechar', "Fechar")} onClick={() => setSelected(null)} style={{ width: 32, height: 32, borderRadius: 999, background: 'var(--card2)', border: '1px solid var(--nexus-border)', color: 'var(--nexus-text)', cursor: 'pointer' }}>X</button>
-              </span>
-            </div>
-            <div style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>
-              <div style={{ background: 'var(--cardInput)', border: '1px solid var(--borderLight)', borderRadius: 12, padding: 12 }}>
-                <FieldLabel>Workflow</FieldLabel>
-                <Stepper current={selected.status} />
-              </div>
-              <div>
-                <FieldLabel>Explicacao</FieldLabel>
-                <p style={{ fontSize: 12.5, color: 'var(--nexus-muted)', lineHeight: 1.6, margin: 0 }}>O recebimento da baixa no estoque, atualiza o custo do produto para o ultimo valor pago e gera a despesa no financeiro.</p>
-              </div>
-              <div>
-                <FieldLabel>Itens</FieldLabel>
-                <div style={{ background: 'var(--cardInput)', border: '1px solid var(--borderLight)', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {selected.itens.map((it, i) => (
-                    <div key={i} style={{ fontSize: 12, color: 'var(--nexus-text)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{it.produto}</strong><span>{formatBRL(it.qtd * it.valorUnit)}</span></div>
-                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', marginTop: 4 }}>{it.sku} · {it.qtd}x {formatBRL(it.valorUnit)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ borderLeft: '1px solid var(--borderLight2)', paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--nexus-muted)' }}>
-                <span>Filial: {selected.filialNome}</span>
-                <span>Condicao: {selected.cond}</span>
-                <span>Data: {formatDate(selected.data)}</span>
-                <span>Total: {formatBRL(totalOf(selected))}</span>
-              </div>
-              <div style={{ background: 'var(--cardInput)', border: '1px solid var(--borderLight)', borderRadius: 12, padding: 12 }}>
-                <FieldLabel>{traduzir('fornecedor', "Fornecedor")}</FieldLabel>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--nexus-text)', fontSize: 13 }}><Truck size={14} />{selected.fornecedorNome}</div>
-                <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--nexus-muted)', marginTop: 4 }}>{selected.cnpj}</div>
-              </div>
-            </div>
-            <div style={{ padding: 16, borderTop: '1px solid var(--borderLight)', background: 'var(--nexus-panel-2)', display: 'flex', gap: 10 }}>
-              {selected.status !== 'RECEBIDA' && selected.status !== 'CANCELADA' ? <button type="button" onClick={() => advanceStatus(selected.id)} style={{ ...btnP, height: 44, flex: 1, justifyContent: 'center' }}><ArrowRight size={15} /> Avancar etapa</button> : null}
-              {selected.status !== 'RECEBIDA' && selected.status !== 'CANCELADA' ? <button type="button" onClick={() => confirmRecebimento(selected.id)} style={{ ...btnP, height: 44, flex: 1, justifyContent: 'center' }}><CheckCircle2 size={15} /> Confirmar Recebimento</button> : null}
-              {selected.status !== 'RECEBIDA' && selected.status !== 'CANCELADA' ? <button type="button" onClick={() => cancelPurchase(selected.id)} style={{ height: 44, borderRadius: 12, background: 'transparent', border: '1px solid var(--borderLight2)', color: 'var(--nexus-text)', padding: '0 16px', cursor: 'pointer' }}>{traduzir('cancelar', "Cancelar")}</button> : null}
-            </div>
-          </aside>
-        </div>
-      ) : null}
-
-      {showNew ? (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.60)', backdropFilter: 'blur(12px)' }} onClick={() => setShowNew(false)}>
-          <div role="dialog" aria-label="Nova compra" onClick={(e) => e.stopPropagation()} style={{ width: 640, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card2)', border: '1px solid var(--borderLight2)', borderRadius: 24, boxShadow: '0 24px 64px rgba(0,0,0,0.6)' }}>
-            <div style={{ height: 56, padding: '0 20px', borderBottom: '1px solid var(--borderLight)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--nexus-text)', fontSize: 14, fontWeight: 700 }}><ShoppingCart size={15} /> Nova Compra</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Badge status="SOLICITADA" />
-                <button type="button" aria-label="Fechar modal" onClick={() => setShowNew(false)} style={{ width: 32, height: 32, borderRadius: 999, background: 'var(--card2)', border: '1px solid var(--nexus-border)', color: 'var(--nexus-text)', cursor: 'pointer' }}><X size={14} /></button>
-              </span>
-            </div>
-            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div><FieldLabel>Filial</FieldLabel><Select value={newFilial} onChange={(e) => setNewFilial(e.target.value)} aria-label="Filial da nova compra"><option value="">Escolha a filial...</option>{filiais.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}</Select></div>
-                <div><FieldLabel>{traduzir('fornecedor', "Fornecedor")}</FieldLabel><Select value={newForn} onChange={(e) => setNewForn(e.target.value)} aria-label="Fornecedor da nova compra"><option value="">Escolha o fornecedor...</option>{fornecedores.map((f) => <option key={f.id} value={f.id} disabled={f.status !== 'Ativo'}>{f.nome}{f.status !== 'Ativo' ? ` (${f.status})` : ''}</option>)}</Select></div>
-              </div>
-              <div><FieldLabel><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Calendar size={12} /> Condicao pagamento</span></FieldLabel><Input value={newCond} onChange={(e) => setNewCond(e.target.value)} /></div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <FieldLabel>Itens</FieldLabel>
-                  <button type="button" onClick={() => setNewItems((p) => [...p, { produto: '', sku: '', qtd: 1, valorUnit: 0 }])} style={{ background: 'none', border: 'none', color: 'var(--nexus-accent-2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ Adicionar item</button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {newItems.map((it, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '5fr 3fr 2fr 2fr auto', gap: 8, background: 'var(--cardInput)', borderRadius: 10, padding: 10 }}>
-                      <Input value={it.produto} onChange={(e) => setNewItems((p) => p.map((x, i) => (i === idx ? { ...x, produto: e.target.value } : x)))} placeholder={traduzir('produto', "Produto")} style={{ height: 32 }} />
-                      <Input value={it.sku} onChange={(e) => setNewItems((p) => p.map((x, i) => (i === idx ? { ...x, sku: e.target.value } : x)))} placeholder="SKU" style={{ height: 32 }} />
-                      <Input type="number" min={1} value={it.qtd} onChange={(e) => setNewItems((p) => p.map((x, i) => (i === idx ? { ...x, qtd: Number(e.target.value) } : x)))} style={{ height: 32 }} />
-                      <Input type="number" min={0} step="0.01" value={it.valorUnit} onChange={(e) => setNewItems((p) => p.map((x, i) => (i === idx ? { ...x, valorUnit: Number(e.target.value) } : x)))} style={{ height: 32 }} />
-                      <button type="button" aria-label="Remover item" onClick={() => setNewItems((p) => p.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--nexus-muted)', cursor: 'pointer' }}><X size={14} /></button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div style={{ borderRadius: 12, background: 'var(--cardInput)', padding: 12, display: 'flex', justifyContent: 'space-between', color: 'var(--nexus-text)', fontSize: 13 }}>
-                <span>{traduzir('total', "Total")}</span><strong>{formatBRL(newTotal)}</strong>
-              </div>
-              <div style={{ borderRadius: 10, background: 'rgba(var(--nx-accent-rgb),0.10)', border: '1px solid rgba(var(--nx-accent-rgb),0.20)', padding: 12, fontSize: 12, color: 'var(--nexus-muted)', display: 'flex', gap: 8 }}>
-                <Clock3 size={14} /> A compra sera registrada como SOLICITADA e podera avancar para PEDIDO e RECEBIDA.
-              </div>
-            </div>
-            <div style={{ padding: 16, borderTop: '1px solid var(--borderLight)', background: 'var(--nexus-panel-2)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => setShowNew(false)} style={{ height: 36, borderRadius: 12, background: 'transparent', border: '1px solid var(--borderLight2)', color: 'var(--nexus-text)', padding: '0 18px', cursor: 'pointer', fontSize: 12 }}>{traduzir('cancelar', "Cancelar")}</button>
-              <button type="button" onClick={handleAddNew} disabled={salvando} style={{ ...btnP, height: 36, opacity: salvando ? 0.6 : 1, cursor: salvando ? 'wait' : 'pointer' }}>{salvando ? 'Registrando...' : 'Registrar SOLICITADA'}</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div aria-live="polite" style={{ position: 'fixed', bottom: 20, right: 20, display: 'flex', flexDirection: 'column', gap: 10, zIndex: 60 }}>
-        {toasts.map((t) => (
-          <div key={t.id} style={{ minWidth: 280, maxWidth: 360, background: 'var(--nexus-panel)', border: '1px solid var(--nexus-border)', borderRadius: 14, padding: '12px 16px', fontSize: 12, color: 'var(--nexus-text)', boxShadow: '0 16px 48px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 24, height: 24, borderRadius: 999, background: t.kind === 'success' ? 'rgba(var(--nx-green-rgb),0.20)' : t.kind === 'error' ? 'rgba(var(--nx-red-rgb),0.20)' : 'rgba(var(--nx-accent-rgb),0.20)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {t.kind === 'success' ? <CheckCircle2 size={13} color="var(--nx-green)" /> : t.kind === 'error' ? <AlertTriangle size={13} color="var(--nx-red)" /> : <Zap size={13} color="var(--nexus-accent-2)" />}
-              </span>
-              {t.msg}
-            </div>
-            <div style={{ height: 2, background: 'var(--primary)', marginTop: 8 }} />
-          </div>
-        ))}
+      <div className={s.metricas}>
+        <Metrica rotulo="Total de pedidos" valor={ind ? fmtQtd(ind.total) : '—'} />
+        <Metrica rotulo="Pedidos pendentes" valor={ind ? fmtQtd(ind.pendentes) : '—'} ajuda="Rascunho até confirmados" />
+        <Metrica rotulo="Aguardando aprovação" valor={ind ? fmtQtd(ind.aguardandoAprovacao) : '—'} />
+        <Metrica rotulo="Enviados" valor={ind ? fmtQtd(ind.enviados) : '—'} />
+        <Metrica rotulo="Recebimentos pendentes" valor={ind ? fmtQtd(ind.recebimentosPendentes) : '—'} />
+        <Metrica rotulo="Recebimentos parciais" valor={ind ? fmtQtd(ind.recebimentosParciais) : '—'} />
+        <Metrica rotulo="Compras no mês" valor={ind ? fmtQtd(ind.comprasNoPeriodo) : '—'} />
+        <Metrica rotulo="Valor comprado no mês" valor={ind ? brl(ind.valorNoPeriodo) : '—'} />
       </div>
+      {painel?.podeAdministrar && (
+        <div><Alternador l={4} rotulo="Exigir aprovação antes do envio" ligado={!!painel.empresa?.comprasExigeAprovacao} onChange={alternarAprovacao} ajuda="Aprovação exige compras.administrar" /></div>
+      )}
+
+      <nav className={s.abas} role="tablist" aria-label="Seções de compras">
+        {ABAS.map(([k, tx]) => <button key={k} type="button" role="tab" aria-selected={aba === k} className={cx(s.aba, aba === k && s.abaAtiva)} onClick={() => { if (k === aba) return; setLinhas([]); setAba(k); }}>{tx}</button>)}
+      </nav>
+
+      <Secao titulo={ABAS.find(([k]) => k === aba)![1]}>
+        {aba !== 'historico' && (
+          <div className={s.filtros}>
+            <input className={s.entrada} placeholder={aba === 'notas' ? 'Número ou chave da NF-e' : 'Nº do pedido ou fornecedor'} value={filtros.busca} onChange={(e) => f('busca', e.target.value)} aria-label="Pesquisar" />
+            <select className={s.entrada} value={filtros.fornecedorId} onChange={(e) => f('fornecedorId', e.target.value)} aria-label="Fornecedor">
+              <option value="">Todos os fornecedores</option>{fornecedores.map((x) => <option key={x.id} value={x.id}>{x.nomeFantasia ?? x.nome}</option>)}
+            </select>
+            {aba === 'pedidos' && (
+              <select className={s.entrada} value={filtros.status} onChange={(e) => f('status', e.target.value)} aria-label="Status">
+                <option value="">Todos os status</option>
+                {[['RASCUNHO,SOLICITADA', 'Rascunho'], ['AGUARDANDO_APROVACAO', 'Aguardando aprovação'], ['APROVADA', 'Aprovada'], ['ENVIADA', 'Enviada'], ['PEDIDO', 'Confirmada'], ['PARCIAL', 'Parcialmente recebida'], ['RECEBIDA', 'Recebida'], ['CONCLUIDA', 'Concluída'], ['CANCELADA', 'Cancelada']].map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+              </select>
+            )}
+            {aba === 'recebimentos' && (
+              <select className={s.entrada} value={filtros.situacao} onChange={(e) => f('situacao', e.target.value)} aria-label="Situação">
+                <option value="TODOS">Todas as situações</option><option value="PENDENTES">Aguardando recebimento</option><option value="PARCIAIS">Parciais</option><option value="CONCLUIDOS">Concluídos</option>
+              </select>
+            )}
+            {aba !== 'notas' && (
+              <select className={s.entrada} value={filtros.filialId} onChange={(e) => f('filialId', e.target.value)} aria-label="Filial">
+                <option value="">Todas as filiais</option>{(painel?.filiais ?? []).map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+              </select>
+            )}
+            {aba === 'pedidos' && (
+              <select className={s.entrada} value={filtros.responsavelId} onChange={(e) => f('responsavelId', e.target.value)} aria-label="Responsável">
+                <option value="">Todos os responsáveis</option>{(painel?.responsaveis ?? []).map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}
+              </select>
+            )}
+            {aba !== 'notas' && <input className={s.entrada} type="date" value={filtros.de} onChange={(e) => f('de', e.target.value)} aria-label="De" />}
+            {aba !== 'notas' && <input className={s.entrada} type="date" value={filtros.ate} onChange={(e) => f('ate', e.target.value)} aria-label="Até" />}
+          </div>
+        )}
+
+        {aba === 'pedidos' && (
+          <Tabela linhas={linhas} carregando={carregando} chave={(l: any) => l.id} vazio="Nenhum pedido encontrado. Use “+ Nova compra” para criar o primeiro."
+            colunas={[
+              { chave: 'n', titulo: 'Pedido', render: (l: any) => <button type="button" className={s.botao} style={{ height: 28 }} onClick={() => abrir(l.id)}>{l.numero ?? '—'}</button> },
+              { chave: 'd', titulo: 'Criado em', render: (l: any) => <span className={s.nowrap}>{fmtData(l.criadoEm, false)}</span> },
+              { chave: 'f', titulo: 'Fornecedor', render: (l: any) => l.fornecedor.nomeFantasia ?? l.fornecedor.nome },
+              { chave: 'r', titulo: 'Responsável', render: (l: any) => t(l.responsavel) },
+              { chave: 'i', titulo: 'Itens', num: true, render: (l: any) => l.itens },
+              { chave: 'v', titulo: 'Valor total', num: true, render: (l: any) => brl(l.valorTotal) },
+              { chave: 'p', titulo: 'Previsão', render: (l: any) => <span className={s.nowrap}>{fmtData(l.previsaoEntrega, false)}</span> },
+              { chave: 's', titulo: 'Status', render: (l: any) => <Selo tom={TOM_STATUS[l.status]}>{ROTULO_STATUS[l.status] ?? l.status}</Selo> },
+              { chave: 'u', titulo: 'Atualizado', render: (l: any) => <span className={s.nowrap}>{fmtData(l.atualizadoEm)}</span> },
+              { chave: 'a', titulo: 'Ações', render: (l: any) => (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Botao pequeno onClick={() => abrir(l.id)}>Ver</Botao>
+                  {['RASCUNHO', 'SOLICITADA', 'AGUARDANDO_APROVACAO'].includes(l.status) && <Botao pequeno onClick={() => abrir(l.id, '?editar=1')}>Editar</Botao>}
+                  {['APROVADA', 'ENVIADA', 'PEDIDO', 'SOLICITADA'].includes(l.status) && <Botao pequeno onClick={() => abrir(l.id, '?aba=fornecedor')}>Enviar</Botao>}
+                  <Botao pequeno onClick={() => duplicar(l.id)}>Duplicar</Botao>
+                  <Botao pequeno onClick={() => abrir(l.id, '?aba=historico')}>Histórico</Botao>
+                  {!['PARCIAL', 'RECEBIDA', 'CONCLUIDA', 'CANCELADA'].includes(l.status) && l.recebimentos === 0 && <Botao pequeno perigo onClick={() => cancelar(l.id, l.numero)}>Cancelar</Botao>}
+                </div>
+              ) },
+            ]} />
+        )}
+
+        {aba === 'recebimentos' && (
+          <Tabela linhas={linhas} carregando={carregando} chave={(l: any) => l.compraId} vazio="Nenhum pedido aguardando ou com recebimento."
+            colunas={[
+              { chave: 'n', titulo: 'Pedido', render: (l: any) => t(l.numero) },
+              { chave: 'f', titulo: 'Fornecedor', render: (l: any) => l.fornecedor },
+              { chave: 'nf', titulo: 'Nota fiscal', render: (l: any) => t(l.notaFiscal) },
+              { chave: 'd', titulo: 'Último recebimento', render: (l: any) => <span className={s.nowrap}>{fmtData(l.ultimoRecebimento)}</span> },
+              { chave: 'r', titulo: 'Responsável', render: (l: any) => t(l.responsavel) },
+              { chave: 'q1', titulo: 'Solicitada', num: true, render: (l: any) => fmtQtd(l.solicitada) },
+              { chave: 'q2', titulo: 'Recebida', num: true, render: (l: any) => fmtQtd(l.recebida) },
+              { chave: 'q3', titulo: 'Pendente', num: true, render: (l: any) => fmtQtd(l.pendente) },
+              { chave: 'dv', titulo: 'Divergências', num: true, render: (l: any) => (l.divergencias ? <Selo tom="alerta">{l.divergencias}</Selo> : '—') },
+              { chave: 's', titulo: 'Status', render: (l: any) => <Selo tom={TOM_STATUS[l.status]}>{ROTULO_STATUS[l.status] ?? l.status}</Selo> },
+              { chave: 'a', titulo: 'Ações', render: (l: any) => <Botao pequeno onClick={() => abrir(l.compraId, '?aba=recebimento')}>{l.pendente > 0 ? 'Conferir / receber' : 'Ver recebimentos'}</Botao> },
+            ]} />
+        )}
+
+        {aba === 'notas' && (
+          <Tabela linhas={linhas} carregando={carregando} chave={(l: any) => l.id} vazio="Nenhuma nota fiscal de entrada vinculada."
+            colunas={[
+              { chave: 'n', titulo: 'NF-e / série', render: (l: any) => `${l.numero}${l.serie ? `/${l.serie}` : ''}` },
+              { chave: 'c', titulo: 'Chave de acesso', render: (l: any) => <span className={s.ajuda}>{t(l.chaveAcesso)}</span> },
+              { chave: 'f', titulo: 'Fornecedor', render: (l: any) => l.fornecedor },
+              { chave: 'e', titulo: 'Emissão', render: (l: any) => <span className={s.nowrap}>{fmtData(l.dataEmissao, false)}</span> },
+              { chave: 'en', titulo: 'Entrada', render: (l: any) => <span className={s.nowrap}>{fmtData(l.dataEntrada, false)}</span> },
+              { chave: 'v', titulo: 'Valor', num: true, render: (l: any) => brl(l.valorTotal) },
+              { chave: 'p', titulo: 'Pedido', render: (l: any) => t(l.pedido) },
+              { chave: 's', titulo: 'Status', render: (l: any) => <Selo tom={l.status === 'CONFERIDA' ? 'ok' : l.status === 'DIVERGENTE' ? 'alerta' : undefined}>{l.status === 'CONFERIDA' ? 'Conferida' : l.status === 'DIVERGENTE' ? 'Divergente' : 'Registrada'}</Selo> },
+              { chave: 'x', titulo: 'Anexos', num: true, render: (l: any) => l.anexos },
+              { chave: 'a', titulo: 'Ações', render: (l: any) => <Botao pequeno onClick={() => abrir(l.compraId, '?aba=recebimento')}>Abrir</Botao> },
+            ]} />
+        )}
+
+        {aba === 'historico' && (
+          <Tabela linhas={linhas} carregando={carregando} chave={(l: any) => l.id} vazio="Nenhuma operação registrada."
+            colunas={[
+              { chave: 'd', titulo: 'Data e hora', render: (l: any) => <span className={s.nowrap}>{fmtData(l.data)}</span> },
+              { chave: 'p', titulo: 'Pedido', render: (l: any) => (l.compraId ? <button type="button" className={s.botao} style={{ height: 28 }} onClick={() => abrir(l.compraId, '?aba=historico')}>{l.pedido ?? '—'}</button> : '—') },
+              { chave: 'f', titulo: 'Fornecedor', render: (l: any) => t(l.fornecedor) },
+              { chave: 'e', titulo: 'Operação', render: (l: any) => l.evento },
+              { chave: 'u', titulo: 'Usuário', render: (l: any) => t(l.usuario) },
+            ]} />
+        )}
+      </Secao>
     </div>
   );
 }
-
-
-
-

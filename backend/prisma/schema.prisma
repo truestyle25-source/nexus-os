@@ -53,10 +53,17 @@ enum TipoMovEstoque {
 }
 
 enum StatusCompra {
-  SOLICITADA
-  PEDIDO
-  RECEBIDA
+  SOLICITADA // legado: pedido criado pela tela antiga (equivale a rascunho)
+  PEDIDO // confirmado pelo fornecedor
+  RECEBIDA // tudo recebido (entrada no estoque feita)
   CANCELADA
+  // Fluxo completo (2026-11-21): rascunho → aprovação → envio → confirmação → recebimento → conclusão
+  RASCUNHO
+  AGUARDANDO_APROVACAO
+  APROVADA
+  ENVIADA // enviada ao fornecedor, aguardando confirmação
+  PARCIAL // parcialmente recebida
+  CONCLUIDA // recebida e encerrada (ou saldo pendente encerrado)
 }
 
 model Empresa {
@@ -86,6 +93,12 @@ model Empresa {
   setores                  Setor[]
   produtos                 Produto[]
   fornecedores             Fornecedor[]
+  // Compras: quando true, pedido precisa de aprovação (compras.administrar) antes do envio.
+  comprasExigeAprovacao    Boolean                    @default(false)
+  compraRecebimentos       CompraRecebimento[]
+  compraRecebimentoItens   CompraRecebimentoItem[]
+  compraNotasFiscais       CompraNotaFiscal[]
+  compraEnvios             CompraEnvio[]
   fornecedorContatos       FornecedorContato[]
   fornecedorProdutos       FornecedorProduto[]
   fornecedorPrecos         FornecedorPrecoHistorico[]
@@ -281,6 +294,11 @@ model Usuario {
   consumosInternosAprovou   ConsumoInterno[]           @relation("ConsumoInternoAprovador")
   alteracoesPreco           ProdutoPrecoHistorico[]
   fornecedoresComprador     Fornecedor[]               @relation("FornecedorComprador")
+  comprasResponsavel        Compra[]                   @relation("CompraResponsavel")
+  comprasAprovadas          Compra[]                   @relation("CompraAprovadaPor")
+  comprasCriadas            Compra[]                   @relation("CompraCriadaPor")
+  comprasAlteradas          Compra[]                   @relation("CompraAtualizadaPor")
+  comprasRecebidas          CompraRecebimento[]        @relation("CompraRecebimentoUsuario")
   fornecedoresCriados       Fornecedor[]               @relation("FornecedorCriadoPor")
   fornecedoresAlterados     Fornecedor[]               @relation("FornecedorAtualizadoPor")
   fornecedorPrecosAlterados FornecedorPrecoHistorico[] @relation("FornecedorPrecoUsuario")
@@ -716,6 +734,8 @@ model EstoqueMovimentacao {
   // Baixa de componente feita pela venda de um KIT: aponta o kit vendido (origem da movimentação).
   kitProdutoId    String?
   kitProduto      Produto?       @relation("MovimentacaoKit", fields: [kitProdutoId], references: [id], onDelete: SetNull)
+  // Entrada gerada pelo recebimento de compra (rastreio pedido → recebimento → movimentação).
+  recebimentoId   String?
   createdAt       DateTime       @default(now())
 
   @@index([empresaId, produtoId])
@@ -1001,37 +1021,169 @@ model CompraFornecedor {
 // Compra.filialId fixo, POST /compras/:id/receber deixa de aceitar
 // filialId no corpo e usa sempre compra.filialId ï¿½ï¿½ï¿½ imposs+ï¿½vel divergir.
 model Compra {
-  id              String       @id @default(cuid())
-  empresaId       String
-  empresa         Empresa      @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  filialId        String
-  filial          Filial       @relation(fields: [filialId], references: [id])
-  fornecedorId    String
-  fornecedor      Fornecedor   @relation(fields: [fornecedorId], references: [id])
-  valorTotal      Decimal      @db.Decimal(12, 2)
-  status          StatusCompra @default(SOLICITADA)
-  condPagamento   String?
-  dataCompra      DateTime     @default(now())
-  dataRecebimento DateTime?
-  origem          Origem       @default(MANUAL)
-  itens           CompraItem[]
-  createdAt       DateTime     @default(now())
+  id                     String              @id @default(cuid())
+  empresaId              String
+  empresa                Empresa             @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  filialId               String
+  filial                 Filial              @relation(fields: [filialId], references: [id])
+  fornecedorId           String
+  fornecedor             Fornecedor          @relation(fields: [fornecedorId], references: [id])
+  valorTotal             Decimal             @db.Decimal(12, 2)
+  status                 StatusCompra        @default(SOLICITADA)
+  condPagamento          String?
+  dataCompra             DateTime            @default(now())
+  dataRecebimento        DateTime?
+  origem                 Origem              @default(MANUAL)
+  itens                  CompraItem[]
+  createdAt              DateTime            @default(now())
+  // ---- Módulo Compras completo (2026-11-21). Tudo opcional ou com padrão. ----
+  numero                 Int? // sequencial por empresa (exibido como CP-000123), gerado pelo backend
+  responsavelId          String?
+  responsavel            Usuario?            @relation("CompraResponsavel", fields: [responsavelId], references: [id], onDelete: SetNull)
+  previsaoEntrega        DateTime?
+  prioridade             String              @default("NORMAL") // BAIXA | NORMAL | ALTA | URGENTE
+  observacoes            String? // internas
+  observacoesFornecedor  String? // vão no pedido enviado ao fornecedor
+  valorProdutos          Decimal?            @db.Decimal(14, 2) // soma dos itens (com desconto do item)
+  desconto               Decimal             @default(0) @db.Decimal(14, 2)
+  frete                  Decimal             @default(0) @db.Decimal(14, 2)
+  outrasDespesas         Decimal             @default(0) @db.Decimal(14, 2)
+  formaPagamento         String? // BOLETO | PIX | TRANSFERENCIA | CARTAO | DINHEIRO | OUTRO
+  parcelas               Int                 @default(1)
+  primeiroVencimento     DateTime?
+  contaFinanceira        String?
+  centroCusto            String?
+  planoContas            String?
+  observacoesFinanceiras String?
+  aprovadoPorId          String?
+  aprovadoPor            Usuario?            @relation("CompraAprovadaPor", fields: [aprovadoPorId], references: [id], onDelete: SetNull)
+  aprovadoEm             DateTime?
+  enviadoEm              DateTime?
+  confirmadoEm           DateTime?
+  motivoCancelamento     String?
+  criadoPorId            String?
+  criadoPor              Usuario?            @relation("CompraCriadaPor", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  atualizadoPorId        String?
+  atualizadoPor          Usuario?            @relation("CompraAtualizadaPor", fields: [atualizadoPorId], references: [id], onDelete: SetNull)
+  atualizadoEm           DateTime?
+  recebimentos           CompraRecebimento[]
+  notasFiscais           CompraNotaFiscal[]
+  envios                 CompraEnvio[]
 
+  @@unique([empresaId, numero])
   @@index([empresaId])
   @@index([empresaId, filialId])
+  @@index([empresaId, status])
+}
+
+// Recebimento de mercadoria (pode haver vários por compra: recebimentos parciais).
+// SÓ o recebimento confirmado movimenta estoque. A idempotencyKey impede confirmar o mesmo
+// recebimento duas vezes (duplo clique, reenvio do navegador).
+model CompraRecebimento {
+  id              String                  @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                 @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  compraId        String
+  compra          Compra                  @relation(fields: [compraId], references: [id], onDelete: Restrict)
+  filialId        String
+  numero          Int // 1, 2, 3... dentro da compra
+  usuarioId       String?
+  usuario         Usuario?                @relation("CompraRecebimentoUsuario", fields: [usuarioId], references: [id], onDelete: SetNull)
+  dataRecebimento DateTime                @default(now())
+  notaFiscalId    String?
+  notaFiscal      CompraNotaFiscal?       @relation(fields: [notaFiscalId], references: [id], onDelete: SetNull)
+  observacoes     String?
+  valorRecebido   Decimal                 @db.Decimal(14, 2) // valor proporcional ao recebido (base do financeiro)
+  idempotencyKey  String
+  itens           CompraRecebimentoItem[]
+  createdAt       DateTime                @default(now())
+
+  @@unique([empresaId, idempotencyKey])
+  @@unique([compraId, numero])
+  @@index([empresaId, compraId])
+  @@index([empresaId, dataRecebimento])
+}
+
+model CompraRecebimentoItem {
+  id                 String            @id @default(cuid())
+  empresaId          String
+  empresa            Empresa           @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  recebimentoId      String
+  recebimento        CompraRecebimento @relation(fields: [recebimentoId], references: [id], onDelete: Cascade)
+  compraItemId       String
+  compraItem         CompraItem        @relation(fields: [compraItemId], references: [id], onDelete: Restrict)
+  produtoId          String
+  quantidadeRecebida Decimal           @db.Decimal(14, 3) // aceita, na unidade de compra (entra no estoque)
+  quantidadeBase     Decimal           @db.Decimal(14, 3) // convertida para a unidade base do produto
+  quantidadeAvariada Decimal           @default(0) @db.Decimal(14, 3) // chegou danificada (não entra)
+  quantidadeRecusada Decimal           @default(0) @db.Decimal(14, 3) // recusada na conferência (não entra)
+  divergencia        String?
+
+  @@index([empresaId, recebimentoId])
+}
+
+// Nota fiscal de entrada vinculada à compra (dados informados/conferidos; XML e DANFE ficam em
+// Documento, no storage privado). Nenhum cálculo tributário é feito aqui.
+model CompraNotaFiscal {
+  id           String              @id @default(cuid())
+  empresaId    String
+  empresa      Empresa             @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  compraId     String
+  compra       Compra              @relation(fields: [compraId], references: [id], onDelete: Restrict)
+  numero       String
+  serie        String?
+  chaveAcesso  String? // 44 dígitos
+  dataEmissao  DateTime?
+  dataEntrada  DateTime?
+  valorTotal   Decimal?            @db.Decimal(14, 2)
+  status       String              @default("REGISTRADA") // REGISTRADA | CONFERIDA | DIVERGENTE
+  divergencias String?
+  observacoes  String?
+  usuarioId    String?
+  recebimentos CompraRecebimento[]
+  createdAt    DateTime            @default(now())
+
+  @@unique([empresaId, chaveAcesso])
+  @@index([empresaId, compraId])
+}
+
+// Cada tentativa de envio do pedido ao fornecedor (e-mail ou WhatsApp), com o resultado REAL:
+// ENVIADO (provedor aceitou), FALHOU (erro do provedor), NAO_CONFIGURADO (canal sem credencial) ou
+// CONVERSA_ABERTA (link wa.me aberto pelo usuário — NÃO significa mensagem entregue).
+model CompraEnvio {
+  id           String   @id @default(cuid())
+  empresaId    String
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  compraId     String
+  compra       Compra   @relation(fields: [compraId], references: [id], onDelete: Restrict)
+  canal        String // EMAIL | WHATSAPP
+  destinatario String
+  status       String
+  provedor     String?
+  provedorId   String? // id da mensagem no provedor, quando houver
+  erro         String?
+  usuarioId    String?
+  createdAt    DateTime @default(now())
+
+  @@index([empresaId, compraId])
 }
 
 model CompraItem {
-  id             String   @id @default(cuid())
-  compraId       String
-  compra         Compra   @relation(fields: [compraId], references: [id], onDelete: Cascade)
-  produtoId      String
-  produto        Produto  @relation(fields: [produtoId], references: [id])
-  quantidade     Decimal  @db.Decimal(14, 3) // quantidade na unidade de compra
-  unidadeCompra  String? // símbolo da unidade de compra no momento (ex: "saco", "cx", "kg")
-  fatorAplicado  Decimal? @db.Decimal(14, 6) // fator usado para converter para unidade base
-  quantidadeBase Decimal? @db.Decimal(14, 3) // quantidade convertida para unidade base
-  valorUnit      Decimal  @db.Decimal(14, 6) // preço por unidade de compra
+  id                 String                  @id @default(cuid())
+  compraId           String
+  compra             Compra                  @relation(fields: [compraId], references: [id], onDelete: Cascade)
+  produtoId          String
+  produto            Produto                 @relation(fields: [produtoId], references: [id])
+  quantidade         Decimal                 @db.Decimal(14, 3) // quantidade na unidade de compra
+  unidadeCompra      String? // símbolo da unidade de compra no momento (ex: "saco", "cx", "kg")
+  fatorAplicado      Decimal?                @db.Decimal(14, 6) // fator usado para converter para unidade base
+  quantidadeBase     Decimal?                @db.Decimal(14, 3) // quantidade convertida para unidade base
+  valorUnit          Decimal                 @db.Decimal(14, 6) // preço por unidade de compra
+  // Recebimento parcial (2026-11-21): quanto já entrou (unidade de compra), desconto e observação.
+  quantidadeRecebida Decimal                 @default(0) @db.Decimal(14, 3)
+  desconto           Decimal                 @default(0) @db.Decimal(14, 2) // valor de desconto do item
+  observacao         String?
+  recebimentos       CompraRecebimentoItem[]
 }
 
 // --- Se+ï¿½+ï¿½o 12 Clientes ---
