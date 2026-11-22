@@ -121,13 +121,15 @@ export function resumir(estados: { status: StatusCentral }[]) {
   return { conectadas, comErro, naoConfiguradas, indisponiveis, total: estados.length, saude: emUso ? Math.round((conectadas / emUso) * 100) : null };
 }
 
-export async function obterConfiguracao(empresaId: string, id: string) {
+/** `baseUrlPublica`: endereço público da API, usado para montar a URL do webhook do WhatsApp. */
+export async function obterConfiguracao(empresaId: string, id: string, baseUrlPublica?: string) {
   const def = provedorPorId(id);
   if (!def) throw NaoEncontrado('Integração não encontrada.');
   const estados = await estadosDaEmpresa(empresaId);
   const estado = estados.find((e) => e.provedor === id)!;
   let configuracao: { config: Record<string, string>; segredosSalvos: Record<string, string | null> } | null = null;
   let erro: string | null = null;
+  let webhookUrl: string | null = null;
   if (def.disponibilidade === 'CREDENCIAIS') {
     const reg = await registro(empresaId, def.tipo);
     const { config, segredos } = estadoSalvo(reg);
@@ -135,8 +137,11 @@ export async function obterConfiguracao(empresaId: string, id: string) {
     for (const c of def.campos.filter((c) => c.secreto)) segredosSalvos[c.chave] = mascarar(segredos[c.chave]);
     configuracao = { config, segredosSalvos };
     erro = (reg?.erros as { message?: string } | null)?.message ?? null;
+    // O id do registro (cuid, não adivinhável) identifica a empresa no webhook público;
+    // a autenticidade de cada evento vem da assinatura com o App Secret.
+    if (def.id === 'whatsapp' && reg && baseUrlPublica) webhookUrl = `${baseUrlPublica}/integracoes/whatsapp/webhook/${reg.id}`;
   }
-  return { ...estado, erro, configuracao };
+  return { ...estado, erro, configuracao, webhookUrl };
 }
 
 async function executarTeste(def: DefinicaoProvedor, config: Record<string, string>, segredos: Record<string, string>) {
@@ -219,4 +224,23 @@ export async function historico(empresaId: string, id: string) {
   const ids = [...new Set(eventos.map((e) => e.usuarioId).filter(Boolean))] as string[];
   const usuarios = ids.length ? await prisma.usuario.findMany({ where: { id: { in: ids }, empresaId }, select: { id: true, nome: true } }) : [];
   return eventos.map((e) => ({ id: e.id, operacao: e.operacao, resultado: e.resultado, codigoErro: e.codigoErro, mensagem: e.mensagem, duracaoMs: e.duracaoMs, usuario: usuarios.find((u) => u.id === e.usuarioId)?.nome ?? null, em: e.createdAt }));
+}
+
+/**
+ * Configuração + segredos decifrados de um provedor da empresa, para uso INTERNO do
+ * servidor (envio de mensagens, webhooks). Nunca devolver isto em resposta HTTP.
+ */
+export async function credenciaisInternas(empresaId: string, id: string) {
+  const def = provedorPorId(id);
+  if (!def) throw NaoEncontrado('Integração não encontrada.');
+  const reg = await registro(empresaId, def.tipo);
+  if (!reg?.credenciais) return null;
+  return { id: reg.id, status: normalizarStatus(reg.status), ...estadoSalvo(reg) };
+}
+
+/** Variante por id do registro (webhook público: a empresa vem do registro, não do chamador). */
+export async function credenciaisPorRegistro(registroId: string, tipo: string) {
+  const reg = await prisma.integracaoExterno.findFirst({ where: { id: registroId, tipo } });
+  if (!reg?.credenciais) return null;
+  return { id: reg.id, empresaId: reg.empresaId, ...estadoSalvo(reg) };
 }

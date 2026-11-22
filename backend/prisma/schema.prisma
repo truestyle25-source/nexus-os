@@ -154,6 +154,8 @@ model Empresa {
   indicadorDiarios         IndicadorDiario[]
   integracaoExternos       IntegracaoExterno[]
   integracaoEventos        IntegracaoEvento[]
+  whatsappMensagens        WhatsappMensagem[]
+  emailEnvios              EmailEnvio[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -3589,4 +3591,48 @@ model ProdutoFilial {
 
   @@unique([produtoId, filialId])
   @@index([empresaId, filialId])
+}
+
+// --- Central de Integrações (Fase B): mensagens do WhatsApp Business -------------
+// Uma linha por mensagem enviada pelo NEXUS OS ou recebida pelo webhook da Meta.
+// `waMessageId` (wamid) é único por empresa: webhooks repetidos não duplicam nada.
+// `conteudo` guarda só o texto/resumo (até 1000 caracteres) — nunca token ou mídia.
+model WhatsappMensagem {
+  id           String   @id @default(cuid())
+  empresaId    String
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  direcao      String // ENVIADA | RECEBIDA
+  telefone     String // destinatário (enviada) ou remetente (recebida), só dígitos
+  nomeContato  String?
+  tipo         String // text | template | document | image | audio | ...
+  conteudo     String?
+  waMessageId  String?
+  status       String // ENVIANDO | ENVIADA | ENTREGUE | LIDA | FALHOU | RECEBIDA
+  erro         String?
+  origem       String   @default("CENTRAL") // CENTRAL | WEBHOOK | módulo que enviou
+  usuarioId    String?
+  createdAt    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([empresaId, waMessageId])
+  @@index([empresaId, createdAt])
+}
+
+// --- Central de Integrações (Fase B): e-mails enviados pela conta da empresa -------
+// Sem corpo nem anexos: só destinatários, assunto, status e o Message-ID do servidor.
+model EmailEnvio {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  para      String
+  assunto   String
+  anexos    Int      @default(0)
+  status    String // ENVIADO | FALHOU
+  erro      String?
+  messageId String?
+  origem    String   @default("CENTRAL")
+  usuarioId String?
+  createdAt DateTime @default(now())
+
+  @@index([empresaId, createdAt])
 }

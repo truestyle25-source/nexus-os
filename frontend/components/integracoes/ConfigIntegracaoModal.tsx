@@ -4,7 +4,8 @@
 // (vêm do catálogo do backend). Segredos: só no estado do formulário enquanto a janela está
 // aberta — nunca em localStorage; os salvos aparecem mascarados e "vazio = manter".
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
-import { CheckCircle2, ChevronDown, ExternalLink, Eye, EyeOff, Info, Lock, Wifi, X, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Copy, ExternalLink, Eye, EyeOff, Info, Lock, Wifi, X, AlertTriangle } from 'lucide-react';
+import { EnvioEmail, EnvioWhatsApp, HistoricoEmail, HistoricoWhatsApp } from './PainelComunicacao';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
 import {
@@ -41,6 +42,9 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
   const [eventos, setEventos] = useState<EventoIntegracao[] | null>(null);
 
   const credenciais = provedor.disponibilidade === 'CREDENCIAIS';
+  // WhatsApp e E-mail têm envio e histórico próprios (aba "Enviar" no lugar de "Sincronização").
+  const comunicacao = provedor.id === 'whatsapp' || provedor.id === 'email-conta';
+  const [copiado, setCopiado] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
@@ -128,7 +132,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 bg-black/70" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={`Configurar ${provedor.nome}`} className="w-full sm:max-w-2xl max-h-[92vh] overflow-hidden rounded-t-[16px] sm:rounded-[16px] bg-[var(--nx-surface)] border border-[var(--nx-border)] flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Cabeçalho */}
-        <div className="flex items-start gap-3 px-5 pt-5 pb-3">
+        <div className="shrink-0 flex items-start gap-3 px-5 pt-5 pb-3">
           <div className="h-11 w-11 shrink-0 rounded-[12px] bg-[var(--nx-surface-2)] border border-[var(--nx-border)] flex items-center justify-center">
             <Icone className="w-5 h-5 text-[var(--nx-ink-2)]" />
           </div>
@@ -144,8 +148,8 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
           </div>
           <button type="button" onClick={onClose} aria-label="Fechar" className="h-8 w-8 shrink-0 rounded-[10px] border border-[var(--nx-border)] text-[var(--nx-ink-3)] hover:text-[var(--nx-ink)] inline-flex items-center justify-center"><X className="w-4 h-4" /></button>
         </div>
-        <div className="flex gap-4 px-5 border-b border-[var(--nx-border)] overflow-x-auto" role="tablist">
-          {([['config', 'Configuração'], ['sync', 'Sincronização'], ['historico', 'Histórico']] as const).map(([id, rotulo]) => (
+        <div className="shrink-0 flex gap-4 px-5 border-b border-[var(--nx-border)] overflow-x-auto" role="tablist">
+          {([['config', 'Configuração'], ['sync', comunicacao ? 'Enviar' : 'Sincronização'], ['historico', 'Histórico']] as const).map(([id, rotulo]) => (
             <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)} className={`h-10 shrink-0 text-[13px] font-medium border-b-2 ${aba === id ? 'border-[var(--nx-accent)] text-[var(--nx-ink)]' : 'border-transparent text-[var(--nx-ink-3)] hover:text-[var(--nx-ink-2)]'}`}>{rotulo}</button>
           ))}
         </div>
@@ -191,6 +195,16 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
                   )}
                 </>
               )}
+              {estado?.webhookUrl && (
+                <div className="rounded-[12px] border border-[var(--nx-border)] bg-[var(--nx-surface-2)] p-3 space-y-1.5">
+                  <p className="text-[12px] font-semibold text-[var(--nx-ink)]">URL de callback do webhook</p>
+                  <p className="text-[11px] text-[var(--nx-ink-3)]">Cadastre no painel da Meta (WhatsApp › Configuração › Webhook) com o mesmo Verify Token e assine o campo "messages".</p>
+                  <div className="flex gap-2">
+                    <input readOnly value={estado.webhookUrl} className={`${entrada} font-mono text-[11px]`} aria-label="URL de callback do webhook" onFocus={(e) => e.currentTarget.select()} />
+                    <button type="button" className={`${botaoSec} shrink-0`} onClick={() => { void navigator.clipboard?.writeText(estado.webhookUrl!).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 1500); }); }}><Copy className="w-4 h-4" />{copiado ? 'Copiado' : 'Copiar'}</button>
+                  </div>
+                </div>
+              )}
               {estado?.erro && status !== 'CONECTADO' && !resultado && <Mensagem ok={false} texto={`Último erro: ${estado.erro}`} />}
               {resultado && <Mensagem ok={resultado.ok} texto={`${resultado.mensagem}${resultado.conta ? ` Conta: ${resultado.conta.nome}${resultado.conta.documento ? ` (${resultado.conta.documento})` : ''}.` : ''}`} />}
               {erro && <Mensagem ok={false} texto={erro} />}
@@ -210,7 +224,9 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
             </>
           )}
 
-          {aba === 'sync' && (
+          {aba === 'sync' && provedor.id === 'whatsapp' && <EnvioWhatsApp conectado={status === 'CONECTADO'} />}
+          {aba === 'sync' && provedor.id === 'email-conta' && <EnvioEmail conectado={status === 'CONECTADO'} recebe={estado?.configuracao?.config.receber === 'SIM'} />}
+          {aba === 'sync' && !comunicacao && (
             oauth?.sincronizacao ?? (
               <div className="space-y-2 text-[13px] text-[var(--nx-ink-2)]">
                 <p>Última validação: {estado?.ultimoTesteEm ? formatDateTime(estado.ultimoTesteEm) : '—'}</p>
@@ -220,6 +236,9 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
             )
           )}
 
+          {aba === 'historico' && provedor.id === 'whatsapp' && <HistoricoWhatsApp />}
+          {aba === 'historico' && provedor.id === 'email-conta' && <HistoricoEmail />}
+          {aba === 'historico' && comunicacao && <h3 className="pt-2 text-[13px] font-semibold text-[var(--nx-ink)]">Eventos da integração</h3>}
           {aba === 'historico' && (
             eventos === null ? <p className="text-[13px] text-[var(--nx-ink-3)]">Carregando…</p>
             : eventos.length === 0 ? <p className="text-[13px] text-[var(--nx-ink-3)]">Nenhum evento registrado ainda.</p>
@@ -242,7 +261,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
 
         {/* Rodapé */}
         {aba === 'config' && (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-t border-[var(--nx-border)]">
+          <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-t border-[var(--nx-border)]">
             {credenciais ? (
               <>
                 <button type="button" className={botaoSec} onClick={() => executar('testar')} disabled={acao !== null}><Wifi className="w-4 h-4" />{acao === 'testar' ? 'Testando…' : 'Testar conexão'}</button>
