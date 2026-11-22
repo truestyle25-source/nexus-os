@@ -245,9 +245,9 @@ export function AbaFornecedor({ form, set, edValores, painel, ficha, avisar, aoA
             </Celula>
             <Celula l={6}>
               <div className={s.coluna} style={{ gap: 10 }}>
-                <div><strong>E-mail</strong> <span className={s.ajuda}>{t(previa?.email)}</span><div className={s.espaco3}>{previa?.canais.email.configurado ? <Selo tom="ok">Resend configurado</Selo> : <Selo tom="alerta">Não configurado (RESEND_API_KEY)</Selo>}</div></div>
+                <div><strong>E-mail</strong> <span className={s.ajuda}>{t(previa?.email)}</span><div className={s.espaco3}>{previa?.canais.email.configurado ? <Selo tom="ok">{previa.canais.email.origem === 'CENTRAL' ? 'Conta da empresa' : 'Resend (servidor)'}</Selo> : <Selo tom="alerta">Não configurado — conecte o e-mail na Central de Integrações</Selo>}</div></div>
                 <Botao primario desabilitado={!podeEnviar || enviando || !previa?.email} onClick={() => enviar('EMAIL')}>Enviar por e-mail (com PDF)</Botao>
-                <div className={s.espaco3}><strong>WhatsApp</strong> <span className={s.ajuda}>{t(previa?.whatsapp)}</span><div className={s.espaco3}>{previa?.canais.whatsapp.configurado ? <Selo tom="ok">API oficial configurada</Selo> : <Selo tom="alerta">API não configurada (WHATSAPP_TOKEN)</Selo>}</div></div>
+                <div className={s.espaco3}><strong>WhatsApp</strong> <span className={s.ajuda}>{t(previa?.whatsapp)}</span><div className={s.espaco3}>{previa?.canais.whatsapp.configurado ? <Selo tom="ok">{previa.canais.whatsapp.origem === 'CENTRAL' ? 'WhatsApp da empresa' : 'API oficial (servidor)'}</Selo> : <Selo tom="alerta">Não configurado — conecte o WhatsApp na Central de Integrações</Selo>}</div></div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Botao desabilitado={!podeEnviar || enviando || !previa?.whatsapp || !previa?.canais.whatsapp.configurado} onClick={() => enviar('WHATSAPP')}>Enviar pela API</Botao>
                   <Botao desabilitado={!podeEnviar || enviando || !previa?.linkWhatsApp} onClick={() => enviar('WHATSAPP', 'CONVERSA')}>Abrir conversa (manual)</Botao>
@@ -263,7 +263,8 @@ export function AbaFornecedor({ form, set, edValores, painel, ficha, avisar, aoA
                 { chave: 'c', titulo: 'Canal', render: (e) => (e.canal === 'EMAIL' ? 'E-mail' : 'WhatsApp') },
                 { chave: 'p', titulo: 'Destinatário', render: (e) => e.destinatario },
                 { chave: 's', titulo: 'Resultado', render: (e) => <Selo tom={e.status === 'ENVIADO' ? 'ok' : e.status === 'CONVERSA_ABERTA' ? undefined : 'erro'}>{({ ENVIADO: 'Enviado', FALHOU: 'Falhou', NAO_CONFIGURADO: 'Não configurado', CONVERSA_ABERTA: 'Conversa aberta' } as Record<string, string>)[e.status] ?? e.status}</Selo> },
-                { chave: 'e', titulo: 'Detalhe', render: (e) => <span className={s.ajuda}>{t(e.erro)}</span> },
+                { chave: 'en', titulo: 'Entrega', render: (e) => (e.entrega ? <Selo tom={e.entrega.status === 'FALHOU' ? 'erro' : ['ENTREGUE', 'LIDA'].includes(e.entrega.status) ? 'ok' : undefined}>{({ ENVIANDO: 'Enviando', ENVIADA: 'Aceita pela Meta', ENTREGUE: 'Entregue', LIDA: 'Lida', FALHOU: 'Não entregue' } as Record<string, string>)[e.entrega.status] ?? e.entrega.status}</Selo> : <span className={s.ajuda}>—</span>) },
+                { chave: 'e', titulo: 'Detalhe', render: (e) => <span className={s.ajuda}>{t(e.entrega?.erro ?? e.erro)}</span> },
               ]} />
           </div>
         </Secao>

@@ -78,6 +78,8 @@ export const PROVEDORES: readonly DefinicaoProvedor[] = [
       { chave: 'appSecret', rotulo: 'Meta App Secret', tipo: 'segredo', obrigatorio: false, secreto: true, avancado: true, ajuda: 'Obrigatório para receber webhooks: valida a assinatura X-Hub-Signature-256 de cada evento.' },
       { chave: 'verifyToken', rotulo: 'Webhook Verify Token', tipo: 'segredo', obrigatorio: false, secreto: true, avancado: true, ajuda: 'Texto que você inventa e repete no painel da Meta ao cadastrar o webhook.' },
       { chave: 'versaoApi', rotulo: 'Versão da Graph API', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Padrão v23.0. Formato vNN.N.' },
+      { chave: 'modeloDocumento', rotulo: 'Modelo para documentos (PDF)', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Nome de um modelo APROVADO com cabeçalho de documento e 1 variável no corpo. Usado para enviar pedidos de compra fora da janela de 24 h.' },
+      { chave: 'idiomaModelo', rotulo: 'Idioma do modelo', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Ex.: pt_BR' },
     ],
   },
   {

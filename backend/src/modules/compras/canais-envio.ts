@@ -121,3 +121,54 @@ export async function enviarPorWhatsApp(p: { telefone: string; mensagem: string;
     return { status: 'FALHOU', provedor: 'whatsapp-cloud', erro: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ============================================================================
+// Fase C1 — conta da EMPRESA primeiro (Central de Integrações), servidor como reserva.
+//
+// Ordem de cada canal:
+//   1) WhatsApp Business / E-mail da empresa CONECTADOS na Central de Integrações
+//      (credenciais da própria empresa, histórico e status de entrega na Central);
+//   2) senão, as variáveis do servidor descritas no topo deste arquivo (comportamento
+//      anterior, mantido para nada parar de funcionar);
+//   3) senão, NAO_CONFIGURADO — nada é simulado.
+// ============================================================================
+import { credenciaisInternas } from '../integracoes/central/central.service.js';
+import { enviarDocumentoWhatsApp } from '../integracoes/central/whatsapp.service.js';
+import { enviarEmail as enviarEmailDaEmpresa } from '../integracoes/central/email.service.js';
+
+async function conectadoNaCentral(empresaId: string, provedor: 'whatsapp' | 'email-conta') {
+  const c = await credenciaisInternas(empresaId, provedor).catch(() => null);
+  return c && c.status === 'CONECTADO' ? c : null;
+}
+
+/** Situação dos canais PARA ESTA EMPRESA (a tela mostra de onde sai o envio). */
+export async function canaisDaEmpresa(empresaId: string) {
+  const servidor = canaisConfigurados();
+  const [wa, mail] = await Promise.all([conectadoNaCentral(empresaId, 'whatsapp'), conectadoNaCentral(empresaId, 'email-conta')]);
+  return {
+    email: mail
+      ? { configurado: true, provedor: 'E-mail da empresa (Central de Integrações)', remetente: mail.config.emailRemetente ?? null, origem: 'CENTRAL' as const }
+      : { ...servidor.email, origem: servidor.email.configurado ? 'SERVIDOR' as const : null },
+    whatsapp: wa
+      ? { configurado: true, provedor: 'WhatsApp Business da empresa (Central de Integrações)', template: wa.config.modeloDocumento || null, origem: 'CENTRAL' as const }
+      : { ...servidor.whatsapp, origem: servidor.whatsapp.configurado ? 'SERVIDOR' as const : null },
+  };
+}
+
+export async function enviarPedidoPorEmail(empresaId: string, usuarioId: string, p: { para: string; assunto: string; html: string; texto: string; pdf: { nome: string; base64: string } }): Promise<ResultadoCanal> {
+  if (await conectadoNaCentral(empresaId, 'email-conta')) {
+    try {
+      const r = await enviarEmailDaEmpresa(empresaId, usuarioId, { para: [p.para], assunto: p.assunto, html: p.html, texto: p.texto, anexos: [{ nome: p.pdf.nome, base64: p.pdf.base64, tipo: 'application/pdf' }], origem: 'COMPRAS' });
+      return r.status === 'ENVIADO' ? { status: 'ENVIADO', provedor: 'email-empresa', provedorId: r.messageId ?? undefined } : { status: 'FALHOU', provedor: 'email-empresa', erro: r.erro };
+    } catch (e) {
+      return { status: 'FALHOU', provedor: 'email-empresa', erro: e instanceof Error ? e.message : 'Falha no envio.' };
+    }
+  }
+  return enviarPorEmail(p);
+}
+
+export async function enviarPedidoPorWhatsApp(empresaId: string, usuarioId: string, p: { telefone: string; mensagem: string; pdf: { nome: string; base64: string } }): Promise<ResultadoCanal> {
+  const r = await enviarDocumentoWhatsApp(empresaId, usuarioId, { para: p.telefone, legenda: p.mensagem, pdf: p.pdf, origem: 'COMPRAS' });
+  if (r.status === 'NAO_CONECTADO') return enviarPorWhatsApp(p);
+  return r.status === 'ENVIADA' ? { status: 'ENVIADO', provedor: 'whatsapp-empresa', provedorId: r.waMessageId ?? undefined } : { status: 'FALHOU', provedor: 'whatsapp-empresa', erro: r.erro };
+}

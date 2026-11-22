@@ -12,7 +12,7 @@ import { baixarObjeto, configStorage, contentTypeDe, enviarObjeto, extensaoDe, m
 import {
   EDITAVEIS, ENVIAVEIS, RECEBEM, ROTULO_STATUS, calcularTotais, confirmarRecebimento, cronograma, numeroExibido, pdfDoPedido, proximoNumeroCompra,
 } from './compra.service.js';
-import { canaisConfigurados, enviarPorEmail, enviarPorWhatsApp, linkConversaWhatsApp } from './canais-envio.js';
+import { canaisDaEmpresa, enviarPedidoPorEmail, enviarPedidoPorWhatsApp, linkConversaWhatsApp, type ResultadoCanal } from './canais-envio.js';
 
 /**
  * Módulo Compras — ficha completa e telas de acompanhamento (prefixo /api/v1/compras).
@@ -196,13 +196,21 @@ async function montarFicha(req: FastifyRequest, id: string) {
       movimentacoes: movimentos.filter((m) => m.recebimentoId === r.id).map((m) => ({ ...m, quantidade: Number(m.quantidade), saldoPosterior: num(m.saldoPosterior) })),
     })),
     notasFiscais: c.notasFiscais.map((n) => ({ ...n, valorTotal: num(n.valorTotal) })),
-    envios: c.envios,
+    // Status de entrega do WhatsApp da empresa (atualizado pelo webhook da Meta) junto de cada envio.
+    envios: await (async () => {
+      const ids = c.envios.filter((e) => e.provedor === 'whatsapp-empresa' && e.provedorId).map((e) => e.provedorId!) ;
+      const entregas = ids.length ? await prisma.whatsappMensagem.findMany({ where: { empresaId, waMessageId: { in: ids } }, select: { waMessageId: true, status: true, erro: true } }) : [];
+      return c.envios.map((e) => {
+        const w = entregas.find((x) => x.waMessageId === e.provedorId);
+        return { ...e, entrega: w ? { status: w.status, erro: w.erro } : null };
+      });
+    })(),
     documentos: documentos.map((d) => ({ id: d.id, entidadeTipo: d.entidadeTipo, entidadeId: d.entidadeId, nome: d.nomeOriginal, descricao: d.descricao, tamanho: d.tamanho, enviadoPor: d.enviadoPor?.nome ?? null, enviadoEm: d.createdAt })),
     acoes: acoesDisponiveis(c.status, c.empresa.comprasExigeAprovacao, temRecebimento),
     editavel: EDITAVEIS.includes(c.status),
     exigeAprovacao: c.empresa.comprasExigeAprovacao,
     permissoes: { custo: podeCusto, financeiro: podeFinanceiro, aprovar: podeAprovar },
-    canais: canaisConfigurados(),
+    canais: await canaisDaEmpresa(req.user.empresaId),
     storageConfigurado: storageConfigurado(),
     auditoria: { criadoPor: c.criadoPor?.nome ?? null, criadoEm: c.createdAt, atualizadoPor: c.atualizadoPor?.nome ?? null, atualizadoEm: c.atualizadoEm ?? c.createdAt },
   };
@@ -274,7 +282,7 @@ export async function compraFichaRoutes(app: FastifyInstance): Promise<void> {
         comprasNoPeriodo: periodo._count._all, valorNoPeriodo: Number(periodo._sum.valorTotal ?? 0), notasFiscais: nfs,
       },
       periodo: { de, ate }, filiais, fornecedores, responsaveis, empresa,
-      statusRotulos: ROTULO_STATUS, canais: canaisConfigurados(), storageConfigurado: storageConfigurado(),
+      statusRotulos: ROTULO_STATUS, canais: await canaisDaEmpresa(req.user.empresaId), storageConfigurado: storageConfigurado(),
       podeAdministrar: await temPermissao(req.user.id, 'compras', 'administrar'),
     };
   });
@@ -593,7 +601,7 @@ export async function compraFichaRoutes(app: FastifyInstance): Promise<void> {
     return {
       assunto: e.assunto, texto: e.texto, email: e.email, whatsapp: e.whatsapp,
       linkWhatsApp: e.whatsapp ? linkConversaWhatsApp(e.whatsapp, e.texto) : null, pdf: { nome: e.pdf.nome },
-      canais: canaisConfigurados(), podeEnviar: ENVIAVEIS.includes(e.compra.status), status: e.compra.status,
+      canais: await canaisDaEmpresa(req.user.empresaId), podeEnviar: ENVIAVEIS.includes(e.compra.status), status: e.compra.status,
     };
   });
 
@@ -608,14 +616,14 @@ export async function compraFichaRoutes(app: FastifyInstance): Promise<void> {
     if (!destinatario) throw new ErroDeNegocio(d.canal === 'EMAIL' ? 'O fornecedor não tem e-mail para pedidos cadastrado.' : 'O fornecedor não tem WhatsApp/telefone cadastrado.', 422);
     if (d.canal === 'EMAIL' && !z.string().email().safeParse(destinatario).success) throw new ErroDeNegocio('E-mail do destinatário inválido.', 400);
 
-    let resultado: Awaited<ReturnType<typeof enviarPorEmail>>;
+    let resultado: ResultadoCanal;
     let link: string | null = null;
-    if (d.canal === 'EMAIL') resultado = await enviarPorEmail({ para: destinatario, assunto: e.assunto, html: e.html, texto: e.texto, pdf: e.pdf });
+    if (d.canal === 'EMAIL') resultado = await enviarPedidoPorEmail(empresaId, req.user.id, { para: destinatario, assunto: e.assunto, html: e.html, texto: e.texto, pdf: e.pdf });
     else if (d.modo === 'CONVERSA') {
       link = linkConversaWhatsApp(destinatario, e.texto);
       if (!link) throw new ErroDeNegocio('Telefone do fornecedor inválido para WhatsApp.', 422);
       resultado = { status: 'CONVERSA_ABERTA', provedor: 'wa.me' };
-    } else resultado = await enviarPorWhatsApp({ telefone: destinatario, mensagem: e.texto, pdf: e.pdf });
+    } else resultado = await enviarPedidoPorWhatsApp(empresaId, req.user.id, { telefone: destinatario, mensagem: e.texto, pdf: e.pdf });
 
     const envio = await prisma.compraEnvio.create({ data: { empresaId, compraId: id, canal: d.canal, destinatario, status: resultado.status, provedor: resultado.provedor, provedorId: resultado.provedorId ?? null, erro: resultado.erro ?? null, usuarioId: req.user.id } });
     // Só o envio ACEITO pelo provedor muda o status para ENVIADA. Abrir conversa não é envio.
