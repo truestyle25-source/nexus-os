@@ -20,6 +20,7 @@ import {
 } from '@/components/ui';
 import { formatBRL, formatDate } from '@/lib/format';
 import { t as traduzir, tMenu } from '@/lib/i18n';
+import CobrancaExterna from '@/components/financeiro/CobrancaExterna';
 import {
   comFuso, diaLocal, intervaloDoPreset, periodoAnterior, type PresetKey,
 } from '@/lib/dashboard';
@@ -1331,6 +1332,8 @@ const duplicar = useCallback(async (l: LancView) => {
               </div>
             </div>
 
+            <CobrancaExterna lancamento={detail} onAtualizado={(l) => { setDetail({ ...detail, cobrancaProvedor: l.cobrancaProvedor, cobrancaId: l.cobrancaId, cobrancaUrl: l.cobrancaUrl, cobrancaStatus: l.cobrancaStatus, pagoEm: l.pagoEm, statusUp: String(l.status ?? detail.statusUp).toUpperCase() } as typeof detail); void load(); }} />
+
             <div style={{ marginTop: 16, background: 'var(--card2)', border: '1px solid var(--nexus-border)', borderRadius: 10, padding: 12, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
               A API financeira expõe apenas <code>GET /financeiro</code> e{' '}
               <code>POST /financeiro</code>: não existe rota de baixa, pagamento,
@@ -1341,7 +1344,9 @@ const duplicar = useCallback(async (l: LancView) => {
               <strong>PENDENTE</strong> e permanecem assim. Só entram como{' '}
               <strong>PAGO</strong> os lançamentos gerados por uma venda
               finalizada, que já nascem quitados. A baixa manual ainda não é
-              possível pelo NEXUS OS.
+              possível pelo NEXUS OS. Exceção: contas a receber com cobrança do
+              Asaas ou do Mercado Pago são baixadas automaticamente quando o
+              provedor confirma o pagamento.
             </div>
 
             <div className="fin-wrap" style={{ marginTop: 16, justifyContent: 'flex-end' }}>

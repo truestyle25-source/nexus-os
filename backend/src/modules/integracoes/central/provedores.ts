@@ -49,6 +49,7 @@ export const PROVEDORES: readonly DefinicaoProvedor[] = [
     campos: [
       { chave: 'ambiente', rotulo: 'Ambiente', tipo: 'selecao', obrigatorio: true, secreto: false, opcoes: [{ valor: 'PRODUCAO', rotulo: 'Produção' }, { valor: 'SANDBOX', rotulo: 'Sandbox (testes)' }], ajuda: 'Chaves de produção e de sandbox são diferentes e não se misturam.' },
       { chave: 'apiKey', rotulo: 'Chave de API', tipo: 'segredo', obrigatorio: true, secreto: true, ajuda: 'Gerada em Integrações › Chaves de API no painel do Asaas. Começa com $aact_prod_ (produção) ou $aact_hmlg_ (sandbox).' },
+      { chave: 'webhookToken', rotulo: 'Token do webhook', tipo: 'segredo', obrigatorio: false, secreto: true, avancado: true, ajuda: 'Texto de 32 a 255 caracteres, sem espaços, que você repete ao cadastrar o webhook no Asaas (Integrações › Webhooks, eventos de cobrança). Sem ele, a baixa automática fica desligada.' },
     ],
   },
   {

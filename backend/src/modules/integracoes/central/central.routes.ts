@@ -14,6 +14,8 @@ import { catalogoPublico } from './provedores.js';
 import { desconectar, estadosDaEmpresa, historico, obterConfiguracao, remover, resumir, salvar, testar, registrarEvento } from './central.service.js';
 import { assinaturaValida, desafioValido, enviarWhatsApp, listarMensagens, processarWebhook, verificarAssinaturaWebhook } from './whatsapp.service.js';
 import { caixaDeEntrada, enviarEmail, listarEnvios } from './email.service.js';
+import { atualizarCobranca, conferirPagamento, credenciaisPorRegistro, gerarCobranca } from './cobrancas.service.js';
+import { timingSafeEqual } from 'node:crypto';
 import { definirSistemaDaRequisicao } from '../../../lib/tenant-context.js';
 import { createRateLimiter } from '../../../middlewares/rateLimiter.js';
 
@@ -80,6 +82,18 @@ export async function centralIntegracoesRoutes(app: FastifyInstance): Promise<vo
     enviarEmail(req.user.empresaId, req.user.id, EnvioMail.parse(req.body ?? {})));
   app.get('/integracoes/central/email/envios', { preHandler: [auth, ver] }, async (req: any) =>
     ({ envios: await listarEnvios(req.user.empresaId) }));
+  // --- Financeiro: cobrança externa (Asaas / Mercado Pago) para uma conta a receber ---------
+  const fin = await permissaoMiddleware('financeiro', 'criar');
+  const PedidoCobranca = z.object({
+    provedor: z.enum(['asaas', 'mercadopago']),
+    forma: z.enum(['BOLETO', 'PIX', 'UNDEFINED']).optional(),
+    pagador: z.object({ nome: z.string().trim().min(2).max(120), documento: z.string().max(20), email: z.string().email().max(254).optional() }).optional(),
+  });
+  app.post('/financeiro/:id/cobranca', { preHandler: [auth, fin, limiteConexao] }, async (req: any) =>
+    gerarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id, PedidoCobranca.parse(req.body ?? {}), baseUrlPublica(req)));
+  app.post('/financeiro/:id/cobranca/atualizar', { preHandler: [auth, fin, limiteConexao] }, async (req: any) =>
+    atualizarCobranca(req.user.empresaId, req.user.id, z.object({ id: z.string().min(1).max(40) }).parse(req.params).id));
+
   app.get('/integracoes/central/email/caixa', { preHandler: [auth, ver, limiteConexao] }, async (req: any) =>
     ({ mensagens: await caixaDeEntrada(req.user.empresaId) }));
 
@@ -139,5 +153,45 @@ export async function whatsappWebhookRoutes(app: FastifyInstance): Promise<void>
       await registrarEvento({ empresaId: cred.empresaId, provedor: 'whatsapp', operacao: 'SINCRONIZAR', ok: false, codigoErro: 'PERSISTENCIA', mensagem: 'Falha ao processar evento do webhook.', duracaoMs: Date.now() - inicio });
       return reply.code(500).send(); // a Meta reenvia; o processamento é idempotente
     }
+  });
+}
+
+/**
+ * Webhooks PÚBLICOS de cobrança. O aviso só serve de gatilho: o pagamento é sempre consultado
+ * na API do provedor com a credencial da empresa dona do registro (ver cobrancas.service.ts).
+ *  - Asaas: exige o cabeçalho asaas-access-token igual ao "Token do webhook" salvo.
+ *  - Mercado Pago: notification_url única por empresa; aceita o id em data.id (corpo) ou
+ *    na query (data.id / id) e consulta GET /v1/payments/{id}.
+ * Sempre 200 rápido quando autenticado (o provedor reenvia em erro; a baixa é idempotente).
+ */
+export async function cobrancasWebhookRoutes(app: FastifyInstance): Promise<void> {
+  const IdReg = z.object({ registroId: z.string().regex(/^[a-z0-9]{20,40}$/) });
+
+  app.post('/integracoes/asaas/webhook/:registroId', { preHandler: limiteWebhook }, async (req: any, reply: any) => {
+    definirSistemaDaRequisicao('asaas:webhook');
+    const p = IdReg.safeParse(req.params);
+    if (!p.success) return reply.code(404).send();
+    const cred = await credenciaisPorRegistro(p.data.registroId, 'ASAAS');
+    const recebido = Buffer.from(String(req.headers['asaas-access-token'] ?? ''));
+    const esperado = Buffer.from(cred?.segredos.webhookToken ?? '');
+    if (!cred || !esperado.length || recebido.length !== esperado.length || !timingSafeEqual(recebido, esperado)) return reply.code(401).send();
+    const evento = String(req.body?.event ?? '');
+    const idPagamento = String(req.body?.payment?.id ?? '');
+    if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED_IN_CASH'].includes(evento) && idPagamento) {
+      await conferirPagamento(cred.empresaId, 'asaas', idPagamento);
+    }
+    return reply.code(200).send({ ok: true });
+  });
+
+  app.post('/integracoes/mercadopago/webhook/:registroId', { preHandler: limiteWebhook }, async (req: any, reply: any) => {
+    definirSistemaDaRequisicao('mercadopago:webhook');
+    const p = IdReg.safeParse(req.params);
+    if (!p.success) return reply.code(404).send();
+    const cred = await credenciaisPorRegistro(p.data.registroId, 'MERCADO_PAGO');
+    if (!cred) return reply.code(404).send();
+    const tipo = String(req.body?.type ?? req.query?.type ?? req.query?.topic ?? '');
+    const id = String(req.body?.data?.id ?? req.query?.['data.id'] ?? req.query?.id ?? '');
+    if (tipo === 'payment' && id) await conferirPagamento(cred.empresaId, 'mercadopago', id);
+    return reply.code(200).send({ ok: true });
   });
 }

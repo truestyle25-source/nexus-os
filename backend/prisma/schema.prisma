@@ -1550,23 +1550,33 @@ enum StatusFinanceiro {
 }
 
 model Financeiro {
-  id          String           @id @default(cuid())
-  empresaId   String
-  empresa     Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  filialId    String?
-  tipo        TipoFinanceiro
-  categoria   String // vendas, fornecedores, salarios, servi+ï¿½os, impostos, operacionais
-  centroCusto String?
-  descricao   String
-  valor       Decimal          @db.Decimal(12, 2)
-  vencimento  DateTime?
-  status      StatusFinanceiro @default(PENDENTE)
-  vendaId     String? // link com venda quando for receita de venda
-  compraId    String?
-  origem      Origem           @default(MANUAL)
-  createdAt   DateTime         @default(now())
+  id                 String           @id @default(cuid())
+  empresaId          String
+  empresa            Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  filialId           String?
+  tipo               TipoFinanceiro
+  categoria          String // vendas, fornecedores, salarios, servi+ï¿½os, impostos, operacionais
+  centroCusto        String?
+  descricao          String
+  valor              Decimal          @db.Decimal(12, 2)
+  vencimento         DateTime?
+  status             StatusFinanceiro @default(PENDENTE)
+  vendaId            String? // link com venda quando for receita de venda
+  compraId           String?
+  origem             Origem           @default(MANUAL)
+  // Cobrança externa (Central de Integrações, Fase C2): Asaas (boleto/PIX) ou Mercado Pago
+  // (link de pagamento). A baixa automática só acontece depois de consultar o pagamento
+  // na API do provedor com as credenciais da própria empresa.
+  cobrancaProvedor   String? // ASAAS | MERCADO_PAGO
+  cobrancaId         String? // id da cobrança (Asaas) ou da preferência (Mercado Pago)
+  cobrancaUrl        String? // link de pagamento para o cliente
+  cobrancaStatus     String? // último status informado pelo provedor
+  pagamentoExternoId String? // id do pagamento confirmado no provedor
+  pagoEm             DateTime?
+  createdAt          DateTime         @default(now())
 
   @@index([empresaId, tipo])
+  @@index([cobrancaProvedor, cobrancaId])
   @@index([vencimento])
 }
 
