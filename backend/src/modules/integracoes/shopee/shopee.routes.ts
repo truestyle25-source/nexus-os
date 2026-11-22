@@ -13,6 +13,7 @@ import {
   consultarProdutosShopee,
   testarConexaoShopee,
 } from './shopee.service.js';
+import { registrarEvento } from '../central/central.service.js';
 
 function statusCentral(status: string): 'CONECTADO' | 'ERRO' | 'NAO_CONFIGURADO' {
   if (status === 'CONECTADO') return 'CONECTADO';
@@ -62,13 +63,25 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/integracoes/shopee/conectar', {
     preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'criar')],
-  }, async (req: any) => iniciarAutorizacaoShopee({ empresaId: req.user.empresaId, usuarioId: req.user.id }));
+  }, async (req: any) => {
+    const r = await iniciarAutorizacaoShopee({ empresaId: req.user.empresaId, usuarioId: req.user.id });
+    await registrarEvento({ empresaId: req.user.empresaId, provedor: 'shopee', operacao: 'CONECTAR', ok: true, mensagem: 'Autorização iniciada na Shopee.', usuarioId: req.user.id });
+    return r;
+  });
 
   app.post('/integracoes/shopee/:connectionId/testar', {
     preHandler: [app.authenticate, await permissaoMiddleware('integracoes', 'editar')],
   }, async (req: any) => {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
-    return testarConexaoShopee(req.user.empresaId, req.user.id, params.connectionId);
+    const inicio = Date.now();
+    try {
+      const r = await testarConexaoShopee(req.user.empresaId, req.user.id, params.connectionId);
+      await registrarEvento({ empresaId: req.user.empresaId, provedor: 'shopee', operacao: 'TESTAR', ok: true, mensagem: 'Loja respondeu à consulta oficial.', duracaoMs: Date.now() - inicio, usuarioId: req.user.id });
+      return r;
+    } catch (err) {
+      await registrarEvento({ empresaId: req.user.empresaId, provedor: 'shopee', operacao: 'TESTAR', ok: false, codigoErro: 'FALHA', mensagem: err instanceof ErroDeNegocio ? err.message : 'Falha no teste.', duracaoMs: Date.now() - inicio, usuarioId: req.user.id });
+      throw err;
+    }
   });
 
   app.get('/integracoes/shopee/:connectionId/pedidos', {
@@ -106,6 +119,7 @@ export async function shopeeRoutes(app: FastifyInstance): Promise<void> {
     const params = z.object({ connectionId: z.string().min(1).max(100) }).parse(req.params);
     const result = await desconectarLocalmenteShopee(req.user.empresaId, req.user.id, params.connectionId);
     if (result.status !== 'DESCONECTADO') throw new ErroDeNegocio('Não foi possível registrar a desconexão local.', 500);
+    await registrarEvento({ empresaId: req.user.empresaId, provedor: 'shopee', operacao: 'DESCONECTAR', ok: true, mensagem: 'Loja desconectada no NEXUS OS.', usuarioId: req.user.id });
     return { ok: true, status: result.status, revogacaoExterna: 'NAO_CONFIRMADA' };
   });
 }

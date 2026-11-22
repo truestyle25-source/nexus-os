@@ -746,6 +746,10 @@ export const api = {
         path,
         {
           method: 'DELETE',
+          // `request` sempre envia Content-Type: application/json; sem corpo, o Fastify
+          // recusa com 400 ("Body cannot be empty when content-type is set to
+          // 'application/json'"). Um objeto vazio mantém todas as exclusões funcionando.
+          body: '{}',
         },
       ),
     };

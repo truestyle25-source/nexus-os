@@ -547,6 +547,7 @@ async function main() {
   } finally {
     const todas = [empresa.id, empresa2.id];
     await prisma.chaveApi.deleteMany({ where: { empresaId: { in: todas } } });
+    await prisma.integracaoEvento.deleteMany({ where: { empresaId: { in: todas } } });
     await prisma.integracaoExterno.deleteMany({ where: { empresaId: { in: todas } } });
     await prisma.integracaoPDV.deleteMany({ where: { empresaId: { in: todas } } });
     await prisma.estoque.deleteMany({ where: { empresaId: { in: todas } } });

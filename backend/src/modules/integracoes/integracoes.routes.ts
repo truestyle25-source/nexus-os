@@ -18,6 +18,7 @@ import {
 } from './mercadolivre-sync.service.js';
 import { enfileirarNotificacaoML } from './mercadolivre-notificacoes.service.js';
 import { consultarAgendamentoML } from './agendador-ml.js';
+import { registrarEvento } from './central/central.service.js';
 import {
   consultarUsuarioML,
   atualizarUsuarioML,
@@ -186,6 +187,7 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
         usuarioId: req.user.id,
         nome,
       });
+      await registrarEvento({ empresaId: req.user.empresaId, provedor: 'mercadolivre', operacao: 'CONECTAR', ok: true, mensagem: 'Autorização iniciada no Mercado Livre.', usuarioId: req.user.id });
       return { authUrl };
     },
   );
@@ -242,10 +244,12 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       await finalizarOAuth({ empresaId: candidato.empresaId, state: q.state, code: q.code });
+      await registrarEvento({ empresaId: candidato.empresaId, provedor: 'mercadolivre', operacao: 'CONECTAR', ok: true, mensagem: 'Conta autorizada.' });
       return ir('conectado');
     } catch (err) {
       const motivo =
         err instanceof ErroDeNegocio ? err.message : 'Falha ao concluir a autenticação com o Mercado Livre.';
+      await registrarEvento({ empresaId: candidato.empresaId, provedor: 'mercadolivre', operacao: 'CONECTAR', ok: false, codigoErro: 'AUTORIZACAO', mensagem: motivo });
       return ir('erro', motivo);
     }
   });
@@ -258,7 +262,15 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
       if (!registro) {
         throw NaoEncontrado('Nenhuma conta do Mercado Livre vinculada a esta empresa.');
       }
-      return testarConectividade(req.user.empresaId, registro.id);
+      const inicio = Date.now();
+      try {
+        const r: any = await testarConectividade(req.user.empresaId, registro.id);
+        await registrarEvento({ empresaId: req.user.empresaId, provedor: 'mercadolivre', operacao: 'TESTAR', ok: r?.ok !== false, codigoErro: r?.ok === false ? 'FALHA' : null, mensagem: typeof r?.mensagem === 'string' ? r.mensagem : null, duracaoMs: Date.now() - inicio, usuarioId: req.user.id });
+        return r;
+      } catch (err) {
+        await registrarEvento({ empresaId: req.user.empresaId, provedor: 'mercadolivre', operacao: 'TESTAR', ok: false, codigoErro: 'FALHA', mensagem: err instanceof ErroDeNegocio ? err.message : 'Falha no teste.', duracaoMs: Date.now() - inicio, usuarioId: req.user.id });
+        throw err;
+      }
     },
   );
 
@@ -270,7 +282,9 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
       if (!registro) {
         throw NaoEncontrado('Nenhuma conta do Mercado Livre vinculada a esta empresa.');
       }
-      return revogarCadastro(req.user.empresaId, registro.id);
+      const r = await revogarCadastro(req.user.empresaId, registro.id);
+      await registrarEvento({ empresaId: req.user.empresaId, provedor: 'mercadolivre', operacao: 'DESCONECTAR', ok: true, mensagem: 'Conta desvinculada e tokens apagados.', usuarioId: req.user.id });
+      return r;
     },
   );
 

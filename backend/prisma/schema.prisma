@@ -153,6 +153,7 @@ model Empresa {
   idempotencyKeys          IdempotencyKey[]
   indicadorDiarios         IndicadorDiario[]
   integracaoExternos       IntegracaoExterno[]
+  integracaoEventos        IntegracaoEvento[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -2423,6 +2424,12 @@ model IntegracaoExterno {
   erros         Json?
   ultimoTesteEm DateTime?
   ultimoSyncEm  DateTime?
+  // Central de Integrações (provedores por credencial, ex.: ASAAS):
+  // `credenciais` = JSON dos campos secretos, cifrado inteiro em secrets.ts (nunca volta ao navegador);
+  // `config` = campos NÃO sensíveis (ambiente, URL da loja...); `conectadoEm` = 1ª validação real.
+  credenciais   String?
+  config        Json?
+  conectadoEm   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -2430,6 +2437,25 @@ model IntegracaoExterno {
   @@index([empresaId])
   @@index([tipo])
   @@index([state])
+}
+
+// Histórico da Central de Integrações: uma linha por operação (testar, salvar,
+// conectar, desconectar, remover, sincronizar). NUNCA guarda segredo, token ou
+// corpo de resposta do provedor — só operação, resultado, código de erro e duração.
+model IntegracaoEvento {
+  id         String   @id @default(cuid())
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  provedor   String // id do provedor na Central (ex.: asaas, mercadolivre, shopee)
+  operacao   String // TESTAR | SALVAR | CONECTAR | DESCONECTAR | REMOVER | SINCRONIZAR
+  resultado  String // SUCESSO | FALHA
+  codigoErro String?
+  mensagem   String?
+  duracaoMs  Int?
+  usuarioId  String?
+  createdAt  DateTime @default(now())
+
+  @@index([empresaId, provedor, createdAt])
 }
 
 // --- Sincronização automática do Mercado Livre --------------------------------
