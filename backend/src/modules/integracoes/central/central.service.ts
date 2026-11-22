@@ -139,7 +139,8 @@ export async function obterConfiguracao(empresaId: string, id: string, baseUrlPu
     erro = (reg?.erros as { message?: string } | null)?.message ?? null;
     // O id do registro (cuid, não adivinhável) identifica a empresa no webhook público;
     // a autenticidade de cada evento vem da assinatura com o App Secret.
-    if (def.id === 'whatsapp' && reg && baseUrlPublica) webhookUrl = `${baseUrlPublica}/integracoes/whatsapp/webhook/${reg.id}`;
+    const rotaWebhook: Record<string, string> = { whatsapp: 'whatsapp', asaas: 'asaas', mercadopago: 'mercadopago' };
+    if (rotaWebhook[def.id] && reg && baseUrlPublica) webhookUrl = `${baseUrlPublica}/integracoes/${rotaWebhook[def.id]}/webhook/${reg.id}`;
   }
   return { ...estado, erro, configuracao, webhookUrl };
 }

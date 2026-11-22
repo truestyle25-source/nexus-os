@@ -76,6 +76,7 @@ const asaas: Adaptador = {
     const ambiente = config.ambiente;
     const chave = (segredos.apiKey ?? '').trim();
     if (!ASAAS_BASE[ambiente] || !chave) return { ok: false, codigo: 'CONFIGURACAO_INCOMPLETA', mensagem: 'Informe o ambiente e a chave de API.' };
+    if (segredos.webhookToken && !/^\S{32,255}$/.test(segredos.webhookToken)) return { ok: false, codigo: 'CONFIGURACAO_INCOMPLETA', mensagem: 'O token do webhook precisa ter de 32 a 255 caracteres, sem espaços (regra do Asaas).' };
     const prefixo = ambiente === 'PRODUCAO' ? '$aact_prod_' : '$aact_hmlg_';
     if (!chave.startsWith(prefixo)) {
       return { ok: false, codigo: 'CREDENCIAL_INVALIDA', mensagem: `Esta chave não é de ${ambiente === 'PRODUCAO' ? 'produção' : 'sandbox'} (deveria começar com ${prefixo}).` };
