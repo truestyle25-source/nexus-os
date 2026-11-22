@@ -5,7 +5,7 @@
 // aberta — nunca em localStorage; os salvos aparecem mascarados e "vazio = manter".
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { CheckCircle2, ChevronDown, Copy, ExternalLink, Eye, EyeOff, Info, Lock, Wifi, X, AlertTriangle } from 'lucide-react';
-import { EnvioEmail, EnvioWhatsApp, HistoricoEmail, HistoricoWhatsApp } from './PainelComunicacao';
+import { DescadastrosWhatsApp, EnvioEmail, EnvioWhatsApp, HistoricoEmail, HistoricoWhatsApp } from './PainelComunicacao';
 import { ImportarPedidosWoo } from './PainelWoo';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
@@ -206,7 +206,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
                   </div>
                 </div>
               )}
-              {estado?.erro && status !== 'CONECTADO' && !resultado && <Mensagem ok={false} texto={`Último erro: ${estado.erro}`} />}
+              {estado?.erro && !resultado && <Mensagem ok={false} texto={status === 'CONECTADO' ? `Aviso do último teste: ${estado.erro} A integração continua conectada.` : `Último erro: ${estado.erro}`} />}
               {resultado && <Mensagem ok={resultado.ok} texto={`${resultado.mensagem}${resultado.conta ? ` Conta: ${resultado.conta.nome}${resultado.conta.documento ? ` (${resultado.conta.documento})` : ''}.` : ''}`} />}
               {erro && <Mensagem ok={false} texto={erro} />}
               {credenciais && configurado && (
@@ -215,7 +215,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
                   {!confirmarRemocao ? (
                     <button type="button" className={`${botaoSec} hover:text-[var(--nx-red)]`} onClick={() => setConfirmarRemocao(true)} disabled={acao !== null}>Remover</button>
                   ) : (
-                    <span className="inline-flex flex-wrap items-center gap-2 text-[12px] text-[var(--nx-ink-2)]">Remover configuração e credenciais? O histórico é mantido.
+                    <span className="inline-flex flex-wrap items-center gap-2 text-[12px] text-[var(--nx-ink-2)]">Remover configuração e credenciais? O histórico é mantido.{estado?.webhookUrl ? ' Atenção: ao conectar de novo, a URL do webhook muda e precisa ser cadastrada outra vez no painel do provedor.' : ''}
                       <button type="button" className={`${botaoSec} text-[var(--nx-red)]`} onClick={remover} disabled={acao !== null}>{acao === 'remover' ? 'Removendo…' : 'Confirmar remoção'}</button>
                       <button type="button" className={botaoSec} onClick={() => setConfirmarRemocao(false)}>Voltar</button>
                     </span>
@@ -227,7 +227,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
 
           {aba === 'sync' && provedor.id === 'whatsapp' && <EnvioWhatsApp conectado={status === 'CONECTADO'} />}
           {aba === 'sync' && provedor.id === 'email-conta' && <EnvioEmail conectado={status === 'CONECTADO'} recebe={estado?.configuracao?.config.receber === 'SIM'} />}
-          {aba === 'sync' && provedor.id === 'woocommerce' && <ImportarPedidosWoo conectado={status === 'CONECTADO'} ultimoSyncEm={estado?.ultimoSyncEm ?? null} />}
+          {aba === 'sync' && provedor.id === 'woocommerce' && <ImportarPedidosWoo conectado={status === 'CONECTADO'} ultimoSyncEm={estado?.ultimoSyncEm ?? null} config={estado?.configuracao?.config ?? {}} onAlterado={() => void carregar()} />}
           {aba === 'sync' && !comunicacao && provedor.id !== 'woocommerce' && (
             oauth?.sincronizacao ?? (
               <div className="space-y-2 text-[13px] text-[var(--nx-ink-2)]">
@@ -239,6 +239,7 @@ export default function ConfigIntegracaoModal({ provedor, descricao, icone: Icon
           )}
 
           {aba === 'historico' && provedor.id === 'whatsapp' && <HistoricoWhatsApp />}
+          {aba === 'historico' && provedor.id === 'whatsapp' && <DescadastrosWhatsApp />}
           {aba === 'historico' && provedor.id === 'email-conta' && <HistoricoEmail />}
           {aba === 'historico' && comunicacao && <h3 className="pt-2 text-[13px] font-semibold text-[var(--nx-ink)]">Eventos da integração</h3>}
           {aba === 'historico' && (

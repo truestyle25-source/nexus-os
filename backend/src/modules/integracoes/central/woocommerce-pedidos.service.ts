@@ -25,8 +25,8 @@ import { ErroDeNegocio, NaoEncontrado } from '../../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../../lib/idempotencia.js';
 import { dataOperacionalDate } from '../../../lib/fuso.js';
 import { aplicarMovimento } from '../../estoque/estoque.service.js';
-import { exigirUrlHttpsPublica } from '../../../lib/destino-seguro.js';
-import { basicAuth } from './adaptadores.js';
+import { resolverUrlHttpsPublica } from '../../../lib/destino-seguro.js';
+import { getLojaWoo } from './adaptadores.js';
 import { credenciaisInternas, registrarEvento } from './central.service.js';
 
 export interface PedidoWoo {
@@ -164,7 +164,9 @@ export async function importarPedidosWoo(empresaId: string, usuarioId: string, f
   if (!cred || cred.status !== 'CONECTADO') throw new ErroDeNegocio('O WooCommerce não está conectado na Central de Integrações.', 409);
   const filial = await prisma.filial.findFirst({ where: { id: filialId, empresaId, status: 'ATIVO' }, select: { id: true, fusoHorario: true, empresa: { select: { fusoHorario: true } } } });
   if (!filial) throw NaoEncontrado('Filial não encontrada ou inativa.');
-  const url = await exigirUrlHttpsPublica(cred.config.urlLoja).catch((e) => { throw new ErroDeNegocio(e.message, 400); });
+  // Resolve e valida o host uma vez; todas as páginas vão ao MESMO IP validado (anti DNS rebinding).
+  const destino = await resolverUrlHttpsPublica(cred.config.urlLoja).catch((e) => { throw new ErroDeNegocio(e.message, 400); });
+  const url = destino.url;
   const reg = await prisma.integracaoExterno.findUniqueOrThrow({ where: { id: cred.id }, select: { conectadoEm: true } });
   // Fuso da filial prevalece sobre o da empresa (mesma regra do PDV).
   const fuso = filial.fusoHorario ?? filial.empresa.fusoHorario ?? null;
@@ -172,18 +174,19 @@ export async function importarPedidosWoo(empresaId: string, usuarioId: string, f
   const relatorio: ItemRelatorioWoo[] = [];
   const inicio = Date.now();
   for (let pagina = 1; relatorio.length < teto; pagina++) {
-    let r: Response;
+    let r: Awaited<ReturnType<typeof getLojaWoo>>;
     try {
-      r = await fetch(`${url.origin}${url.pathname}/wp-json/wc/v3/orders?per_page=${Math.min(50, teto - relatorio.length)}&page=${pagina}&orderby=date&order=desc`, { headers: { Authorization: basicAuth(cred.segredos.consumerKey, cred.segredos.consumerSecret), Accept: 'application/json', 'User-Agent': 'NexusOS/1.0' }, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+      r = await getLojaWoo(destino, `/wp-json/wc/v3/orders?per_page=${Math.min(50, teto - relatorio.length)}&page=${pagina}&orderby=date&order=desc`, cred.segredos);
     } catch {
-      throw new ErroDeNegocio('Sem comunicação com a loja WooCommerce (timeout ou rede).', 502);
+      throw new ErroDeNegocio('Sem comunicação com a loja WooCommerce (timeout, rede ou certificado).', 502);
     }
     if (r.status === 401 || r.status === 403) throw new ErroDeNegocio('A loja recusou as chaves (sem permissão de leitura de pedidos).', 502);
-    if (!r.ok) throw new ErroDeNegocio(`A loja respondeu HTTP ${r.status} ao listar pedidos.`, 502);
-    const pedidos = (await r.json().catch(() => null)) as PedidoWoo[] | null;
+    if (r.status < 200 || r.status >= 300) throw new ErroDeNegocio(`A loja respondeu HTTP ${r.status} ao listar pedidos.`, 502);
+    let pedidos: PedidoWoo[] | null = null;
+    try { pedidos = JSON.parse(r.corpo) as PedidoWoo[]; } catch { pedidos = null; }
     if (!Array.isArray(pedidos)) throw new ErroDeNegocio('Resposta inesperada da loja ao listar pedidos.', 502);
     for (const p of pedidos) relatorio.push(await importarPedidoWoo({ empresaId, filialId, usuarioId, loja: url.hostname, inicioIntegracao: reg.conectadoEm, fusoHorario: fuso, pedido: p }));
-    const totalPaginas = Number(r.headers.get('x-wp-totalpages') ?? '1');
+    const totalPaginas = Number(r.headers['x-wp-totalpages'] ?? '1');
     if (!pedidos.length || pagina >= totalPaginas) break;
   }
   const conta = (a: ItemRelatorioWoo['acao']) => relatorio.filter((x) => x.acao === a).length;

@@ -19,6 +19,7 @@ import {
 import { enfileirarNotificacaoML } from './mercadolivre-notificacoes.service.js';
 import { consultarAgendamentoML } from './agendador-ml.js';
 import { registrarEvento } from './central/central.service.js';
+import { statusServidor } from './central/servidor.service.js';
 import {
   consultarUsuarioML,
   atualizarUsuarioML,
@@ -73,6 +74,8 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [(app as any).authenticate, await permissaoMiddleware('integracoes', 'visualizar')] },
     async (req: any) => {
       const cfg = obterConfiguracoes();
+      // Gemini e Resend: status real (teste nas últimas 24 h), não só a presença da variável.
+      const [statusGemini, statusResend] = await Promise.all([statusServidor(req.user.empresaId, 'gemini'), statusServidor(req.user.empresaId, 'email-transacional')]);
       const [pdv, ponto, ml] = await Promise.all([
         prisma.integracaoPDV.findMany({ where: { empresaId: req.user.empresaId }, orderBy: { createdAt: 'desc' } }),
         prisma.integracaoPonto.findMany({ where: { empresaId: req.user.empresaId }, orderBy: { createdAt: 'desc' } }),
@@ -92,13 +95,13 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
         })),
         {
           categoria: 'IA_GEMINI', nome: 'NEXUS AI (Google Gemini)',
-          status: process.env.GEMINI_API_KEY ? 'CONECTADO' : 'NAO_CONFIGURADO',
+          status: statusGemini,
           configurado: Boolean(process.env.GEMINI_API_KEY),
           ultimaSincronizacao: null, proximaSincronizacao: null, qtdRegistros: null, erros: null,
         },
         {
           categoria: 'EMAIL_TRANSACIONAL', nome: 'E-mail (Resend — recuperação de senha)',
-          status: process.env.RESEND_API_KEY ? 'CONECTADO' : 'NAO_CONFIGURADO',
+          status: statusResend,
           configurado: Boolean(process.env.RESEND_API_KEY),
           ultimaSincronizacao: null, proximaSincronizacao: null, qtdRegistros: null, erros: null,
         },
@@ -125,7 +128,8 @@ export async function integracoesRoutes(app: FastifyInstance): Promise<void> {
       const resumo = {
         conectadas: itens.filter((i) => i.status === 'CONECTADO').length,
         comErro: itens.filter((i) => i.status === 'ERRO').length,
-        naoConfiguradas: itens.filter((i) => i.status === 'NAO_CONFIGURADO').length,
+        // "Credenciais salvas" (Gemini/Resend sem teste recente) ainda não é conexão comprovada.
+        naoConfiguradas: itens.filter((i) => i.status === 'NAO_CONFIGURADO' || i.status === 'CREDENCIAIS_SALVAS').length,
         total: itens.length,
       };
 

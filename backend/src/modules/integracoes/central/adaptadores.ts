@@ -30,7 +30,7 @@ export interface Adaptador {
   testar(config: Record<string, string>, segredos: Record<string, string>): Promise<ResultadoTeste>;
 }
 
-import { DestinoBloqueado, exigirHostPublico, exigirUrlHttpsPublica, PORTAS_IMAP, PORTAS_SMTP } from '../../../lib/destino-seguro.js';
+import { DestinoBloqueado, exigirHostPublico, getHttpsFixado, PORTAS_IMAP, PORTAS_SMTP, resolverUrlHttpsPublica } from '../../../lib/destino-seguro.js';
 
 const TIMEOUT_MS = 10_000;
 const USER_AGENT = 'NexusOS/1.0';
@@ -105,10 +105,16 @@ const asaas: Adaptador = {
 // Consumer Secret = senha). Leitura de prova: GET /orders?per_page=1 (exige chave com
 // leitura). A URL vem do usuário: validada contra SSRF (só HTTPS e host público).
 // ---------------------------------------------------------------------------
-async function destinoWoo(urlLoja: string): Promise<URL | ResultadoTeste> {
-  try { return await exigirUrlHttpsPublica(urlLoja); } catch (e) {
+async function destinoWoo(urlLoja: string): Promise<{ url: URL; ip: string } | ResultadoTeste> {
+  try { return await resolverUrlHttpsPublica(urlLoja); } catch (e) {
     return { ok: false, codigo: 'CONFIGURACAO_INCOMPLETA', mensagem: e instanceof DestinoBloqueado ? e.message : 'URL da loja inválida.' };
   }
+}
+
+/** GET na loja fixado no IP validado (anti DNS rebinding), com o mesmo tratamento de erro. */
+export async function getLojaWoo(destino: { url: URL; ip: string }, caminho: string, segredos: Record<string, string>) {
+  const alvo = new URL(`${destino.url.origin}${destino.url.pathname}${caminho}`);
+  return getHttpsFixado(alvo, destino.ip, { Authorization: basicAuth(segredos.consumerKey, segredos.consumerSecret), Accept: 'application/json', 'User-Agent': USER_AGENT });
 }
 
 export function basicAuth(usuario: string, senha: string): string {
@@ -118,16 +124,18 @@ export function basicAuth(usuario: string, senha: string): string {
 const woocommerce: Adaptador = {
   async testar(config, segredos) {
     if (!config.urlLoja || !segredos.consumerKey || !segredos.consumerSecret) return { ok: false, codigo: 'CONFIGURACAO_INCOMPLETA', mensagem: 'Informe a URL da loja, a Consumer Key e o Consumer Secret.' };
-    const url = await destinoWoo(config.urlLoja);
-    if (!(url instanceof URL)) return url;
-    const r = await requisitar(`${url.origin}${url.pathname}/wp-json/wc/v3/orders?per_page=1`, { Authorization: basicAuth(segredos.consumerKey, segredos.consumerSecret) });
-    if (!(r instanceof Response)) return r;
+    const destino = await destinoWoo(config.urlLoja);
+    if (!('ip' in destino)) return destino;
+    let r: Awaited<ReturnType<typeof getHttpsFixado>>;
+    try { r = await getLojaWoo(destino, '/wp-json/wc/v3/orders?per_page=1', segredos); } catch (e: any) {
+      return e?.name === 'TimeoutError' ? { ok: false, codigo: 'TIMEOUT', mensagem: 'A loja não respondeu em 20 segundos.' } : { ok: false, codigo: 'FALHA_COMUNICACAO', mensagem: 'Não foi possível conectar à loja (HTTPS/certificado ou rede).' };
+    }
     if (r.status >= 300 && r.status < 400) return { ok: false, codigo: 'FALHA_COMUNICACAO', mensagem: 'A loja redirecionou a requisição. Informe o endereço final (https) da loja.' };
     if (r.status === 404) return { ok: false, codigo: 'FALHA_COMUNICACAO', mensagem: 'A REST API do WooCommerce não foi encontrada nesse endereço (verifique a URL e os links permanentes do WordPress).' };
-    if (r.ok) {
-      const dados = await r.json().catch(() => null);
+    if (r.status >= 200 && r.status < 300) {
+      let dados: unknown = null; try { dados = JSON.parse(r.corpo); } catch { /* não é JSON */ }
       if (!Array.isArray(dados)) return { ok: false, codigo: 'FALHA_COMUNICACAO', mensagem: 'O endereço respondeu, mas não como a REST API do WooCommerce.' };
-      return { ok: true, codigo: 'OK', mensagem: 'Conexão validada com a loja WooCommerce (leitura de pedidos).', conta: { nome: url.hostname } };
+      return { ok: true, codigo: 'OK', mensagem: 'Conexão validada com a loja WooCommerce (leitura de pedidos).', conta: { nome: destino.url.hostname } };
     }
     return porStatusHttp(r.status);
   },
@@ -233,6 +241,14 @@ export async function validarDestinosEmail(config: Record<string, string>): Prom
   const porta = Number(config.smtpPorta);
   if (!config.smtpHost || !PORTAS_SMTP.includes(porta)) return falha(`Servidor SMTP e porta (${PORTAS_SMTP.join(', ')}) são obrigatórios.`);
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(config.emailRemetente ?? '')) return falha('E-mail do remetente inválido.');
+  // Porta e segurança precisam combinar: 465 = TLS direto; 587/25/2525 = STARTTLS;
+  // IMAP 993 = TLS direto; 143 = STARTTLS. Combinação errada só falharia no TLS, com erro genérico.
+  if ((porta === 465) !== (config.smtpSeguranca === 'SSL_TLS')) {
+    return falha(porta === 465 ? 'A porta 465 usa SSL/TLS: ajuste a segurança SMTP.' : `A porta ${porta} usa STARTTLS: ajuste a segurança SMTP (ou use a porta 465 com SSL/TLS).`);
+  }
+  if (config.receber === 'SIM' && config.imapPorta && config.imapSeguranca && (config.imapPorta === '993') !== (config.imapSeguranca === 'SSL_TLS')) {
+    return falha(config.imapPorta === '993' ? 'A porta IMAP 993 usa SSL/TLS: ajuste a segurança IMAP.' : 'A porta IMAP 143 usa STARTTLS: ajuste a segurança IMAP.');
+  }
   try {
     const smtpIp = await exigirHostPublico(config.smtpHost);
     let imapIp: string | null = null;

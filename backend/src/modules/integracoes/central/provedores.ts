@@ -59,6 +59,8 @@ export const PROVEDORES: readonly DefinicaoProvedor[] = [
       { chave: 'urlLoja', rotulo: 'Endereço da loja', tipo: 'url', obrigatorio: true, secreto: false, ajuda: 'Ex.: https://minhaloja.com.br — precisa ser HTTPS.' },
       { chave: 'consumerKey', rotulo: 'Consumer Key', tipo: 'segredo', obrigatorio: true, secreto: true, ajuda: 'WooCommerce › Configurações › Avançado › REST API › Adicionar chave (permissão Leitura ou Leitura/Escrita).' },
       { chave: 'consumerSecret', rotulo: 'Consumer Secret', tipo: 'segredo', obrigatorio: true, secreto: true },
+      { chave: 'importarAutomatico', rotulo: 'Importar pedidos automaticamente', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: 'NAO', rotulo: 'Não (só manual)' }, { valor: 'SIM', rotulo: 'Sim, a cada 15 minutos' }] },
+      { chave: 'filialPedidos', rotulo: 'Filial dos pedidos automáticos (ID)', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Filial onde o estoque baixa nos pedidos importados automaticamente. Escolha pela aba Sincronização.' },
     ],
   },
   {
@@ -81,6 +83,7 @@ export const PROVEDORES: readonly DefinicaoProvedor[] = [
       { chave: 'versaoApi', rotulo: 'Versão da Graph API', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Padrão v23.0. Formato vNN.N.' },
       { chave: 'modeloDocumento', rotulo: 'Modelo para documentos (PDF)', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Nome de um modelo APROVADO com cabeçalho de documento e 1 variável no corpo. Usado para enviar pedidos de compra fora da janela de 24 h.' },
       { chave: 'idiomaModelo', rotulo: 'Idioma do modelo', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Ex.: pt_BR' },
+      { chave: 'retencaoDias', rotulo: 'Guardar mensagens por', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: '90', rotulo: '90 dias' }, { valor: '180', rotulo: '180 dias' }, { valor: '365', rotulo: '1 ano (padrão)' }, { valor: '730', rotulo: '2 anos' }], ajuda: 'LGPD: depois do prazo, conteúdo, nome e telefone das mensagens são apagados (ficam só data e status).' },
     ],
   },
   {
@@ -97,6 +100,7 @@ export const PROVEDORES: readonly DefinicaoProvedor[] = [
       { chave: 'receber', rotulo: 'Receber e-mails (IMAP)', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: 'NAO', rotulo: 'Não' }, { valor: 'SIM', rotulo: 'Sim' }] },
       { chave: 'imapHost', rotulo: 'Servidor IMAP', tipo: 'texto', obrigatorio: false, secreto: false, avancado: true, ajuda: 'Gmail: imap.gmail.com · Outlook: outlook.office365.com' },
       { chave: 'imapPorta', rotulo: 'Porta IMAP', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: '993', rotulo: '993 (SSL/TLS)' }, { valor: '143', rotulo: '143 (STARTTLS)' }] },
+      { chave: 'retencaoDias', rotulo: 'Guardar histórico de envios por', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: '90', rotulo: '90 dias' }, { valor: '180', rotulo: '180 dias' }, { valor: '365', rotulo: '1 ano (padrão)' }, { valor: '730', rotulo: '2 anos' }], ajuda: 'LGPD: depois do prazo, destinatários e assunto são apagados.' },
       { chave: 'imapSeguranca', rotulo: 'Segurança IMAP', tipo: 'selecao', obrigatorio: false, secreto: false, avancado: true, opcoes: [{ valor: 'SSL_TLS', rotulo: 'SSL/TLS (993)' }, { valor: 'STARTTLS', rotulo: 'STARTTLS (143)' }] },
     ],
     pendencia: 'Login com Google/Microsoft (OAuth) exige um aplicativo do NEXUS OS aprovado no Google Cloud e no Microsoft Entra; até lá, use senha de app.',

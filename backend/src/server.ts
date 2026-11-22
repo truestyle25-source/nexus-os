@@ -71,6 +71,7 @@ import { iniciarAgendadorDeSnapshot, pararAgendadorDeSnapshot, TAREFAS_DIARIAS }
 import { tarefasAtrasadas } from './lib/tarefa-agendada.js';
 import { iniciarAgendadorML, pararAgendadorML } from './modules/integracoes/agendador-ml.js';
 import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integracoes/shopee/shopee-scheduler.js';
+import { iniciarAgendadorIntegracoes, pararAgendadorIntegracoes } from './modules/integracoes/central/integracoes-agendador.js';
 
 dotenv.config();
 
@@ -304,12 +305,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // restart). Desabilitável com ML_SYNC_AUTO=false.
   void comoSistema('agendador:mercadolivre', () => iniciarAgendadorML());
   void comoSistema('agendador:shopee', () => iniciarAgendadorShopee());
+  // Central de Integrações: pedidos WooCommerce automáticos e retenção (LGPD). INTEGRACOES_AGENDADOR=false desliga.
+  void comoSistema('agendador:integracoes', () => iniciarAgendadorIntegracoes());
 
   async function encerrarComCuidado(sinal: string) {
     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);
     pararAgendadorDeSnapshot();
     await pararAgendadorML();
     await pararAgendadorShopee();
+    await pararAgendadorIntegracoes();
     await app.close();
     await prisma.$disconnect();
   }
