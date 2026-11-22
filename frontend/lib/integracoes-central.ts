@@ -14,7 +14,7 @@ export interface Provedor { id: string; nome: string; autenticacao: string; disp
 export interface EstadoProvedor { provedor: string; status: StatusCentral; conta: string | null; ultimoTesteEm: string | null; ultimoSyncEm: string | null; conectadoEm: string | null }
 export interface ResumoCentral { conectadas: number; comErro: number; naoConfiguradas: number; indisponiveis: number; total: number; saude: number | null }
 export interface Central { provedores: Provedor[]; estados: EstadoProvedor[]; resumo: ResumoCentral }
-export interface ConfiguracaoProvedor extends EstadoProvedor { erro: string | null; configuracao: { config: Record<string, string>; segredosSalvos: Record<string, string | null> } | null }
+export interface ConfiguracaoProvedor extends EstadoProvedor { erro: string | null; webhookUrl?: string | null; configuracao: { config: Record<string, string>; segredosSalvos: Record<string, string | null> } | null }
 export interface ResultadoTeste { ok: boolean; codigo: string; mensagem: string; conta?: { nome: string; documento?: string | null } | null; status?: string }
 export interface EventoIntegracao { id: string; operacao: string; resultado: 'SUCESSO' | 'FALHA'; codigoErro: string | null; mensagem: string | null; duracaoMs: number | null; usuario: string | null; em: string }
 
@@ -61,4 +61,28 @@ export function saudeDaCentral(conectadas: number, comErro: number): number | nu
 /** Campos obrigatórios faltando — segredo já salvo conta como preenchido. */
 export function camposFaltando(campos: CampoProvedor[], valores: Record<string, string>, segredosSalvos: Record<string, string | null> = {}): string[] {
   return campos.filter((c) => c.obrigatorio && !(valores[c.chave]?.trim() || (c.secreto && segredosSalvos[c.chave]))).map((c) => c.rotulo);
+}
+
+// --- Fase B: WhatsApp Business e E-mail da empresa -------------------------------------
+export interface MensagemWhats { id: string; direcao: 'ENVIADA' | 'RECEBIDA'; telefone: string; nomeContato: string | null; tipo: string; conteudo: string | null; status: string; erro: string | null; origem: string; createdAt: string }
+export interface EnvioEmailRegistro { id: string; para: string; assunto: string; anexos: number; status: 'ENVIADO' | 'FALHOU'; erro: string | null; origem: string; createdAt: string }
+export interface MensagemCaixa { uid: number; de: string | null; assunto: string | null; data: string | null; lida: boolean }
+export interface ResultadoEnvio { id: string; status: string; erro?: string }
+
+export const comunicacaoApi = {
+  mensagensWhats: () => api.get<{ mensagens: MensagemWhats[] }>('/integracoes/central/whatsapp/mensagens').then((r) => r.data.mensagens),
+  enviarWhats: (corpo: { para: string; tipo: 'TEXTO' | 'MODELO'; texto?: string; modelo?: { nome: string; idioma: string; parametros: string[] } }) =>
+    api.post<ResultadoEnvio>('/integracoes/central/whatsapp/mensagens', corpo).then((r) => r.data),
+  enviosEmail: () => api.get<{ envios: EnvioEmailRegistro[] }>('/integracoes/central/email/envios').then((r) => r.data.envios),
+  enviarEmail: (corpo: { para: string[]; assunto: string; texto?: string; html?: string }) => api.post<ResultadoEnvio>('/integracoes/central/email/enviar', corpo).then((r) => r.data),
+  caixa: () => api.get<{ mensagens: MensagemCaixa[] }>('/integracoes/central/email/caixa').then((r) => r.data.mensagens),
+};
+
+export const ROTULO_STATUS_MENSAGEM: Record<string, string> = {
+  ENVIANDO: 'Enviando', ENVIADA: 'Aceita pela Meta', ENTREGUE: 'Entregue', LIDA: 'Lida', FALHOU: 'Falhou', RECEBIDA: 'Recebida', ENVIADO: 'Enviado',
+};
+
+/** Lista de e-mails separados por vírgula/ponto e vírgula/espaço. */
+export function listaDeEmails(texto: string): string[] {
+  return [...new Set(texto.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean))];
 }

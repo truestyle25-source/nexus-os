@@ -11,7 +11,43 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { permissaoMiddleware } from '../../../middlewares/auth.js';
 import { catalogoPublico } from './provedores.js';
-import { desconectar, estadosDaEmpresa, historico, obterConfiguracao, remover, resumir, salvar, testar } from './central.service.js';
+import { desconectar, estadosDaEmpresa, historico, obterConfiguracao, remover, resumir, salvar, testar, registrarEvento } from './central.service.js';
+import { assinaturaValida, desafioValido, enviarWhatsApp, listarMensagens, processarWebhook, verificarAssinaturaWebhook } from './whatsapp.service.js';
+import { caixaDeEntrada, enviarEmail, listarEnvios } from './email.service.js';
+import { definirSistemaDaRequisicao } from '../../../lib/tenant-context.js';
+import { createRateLimiter } from '../../../middlewares/rateLimiter.js';
+
+// Limites (janela persistida no Postgres, vale entre instâncias). Testar/salvar fazem o
+// servidor conectar em hosts externos escolhidos pelo usuário: sem limite, a rota viraria
+// ferramenta de varredura de portas ou de abuso de SMTP. Por empresa, não por usuário.
+const porEmpresa = (req: any) => (req.user?.empresaId ? `e:${req.user.empresaId}` : null);
+const limiteConexao = createRateLimiter(20, 10 * 60_000, { nome: 'integracoes-conexao', chaveExtra: porEmpresa });
+const limiteEnvio = createRateLimiter(120, 60_000, { nome: 'integracoes-envio', chaveExtra: porEmpresa });
+// Webhook público: limita por IP ANTES de qualquer consulta de credenciais.
+const limiteWebhook = createRateLimiter(600, 60_000, { nome: 'whatsapp-webhook' });
+
+/** Endereço público da API (para a URL do webhook). API_PUBLIC_URL tem prioridade. */
+function baseUrlPublica(req: any): string {
+  const env = (process.env.API_PUBLIC_URL ?? '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\/\S+$/.test(env)) return env;
+  return `${req.protocol}://${req.hostname}`;
+}
+
+const EnvioWhats = z.object({
+  para: z.string().min(8).max(30),
+  tipo: z.enum(['TEXTO', 'MODELO']),
+  texto: z.string().max(4096).optional(),
+  modelo: z.object({ nome: z.string().max(512), idioma: z.string().max(10).default('pt_BR'), parametros: z.array(z.string().max(1024)).max(20).default([]) }).optional(),
+});
+const EnvioMail = z.object({
+  para: z.array(z.string().max(254)).min(1).max(50),
+  cc: z.array(z.string().max(254)).max(50).optional(),
+  assunto: z.string().max(300),
+  html: z.string().max(500_000).optional(),
+  texto: z.string().max(200_000).optional(),
+  responderPara: z.string().max(254).optional(),
+  anexos: z.array(z.object({ nome: z.string().max(200), base64: z.string().max(14_000_000), tipo: z.string().max(100).optional() })).max(10).optional(),
+});
 
 const Params = z.object({ provedor: z.string().regex(/^[a-z0-9-]{2,40}$/) });
 const Corpo = z.record(z.string(), z.string().max(2000)).default({});
@@ -28,12 +64,29 @@ export async function centralIntegracoesRoutes(app: FastifyInstance): Promise<vo
   });
 
   app.get('/integracoes/central/:provedor', { preHandler: [auth, ver] }, async (req: any) =>
-    obterConfiguracao(req.user.empresaId, Params.parse(req.params).provedor));
+    obterConfiguracao(req.user.empresaId, Params.parse(req.params).provedor, baseUrlPublica(req)));
 
-  app.post('/integracoes/central/:provedor/testar', { preHandler: [auth, editar] }, async (req: any) =>
+  // --- WhatsApp Business: envio real e histórico de mensagens -------------------
+  const criar = await permissaoMiddleware('integracoes', 'criar');
+  app.post('/integracoes/central/whatsapp/mensagens', { preHandler: [auth, criar, limiteEnvio] }, async (req: any) =>
+    enviarWhatsApp(req.user.empresaId, req.user.id, EnvioWhats.parse(req.body ?? {}) as any));
+  app.get('/integracoes/central/whatsapp/mensagens', { preHandler: [auth, ver] }, async (req: any) => {
+    const q = z.object({ direcao: z.enum(['ENVIADA', 'RECEBIDA']).optional(), limite: z.coerce.number().int().min(1).max(200).optional() }).parse(req.query ?? {});
+    return { mensagens: await listarMensagens(req.user.empresaId, q) };
+  });
+
+  // --- E-mail: envio real, histórico e caixa de entrada -------------------------
+  app.post('/integracoes/central/email/enviar', { preHandler: [auth, criar, limiteEnvio] }, async (req: any) =>
+    enviarEmail(req.user.empresaId, req.user.id, EnvioMail.parse(req.body ?? {})));
+  app.get('/integracoes/central/email/envios', { preHandler: [auth, ver] }, async (req: any) =>
+    ({ envios: await listarEnvios(req.user.empresaId) }));
+  app.get('/integracoes/central/email/caixa', { preHandler: [auth, ver, limiteConexao] }, async (req: any) =>
+    ({ mensagens: await caixaDeEntrada(req.user.empresaId) }));
+
+  app.post('/integracoes/central/:provedor/testar', { preHandler: [auth, editar, limiteConexao] }, async (req: any) =>
     testar(req.user.empresaId, req.user.id, Params.parse(req.params).provedor, Corpo.parse(req.body ?? {})));
 
-  app.put('/integracoes/central/:provedor', { preHandler: [auth, editar] }, async (req: any) =>
+  app.put('/integracoes/central/:provedor', { preHandler: [auth, editar, limiteConexao] }, async (req: any) =>
     salvar(req.user.empresaId, req.user.id, Params.parse(req.params).provedor, Corpo.parse(req.body ?? {})));
 
   app.post('/integracoes/central/:provedor/desconectar', { preHandler: [auth, editar] }, async (req: any) =>
@@ -44,4 +97,47 @@ export async function centralIntegracoesRoutes(app: FastifyInstance): Promise<vo
 
   app.get('/integracoes/central/:provedor/historico', { preHandler: [auth, ver] }, async (req: any) =>
     ({ eventos: await historico(req.user.empresaId, Params.parse(req.params).provedor) }));
+}
+
+/**
+ * Webhook PÚBLICO do WhatsApp (a Meta chama sem sessão). Plugin encapsulado: aqui o JSON
+ * chega como Buffer bruto, porque a assinatura X-Hub-Signature-256 é calculada sobre os
+ * bytes exatos do corpo. A empresa vem do registro (id na URL); a autenticidade, da
+ * assinatura com o App Secret dessa empresa. Responde 200 rápido para a Meta não repetir.
+ */
+export async function whatsappWebhookRoutes(app: FastifyInstance): Promise<void> {
+  app.addContentTypeParser('application/json', { parseAs: 'buffer', bodyLimit: 3 * 1024 * 1024 }, (_req, corpo, feito) => feito(null, corpo));
+  const IdReg = z.object({ registroId: z.string().regex(/^[a-z0-9]{20,40}$/) });
+
+  app.get('/integracoes/whatsapp/webhook/:registroId', { preHandler: limiteWebhook }, async (req: any, reply: any) => {
+    definirSistemaDaRequisicao('whatsapp:webhook');
+    const p = IdReg.safeParse(req.params);
+    if (!p.success) return reply.code(404).send();
+    const cred = await verificarAssinaturaWebhook(p.data.registroId);
+    const desafio = desafioValido(req.query ?? {}, cred?.segredos.verifyToken);
+    if (!cred || !desafio) return reply.code(403).send();
+    await registrarEvento({ empresaId: cred.empresaId, provedor: 'whatsapp', operacao: 'CONECTAR', ok: true, mensagem: 'Webhook verificado pela Meta.' });
+    return reply.code(200).type('text/plain').send(desafio);
+  });
+
+  app.post('/integracoes/whatsapp/webhook/:registroId', { preHandler: limiteWebhook }, async (req: any, reply: any) => {
+    definirSistemaDaRequisicao('whatsapp:webhook');
+    const p = IdReg.safeParse(req.params);
+    if (!p.success) return reply.code(404).send();
+    const cred = await verificarAssinaturaWebhook(p.data.registroId);
+    const bruto: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!cred || !assinaturaValida(bruto, req.headers['x-hub-signature-256'], cred.segredos.appSecret)) return reply.code(401).send();
+    let payload: unknown;
+    try { payload = JSON.parse(bruto.toString('utf8')); } catch { return reply.code(400).send(); }
+    const inicio = Date.now();
+    try {
+      const r = await processarWebhook(cred.empresaId, cred.config.phoneNumberId, payload);
+      if (r.recebidas || r.status) await registrarEvento({ empresaId: cred.empresaId, provedor: 'whatsapp', operacao: 'SINCRONIZAR', ok: true, mensagem: `Webhook: ${r.recebidas} recebida(s), ${r.status} status atualizado(s).`, duracaoMs: Date.now() - inicio });
+      return reply.code(200).send({ ok: true });
+    } catch (e) {
+      req.log.error({ err: e instanceof Error ? e.message : 'erro' }, 'falha ao processar webhook do WhatsApp');
+      await registrarEvento({ empresaId: cred.empresaId, provedor: 'whatsapp', operacao: 'SINCRONIZAR', ok: false, codigoErro: 'PERSISTENCIA', mensagem: 'Falha ao processar evento do webhook.', duracaoMs: Date.now() - inicio });
+      return reply.code(500).send(); // a Meta reenvia; o processamento é idempotente
+    }
+  });
 }

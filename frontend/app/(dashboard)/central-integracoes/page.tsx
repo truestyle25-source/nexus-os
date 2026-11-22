@@ -7,7 +7,7 @@ import {
   AlertTriangle, ArrowLeft, Bot, Boxes, CheckCircle2, Copy, CreditCard, Eye, FileCode2,
   Globe, KeyRound, Landmark, Lock, Mail, MinusCircle, Package, Percent, Printer, QrCode,
   Receipt, Scale, Search, Server, ShieldCheck, ShoppingBag, ShoppingCart, Smartphone,
-  Settings2, Sparkles, Store, Trash2, Truck, Users, Webhook, Wifi,
+  MessageCircle, Settings2, Sparkles, Store, Trash2, Truck, Users, Webhook, Wifi,
 } from 'lucide-react';
 import api, { getToken } from '@/lib/api';
 import MercadoLivreDadosModal from '@/components/MercadoLivreDadosModal';
@@ -151,7 +151,7 @@ const SECOES: Array<{ id: Categoria; titulo: string; descricao: string }> = [
   { id: 'time', titulo: 'CONECTE SEU TIME', descricao: 'Relógios que alimentam os módulos Ponto e RH' },
   { id: 'inteligencia', titulo: 'INTELIGÊNCIA', descricao: 'Motores de IA e visão computacional' },
   { id: 'hardware', titulo: 'HARDWARE & PDV', descricao: 'Balanças, coletores e equipamentos locais' },
-  { id: 'infra', titulo: 'INFRA & SEGURANÇA', descricao: 'E-mail transacional, webhooks e eventos' },
+  { id: 'infra', titulo: 'INFRA & SEGURANÇA', descricao: 'WhatsApp, e-mail, webhooks e eventos' },
 ];
 
 /** Catálogo do que a central sabe conectar. O status nunca é inventado aqui. */
@@ -165,7 +165,7 @@ const VENDORS: Vendor[] = [
   // ---- Financeiro ----
   { id: 'open-banking', nome: 'Bancos Open Banking', descricao: 'Conciliação automática de extratos e movimentações.', categoria: 'financeiro', icone: Landmark, meta: 'Pluggy / Belvo • Open Banking', badge: 'Financeiro' },
   { id: 'asaas', nome: 'Asaas', descricao: 'Cobrança, boletos e conciliação de recebimentos.', categoria: 'financeiro', icone: Receipt, meta: 'API REST • chave de API', badge: 'Financeiro' },
-  { id: 'mercadopago', nome: 'Mercado Pago', descricao: 'Recebimentos e estornos conciliados no Financeiro.', categoria: 'financeiro', icone: CreditCard, meta: 'API REST • OAuth', badge: 'Financeiro' },
+  { id: 'mercadopago', nome: 'Mercado Pago', descricao: 'Recebimentos e estornos conciliados no Financeiro.', categoria: 'financeiro', icone: CreditCard, meta: 'API REST • Access Token', badge: 'Financeiro' },
   { id: 'pix', nome: 'PIX', descricao: 'Recebimento BR Code (EMV BACEN) direto na conta da empresa.', categoria: 'financeiro', icone: QrCode, meta: 'BR Code • EMV • BACEN', badge: 'Financeiro', destino: '/configuracoes' },
   // ---- Logística ----
   { id: 'melhor-envio', nome: 'Melhor Envio', descricao: 'Cotação e compra de frete direto no PDV.', categoria: 'logistica', icone: Truck, meta: 'API pública', badge: 'Logística' },
@@ -185,6 +185,8 @@ const VENDORS: Vendor[] = [
   { id: 'coletores', nome: 'Coletores Zebra/Honeywell', descricao: 'Modo offline com fila que sincroniza quando o sinal volta.', categoria: 'hardware', icone: Smartphone, meta: 'Android • fila offline' },
   { id: 'gaveta-impressora', nome: 'Gaveta / Impressora Térmica', descricao: 'Abertura de gaveta e cupom fiscal no fechamento do PDV.', categoria: 'hardware', icone: Printer, meta: 'ESC/POS • USB', match: (i) => i.categoria === 'PDV', destino: '/pdv' },
   // ---- Infra ----
+  { id: 'whatsapp', nome: 'WhatsApp Business', descricao: 'Mensagens para clientes, recebimento e status de entrega pela API oficial da Meta.', categoria: 'infra', icone: MessageCircle, meta: 'Cloud API • Meta' },
+  { id: 'email-conta', nome: 'E-mail da empresa', descricao: 'Envio pela conta da própria empresa (SMTP) e leitura da caixa de entrada (IMAP).', categoria: 'infra', icone: Mail, meta: 'SMTP/IMAP • TLS' },
   { id: 'email', nome: 'E-mail Transacional', descricao: 'Resend: recuperação de senha e avisos de venda.', categoria: 'infra', icone: Mail, meta: 'RESEND_API_KEY • somente no backend', match: (i) => i.categoria === 'EMAIL_TRANSACIONAL' },
 ];
 
@@ -770,7 +772,7 @@ export default function CentralIntegracoes() {
                               ? `sync ${formatDateTime(ultimaSincronizacao)}`
                               : status === 'CONECTADO'
                                 ? `ativo${contaCentral ? ` • ${contaCentral}` : nomeReal ? ` • ${nomeReal}` : ''}`
-                                : provedor?.pendencia
+                                : provedor?.pendencia && provedor.disponibilidade !== 'CREDENCIAIS'
                                   ? provedor.pendencia
                                 : vendor.id === 'mercadolivre'
                                   ? configuradoAmbiente === false

@@ -25,3 +25,10 @@ test('rótulos e cores cobrem todos os estados', () => {
   assert.equal(corDoStatus('EXPIRADO'), 'var(--nx-amber)');
   assert.equal(ROTULO_STATUS.CREDENCIAIS_SALVAS, 'CREDENCIAIS SALVAS');
 });
+
+import { listaDeEmails, ROTULO_STATUS_MENSAGEM } from '../lib/integracoes-central';
+test('lista de e-mails e rótulos de mensagem', () => {
+  assert.deepEqual(listaDeEmails('a@b.com, c@d.com; a@b.com  e@f.com'), ['a@b.com', 'c@d.com', 'e@f.com']);
+  assert.deepEqual(listaDeEmails('  '), []);
+  assert.equal(ROTULO_STATUS_MENSAGEM.ENVIADA, 'Aceita pela Meta');
+});
