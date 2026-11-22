@@ -1,5 +1,12 @@
 'use client';
 // Aba "Composição do Kit": itens que compõem o kit, com quantidade, unidade compatível e custo.
+//
+// Regra de unidades: a UNIDADE DE ESTOQUE é a do cadastro do produto (ex.: açúcar em kg) e a
+// UNIDADE DA COMPOSIÇÃO é escolhida aqui (ex.: 500 g). O servidor converte a composição para a
+// unidade de estoque (500 g → 0,5 kg), e é esse valor que baixa do estoque e entra no custo —
+// assim estoque e custo nunca divergem. Só aparecem unidades com regra de conversão válida:
+// mesma dimensão (kg/g, L/mL, UN/DZ) ou fator cadastrado no produto (CX → UN). Um produto
+// cadastrado em UN não oferece gramas: não existe regra entre contagem e massa.
 // Usa só os componentes da ficha (ui.tsx) e os tokens de ficha.module.css — mesmo visual das outras abas.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Aviso, Botao, CampoSelecao, CampoTexto, Grade, Metrica, Modal, Secao, Selo, Tabela, estilos } from './ui';
@@ -104,7 +111,7 @@ export default function AbaComposicaoKit({ ficha, catalogos, podeEditar, tipoSal
       aria-label={`Quantidade de ${l.nome}`} readOnly={!editavel} onChange={(e) => muda(l.produtoId, { quantidade: e.target.value })} />
   );
   const seletorUnidade = (l: Linha) => (
-    <select className={`${estilos.entrada} ${estilos.entradaTabela}`} value={l.unidadeChave} disabled={!editavel} aria-label={`Unidade de ${l.nome}`}
+    <select className={`${estilos.entrada} ${estilos.entradaTabela} ${estilos.entradaUnidade}`} value={l.unidadeChave} disabled={!editavel} aria-label={`Unidade de ${l.nome}`}
       onChange={(e) => muda(l.produtoId, { unidadeChave: e.target.value })}>
       {l.unidades.map((u) => <option key={chaveUnidade(u)} value={chaveUnidade(u)}>{u.simbolo} — {u.nome}</option>)}
     </select>
