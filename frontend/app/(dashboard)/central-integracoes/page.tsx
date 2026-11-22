@@ -7,10 +7,12 @@ import {
   AlertTriangle, ArrowLeft, Bot, Boxes, CheckCircle2, Copy, CreditCard, Eye, FileCode2,
   Globe, KeyRound, Landmark, Lock, Mail, MinusCircle, Package, Percent, Printer, QrCode,
   Receipt, Scale, Search, Server, ShieldCheck, ShoppingBag, ShoppingCart, Smartphone,
-  Sparkles, Store, Trash2, Truck, Users, Webhook, Wifi,
+  Settings2, Sparkles, Store, Trash2, Truck, Users, Webhook, Wifi,
 } from 'lucide-react';
 import api, { getToken } from '@/lib/api';
 import MercadoLivreDadosModal from '@/components/MercadoLivreDadosModal';
+import ConfigIntegracaoModal from '@/components/integracoes/ConfigIntegracaoModal';
+import { centralApi, ROTULO_STATUS, saudeDaCentral, type Central, type StatusCentral } from '@/lib/integracoes-central';
 import { mensagemDeErroApi, redigirMensagemDeErro } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
 import { t as traduzir, tMenu } from '@/lib/i18n';
@@ -35,7 +37,8 @@ import { t as traduzir, tMenu } from '@/lib/i18n';
  * app/(dashboard)/layout.tsx e já seguem o Layout Mestre V2.1.
  */
 
-type StatusIntegracao = 'CONECTADO' | 'ERRO' | 'NAO_CONFIGURADO';
+// Estados reais (Central de Integrações): ver lib/integracoes-central.ts.
+type StatusIntegracao = StatusCentral;
 type Categoria = 'vendas' | 'financeiro' | 'logistica' | 'time' | 'inteligencia' | 'hardware' | 'infra';
 type FiltroAtivo = 'todos' | Categoria;
 
@@ -161,7 +164,7 @@ const VENDORS: Vendor[] = [
   { id: 'woocommerce', nome: 'WooCommerce', descricao: 'Loja WordPress com sync de produtos e pedidos.', categoria: 'vendas', icone: ShoppingCart, meta: 'REST API • chave de consumidor' },
   // ---- Financeiro ----
   { id: 'open-banking', nome: 'Bancos Open Banking', descricao: 'Conciliação automática de extratos e movimentações.', categoria: 'financeiro', icone: Landmark, meta: 'Pluggy / Belvo • Open Banking', badge: 'Financeiro' },
-  { id: 'asaas', nome: 'Asaas', descricao: 'Cobrança, boletos e conciliação de recebimentos.', categoria: 'financeiro', icone: Receipt, meta: 'API REST • OAuth', badge: 'Financeiro' },
+  { id: 'asaas', nome: 'Asaas', descricao: 'Cobrança, boletos e conciliação de recebimentos.', categoria: 'financeiro', icone: Receipt, meta: 'API REST • chave de API', badge: 'Financeiro' },
   { id: 'mercadopago', nome: 'Mercado Pago', descricao: 'Recebimentos e estornos conciliados no Financeiro.', categoria: 'financeiro', icone: CreditCard, meta: 'API REST • OAuth', badge: 'Financeiro' },
   { id: 'pix', nome: 'PIX', descricao: 'Recebimento BR Code (EMV BACEN) direto na conta da empresa.', categoria: 'financeiro', icone: QrCode, meta: 'BR Code • EMV • BACEN', badge: 'Financeiro', destino: '/configuracoes' },
   // ---- Logística ----
@@ -255,6 +258,9 @@ export default function CentralIntegracoes() {
   const [lojasShopee, setLojasShopee] = useState<ShopeeConnection[]>([]);
   // Etapa 2 — modal "Dados da conta ML" (9 endpoints de consulta + PUT).
   const [mostrarDadosML, setMostrarDadosML] = useState(false);
+  // Central de Integrações: catálogo + estados reais por provedor e a janela de configuração aberta.
+  const [central, setCentral] = useState<Central | null>(null);
+  const [modalProvedor, setModalProvedor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -273,6 +279,7 @@ export default function CentralIntegracoes() {
       } catch {
         setLojasShopee([]);
       }
+      try { setCentral(await centralApi.carregar()); } catch { setCentral(null); }
       const itens = [...(Array.isArray(i?.itens) ? i.itens : []), ...shopeeItems];
       setIntegracoes({
         ...i,
@@ -542,9 +549,13 @@ export default function CentralIntegracoes() {
     const itens = integracoes?.itens ?? [];
     return VENDORS.map((v) => {
       const real = v.match ? itens.find(v.match) : undefined;
+      // Provedores do catálogo da Central: o status vem do estado real calculado no backend.
+      const estadoCentral = central?.estados.find((e) => e.provedor === v.id);
       return {
         vendor: v,
-        status: (real?.status ?? 'NAO_CONFIGURADO') as StatusIntegracao,
+        provedor: central?.provedores.find((p) => p.id === v.id) ?? null,
+        status: (estadoCentral?.status ?? real?.status ?? 'NAO_CONFIGURADO') as StatusIntegracao,
+        contaCentral: estadoCentral?.conta ?? null,
         configuradoAmbiente: real?.configuradoAmbiente,
         ultimaSincronizacao: real?.ultimaSincronizacao ?? null,
         qtdRegistros: real?.qtdRegistros ?? null,
@@ -552,7 +563,7 @@ export default function CentralIntegracoes() {
         nomeReal: real?.nome ?? null,
       };
     });
-  }, [integracoes]);
+  }, [integracoes, central]);
 
   const cardsVisiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -583,15 +594,20 @@ export default function CentralIntegracoes() {
     );
   }, [integracoes]);
 
-  const resumo = integracoes?.resumo;
-  const total = resumo?.total ?? 0;
-  const saude = total === 0 ? 0 : Math.round(((resumo?.conectadas ?? 0) / total) * 100);
+  // Indicadores: estados da Central (marketplaces, financeiro, logística) + itens que vivem
+  // fora dela (PDV, Ponto, IA, e-mail transacional). Saúde = conectadas ÷ (conectadas + com erro);
+  // sem nenhuma integração em uso mostra "—" (nunca um percentual inventado).
+  const resumo = useMemo(() => {
+    const fora = (integracoes?.itens ?? []).filter((i) => i.categoria !== 'MERCADO_LIVRE' && i.categoria !== 'SHOPEE');
+    const conectadas = (central?.resumo.conectadas ?? 0) + fora.filter((i) => i.status === 'CONECTADO').length;
+    const comErro = (central?.resumo.comErro ?? 0) + fora.filter((i) => i.status === 'ERRO').length;
+    const naoConfiguradas = (central?.resumo.naoConfiguradas ?? 0) + fora.filter((i) => i.status === 'NAO_CONFIGURADO').length;
+    return { conectadas, comErro, naoConfiguradas, saude: saudeDaCentral(conectadas, comErro) };
+  }, [integracoes, central]);
+  const saude = resumo.saude;
 
-  const STATUS_LABEL: Record<StatusIntegracao, string> = {
-    CONECTADO: 'CONECTADO',
-    ERRO: 'ERRO',
-    NAO_CONFIGURADO: 'NÃO CONFIGURADO',
-  };
+  const STATUS_LABEL: Record<StatusIntegracao, string> = ROTULO_STATUS;
+  const cardModal = modalProvedor ? cards.find((c) => c.vendor.id === modalProvedor) : undefined;
 
   if (loading) {
     return (
@@ -654,7 +670,7 @@ export default function CentralIntegracoes() {
           />
           <KpiCard label="Com erro" valor={String(resumo?.comErro ?? 0)} icone={AlertTriangle} cor="var(--nx-amber)" />
           <KpiCard label="Não configuradas" valor={String(resumo?.naoConfiguradas ?? 0)} icone={MinusCircle} cor="var(--nx-ink-3)" />
-          <KpiCard label="Saúde" valor={`${saude}%`} icone={Percent} cor="var(--nx-accent)" sufixo="da central" />
+          <KpiCard label="Saúde" valor={saude === null ? '—' : `${saude}%`} icone={Percent} cor="var(--nx-accent)" sufixo="da central" />
         </div>
 
         {/* Filtros sticky */}
@@ -696,10 +712,10 @@ export default function CentralIntegracoes() {
               )}
 
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                {daSecao.map(({ vendor, status, ultimaSincronizacao, nomeReal, configuradoAmbiente }) => {
+                {daSecao.map(({ vendor, provedor, status, contaCentral, ultimaSincronizacao, nomeReal, configuradoAmbiente }) => {
                   const Icone = vendor.icone;
                   const corStatus =
-                    status === 'CONECTADO' ? 'var(--nx-green)' : status === 'ERRO' ? 'var(--nx-amber)' : 'var(--nx-ink-3)';
+                    status === 'CONECTADO' ? 'var(--nx-green)' : status === 'ERRO' || status === 'EXPIRADO' ? 'var(--nx-amber)' : 'var(--nx-ink-3)';
                   return (
                     <article
                       key={vendor.id}
@@ -722,6 +738,18 @@ export default function CentralIntegracoes() {
                           </div>
                           <p className="mt-1 text-[12px] text-[var(--nx-ink-2)] line-clamp-2">{vendor.descricao}</p>
                         </div>
+                        {/* Mercado Livre e Shopee: a janela de configuração (autorização, sincronização e histórico) abre pela engrenagem. */}
+                        {(vendor.id === 'mercadolivre' || vendor.id === 'shopee') && (
+                          <button
+                            type="button"
+                            onClick={() => setModalProvedor(vendor.id)}
+                            title="Configuração, sincronização e histórico"
+                            aria-label={`Abrir configuração ${vendor.id === 'shopee' ? 'da Shopee' : 'do Mercado Livre'}`}
+                            className="h-8 w-8 shrink-0 rounded-[10px] border border-[var(--nx-border)] text-[var(--nx-ink-2)] hover:border-[var(--nx-border-strong)] transition-colors inline-flex items-center justify-center"
+                          >
+                            <Settings2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
 
                       {vendor.meta && (
@@ -741,7 +769,9 @@ export default function CentralIntegracoes() {
                             {ultimaSincronizacao
                               ? `sync ${formatDateTime(ultimaSincronizacao)}`
                               : status === 'CONECTADO'
-                                ? `ativo${nomeReal ? ` • ${nomeReal}` : ''}`
+                                ? `ativo${contaCentral ? ` • ${contaCentral}` : nomeReal ? ` • ${nomeReal}` : ''}`
+                                : provedor?.pendencia
+                                  ? provedor.pendencia
                                 : vendor.id === 'mercadolivre'
                                   ? configuradoAmbiente === false
                                     ? 'aguardando credenciais no servidor'
@@ -852,6 +882,14 @@ export default function CentralIntegracoes() {
                               </button>
                             )}
                           </div>
+                        ) : provedor?.disponibilidade === 'CREDENCIAIS' ? (
+                          <button
+                            type="button"
+                            onClick={() => setModalProvedor(vendor.id)}
+                            className="h-8 px-3 shrink-0 rounded-[10px] bg-[var(--nx-accent)] text-[var(--nx-ink)] text-[12px] font-medium hover:bg-[var(--nx-accent-2)] transition-colors inline-flex items-center"
+                          >
+                            {status === 'CONECTADO' ? 'Gerenciar' : 'Configurar'}
+                          </button>
                         ) : vendor.destino ? (
                           <Link
                             href={vendor.destino}
@@ -860,7 +898,7 @@ export default function CentralIntegracoes() {
                             {status === 'CONECTADO' ? 'Gerenciar' : 'Configurar'}
                           </Link>
                         ) : (
-                          <span className="h-8 px-3 shrink-0 rounded-[10px] border border-[var(--nx-border)] text-[var(--nx-ink-3)] text-[11px] font-medium inline-flex items-center cursor-not-allowed" title="Sem integração disponível no NEXUS OS">
+                          <span className="h-8 px-3 shrink-0 rounded-[10px] border border-[var(--nx-border)] text-[var(--nx-ink-3)] text-[11px] font-medium inline-flex items-center cursor-not-allowed" title={provedor?.pendencia ?? 'Sem integração disponível no NEXUS OS'}>
                             Indisponível
                           </span>
                         )}
@@ -1308,6 +1346,35 @@ export default function CentralIntegracoes() {
       )}
 
       {/* Etapa 2 — modal "Dados da conta ML" (9 endpoints + PUT). */}
+      {cardModal?.provedor && (
+        <ConfigIntegracaoModal
+          provedor={cardModal.provedor}
+          descricao={cardModal.vendor.descricao}
+          icone={cardModal.vendor.icone}
+          onClose={() => setModalProvedor(null)}
+          onAlterado={() => void load()}
+          oauth={cardModal.vendor.id === 'mercadolivre'
+            ? {
+                autorizar: conectarMercadoLivre, testar: testarMercadoLivre, desconectar: desconectarMercadoLivre,
+                prontoServidor: cardModal.configuradoAmbiente !== false, ocupado: acaoMl !== null,
+                sincronizacao: agendamentoML ? (
+                  <div className="space-y-1.5 text-[13px] text-[var(--nx-ink-2)]">
+                    <p>Sincronização automática: {agendamentoML.ativo ? 'ativa' : 'sem estado'}.</p>
+                    <p>Pedidos a cada {agendamentoML.periodos.pedidosMin} min · estoque a cada {agendamentoML.periodos.estoqueMin} min · produtos a cada {Math.round(agendamentoML.periodos.produtosMin / 60)} h.</p>
+                    {agendamentoML.tarefas.map((t) => <p key={t.tipo} className="text-[12px] text-[var(--nx-ink-3)]">{t.tipo.replace('MERCADO_LIVRE_', '')}: {t.status.toLowerCase()}{t.ultimoErro?.motivo ? ` · ${t.ultimoErro.motivo}` : ''}</p>)}
+                  </div>
+                ) : undefined,
+              }
+            : cardModal.vendor.id === 'shopee'
+              ? {
+                  autorizar: conectarShopee, testar: testarShopee, desconectar: desconectarShopee,
+                  prontoServidor: cardModal.configuradoAmbiente !== false, ocupado: acaoShopee !== null,
+                  sincronizacao: <p className="text-[13px] text-[var(--nx-ink-2)]">O status dos pedidos das lojas conectadas é acompanhado automaticamente. Lojas: {lojasShopee.length}.</p>,
+                }
+              : undefined}
+        />
+      )}
+
       {mostrarDadosML && (
         <MercadoLivreDadosModal onClose={() => setMostrarDadosML(false)} />
       )}
