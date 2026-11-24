@@ -194,6 +194,9 @@ async function finalizar(execucaoId: string, ctx: ContextoIA, _conversa: string 
 
 export async function montarResultado(execucaoId: string): Promise<ResultadoInvestigacao> {
   const ex = await prisma.aIExecucao.findUniqueOrThrow({ where: { id: execucaoId }, include: { ferramentas: { select: { ferramenta: true, entrada: true, ok: true }, orderBy: { createdAt: 'asc' } } } });
+  // BRAIN: as fontes incluem as ferramentas usadas pelos especialistas consultados.
+  const dosFilhos = await prisma.aIExecucaoFerramenta.findMany({ where: { ok: true, execucao: { execucaoPaiId: ex.id, empresaId: ex.empresaId } }, select: { ferramenta: true, entrada: true, ok: true }, orderBy: { createdAt: 'asc' } });
+  ex.ferramentas = [...ex.ferramentas.filter((f) => f.ferramenta !== 'consultar_especialista'), ...dosFilhos];
   const limitacoes = ex.resposta?.match(/Limita[cç][oõ]es:\s*(.+)$/im)?.[1]?.trim() ?? null;
   return {
     execucaoId: ex.id, conversaId: ex.conversaId, status: ex.status,
