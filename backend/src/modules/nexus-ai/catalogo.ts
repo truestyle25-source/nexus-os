@@ -10,6 +10,7 @@ import { FERRAMENTAS_COMERCIAL } from './ferramentas/comercial.js';
 import { FERRAMENTAS_FINANCEIRO } from './ferramentas/financeiro.js';
 import { FERRAMENTAS_COMPRAS } from './ferramentas/compras.js';
 import { FERRAMENTAS_CONHECIMENTO } from './ferramentas/conhecimento.js';
+import { FERRAMENTAS_ANALISE } from './ferramentas/analise.js';
 import type { Agente } from './tipos.js';
 
 let carregado = false;
@@ -17,6 +18,16 @@ let carregado = false;
 const BASE_LEITURA = 'Você é somente leitura: pode recomendar, mas não cria, altera nem exclui nada no sistema.';
 
 const CONHECIMENTO = ['consultar_memoria', 'buscar_documentos'];
+
+/** Fase 05: ferramentas analíticas por agente (previsões, anomalias, simulador). */
+const ANALISE: Record<string, string[]> = {
+  nexus: ['detectar_anomalias'],
+  estoque: ['previsao_demanda'],
+  comercial: ['previsao_demanda', 'simular_preco', 'detectar_anomalias'],
+  financeiro: ['previsao_caixa', 'detectar_anomalias'],
+  compras: ['previsao_demanda'],
+};
+const PAPEL_ANALISE = 'Para previsões, anomalias e simulações use as ferramentas analíticas (previsao_demanda, previsao_caixa, detectar_anomalias, simular_preco quando disponíveis): informe o método e o período que a ferramenta devolver e deixe claro que previsão e simulação são estimativas.';
 
 export const AGENTES: Agente[] = [
   {
@@ -86,7 +97,13 @@ export const AGENTES: Agente[] = [
 export function carregarCatalogo() {
   if (carregado) return;
   carregado = true;
-  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS, ...FERRAMENTAS_CONHECIMENTO]);
+  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS, ...FERRAMENTAS_CONHECIMENTO, ...FERRAMENTAS_ANALISE]);
+  for (const a of AGENTES) {
+    const extras = ANALISE[a.id] ?? [];
+    if (!extras.length) continue;
+    a.ferramentas.push(...extras.filter((f) => !a.ferramentas.includes(f)));
+    a.papel = `${a.papel}\n${PAPEL_ANALISE}`;
+  }
   for (const a of AGENTES) if (a.id !== 'nexus' && a.id !== 'geral') a.ferramentas.push(...CONHECIMENTO.filter((f) => !a.ferramentas.includes(f)));
   registrarAgentes(AGENTES);
 }

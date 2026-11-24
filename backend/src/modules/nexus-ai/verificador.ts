@@ -16,6 +16,8 @@ export function numerosConhecidos(resultados: unknown[]): number[] {
   const visitar = (v: unknown) => {
     if (typeof v === 'number' && Number.isFinite(v)) { acc.push(v); return; }
     if (typeof v === 'string' && /^-?\d+([.,]\d+)?$/.test(v.trim())) { acc.push(Number(v.replace(',', '.'))); return; }
+    // Números escritos dentro de textos das ferramentas (ex.: método "últimos 7 dias", "≥ 2×").
+    if (typeof v === 'string') { for (const n of extrairNumeros(v)) acc.push(n.valor); return; }
     if (Array.isArray(v)) { acc.push(v.length); v.forEach(visitar); return; }
     if (v && typeof v === 'object') Object.values(v).forEach(visitar);
   };

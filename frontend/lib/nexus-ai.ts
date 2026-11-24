@@ -39,6 +39,7 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   resumo_vendas: 'Resumo de vendas', vendas_por_dia: 'Vendas por dia', vendas_por_produto: 'Vendas por produto', margem_por_produto: 'Margem por produto', vendas_por_vendedor: 'Vendas por vendedor', clientes_principais: 'Clientes',
   resumo_financeiro: 'Resumo financeiro', contas_vencidas: 'Contas vencidas', fluxo_caixa_projetado: 'Fluxo de caixa projetado', despesas_por_categoria: 'Despesas por categoria', resultado_periodo: 'Resultado (DRE)',
   consultar_especialista: 'Consulta a especialista', consultar_memoria: 'Memória da empresa', buscar_documentos: 'Documentos internos', investigacoes_anteriores: 'Investigações anteriores',
+  previsao_demanda: 'Previsão de demanda', previsao_caixa: 'Previsão de caixa', detectar_anomalias: 'Detecção de anomalias', simular_preco: 'Simulação de preço',
   resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 
