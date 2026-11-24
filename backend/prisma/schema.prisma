@@ -3826,6 +3826,8 @@ model AITrecho {
   documento   AIDocumento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
   ordem       Int
   texto       String      @db.Text
+  /// Vetor semântico (pgvector, 768 dimensões, gemini-embedding-001). Opcional.
+  embedding   Unsupported("vector(768)")?
 
   @@index([empresaId, documentoId])
 }

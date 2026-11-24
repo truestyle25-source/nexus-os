@@ -14,6 +14,11 @@ import { contexto, iniciarInvestigacao, executarEspecialista } from '../src/modu
 import { agente } from '../src/modules/nexus-ai/agentes/registro.js';
 import { adicionarDocumento, dividirEmTrechos, excluirMemoria, salvarMemoria } from '../src/modules/nexus-ai/conhecimento.service.js';
 import { definirProvedorDeTeste } from '../src/modules/nexus-ai/provedores/roteador.js';
+import { definirEmbedderDeTeste, DIMENSOES } from '../src/modules/nexus-ai/provedores/embeddings.js';
+
+/** Vetores determinísticos por assunto: entrega/recebimento/mercadoria → eixo 0; pagamento → eixo 1. */
+const ASSUNTOS = [/receb|entreg|mercador|chegad|nota fiscal/i, /pag|diretoria|aprova/i];
+const vetorFalso = (t: string) => { const v = Array(DIMENSOES).fill(0); ASSUNTOS.forEach((r, i) => { if (r.test(t)) v[i] = 1; }); if (!v.some(Boolean)) v[5] = 1; const n = Math.hypot(...v); return v.map((x) => x / n); };
 import type { MensagemIA, Provedor, RespostaProvedor } from '../src/modules/nexus-ai/tipos.js';
 
 const URL_TESTE = process.env.DATABASE_URL ?? '';
@@ -70,6 +75,19 @@ test('NEXUS AI — Fase 04: conhecimento e NEXUS BRAIN', { skip: !BANCO_DE_TESTE
       assert.equal((await f('nexus', 'buscar_documentos', { consulta: 'aprovação pagamentos' })).total, 1);
       const sem = await f('nexus', 'buscar_documentos', { consulta: 'aprovação pagamentos' }, contexto(empresa.id, semFin.id));
       assert.equal(sem.total, 0, 'documento do financeiro escondido de quem não tem financeiro.visualizar');
+    });
+
+    await t.test('Documentos: busca por sentido (pgvector) acha sinônimos e respeita empresa e permissão', async () => {
+      definirEmbedderDeTeste(async (textos) => textos.map(vetorFalso));
+      try {
+        await adicionarDocumento(empresa.id, u.id, { titulo: 'Rotina da doca', conteudo: 'Toda mercadoria que chega passa pela conferência da nota fiscal na doca dois.' });
+        await adicionarDocumento(outra.id, u.id, { titulo: 'Doca da outra', conteudo: 'Mercadorias recebidas da outra empresa vão para a doca nove.' });
+        const r = await f('nexus', 'buscar_documentos', { consulta: 'como funciona a chegada de entregas?' });
+        assert.ok(r.trechos.some((x: any) => x.documento === 'Rotina da doca'), 'achou pelo sentido sem palavra em comum');
+        assert.equal(r.trechos.some((x: any) => x.documento === 'Doca da outra'), false, 'isolamento por empresa');
+        const sem = await f('nexus', 'buscar_documentos', { consulta: 'quem aprova os pagamentos?' }, contexto(empresa.id, semFin.id));
+        assert.equal(sem.trechos.some((x: any) => x.documento === 'Política de pagamentos'), false, 'documento do financeiro continua escondido');
+      } finally { definirEmbedderDeTeste(null); }
     });
 
     await t.test('BRAIN: especialista vira investigação filha e os números são verificados', async () => {

@@ -18,7 +18,7 @@ import { contexto, iniciarInvestigacao, montarResultado, retomarInvestigacao } f
 import { situacaoConsumo } from './consumo.js';
 import { provedorAtual } from './provedores/roteador.js';
 import { estadoCircuito } from './provedores/gemini.js';
-import { TIPOS_MEMORIA, adicionarDocumento, excluirDocumento, excluirMemoria, listarDocumentos, listarMemoria, salvarMemoria } from './conhecimento.service.js';
+import { TIPOS_MEMORIA, adicionarDocumento, excluirDocumento, excluirMemoria, indexarDocumento, listarDocumentos, listarMemoria, salvarMemoria } from './conhecimento.service.js';
 
 const porEmpresa = (req: any) => (req.user?.empresaId ? `e:${req.user.empresaId}` : null);
 const limitePerguntas = createRateLimiter(30, 60_000, { nome: 'nexus-ai-perguntas', chaveExtra: porEmpresa });
@@ -79,6 +79,7 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
     const d = z.object({ titulo: z.string().trim().min(2).max(200), conteudo: z.string(), modulo: z.string().nullable().optional() }).parse(req.body ?? {});
     return adicionarDocumento(req.user.empresaId, req.user.id, d);
   });
+  app.post(`${B}/documentos/reindexar`, { preHandler: [auth, administrar] }, async (req: any) => ({ vetorizados: await indexarDocumento(req.user.empresaId) }));
   app.delete(`${B}/documentos/:id`, { preHandler: [auth, administrar] }, async (req: any) => excluirDocumento(req.user.empresaId, req.params.id));
 }
 
