@@ -21,6 +21,10 @@ export interface ContextoIA {
   execucaoId?: string;
   /** 0 = investigação principal; 1 = especialista consultado pelo BRAIN (não consulta outros). */
   profundidade?: number;
+  /** Pergunta feita pelo modo voz: a resposta é curta e começa pela conclusão (será falada). */
+  voz?: boolean;
+  /** Consultas a especialistas já reservadas nesta investigação (limite de 4, seguro em paralelo). */
+  consultasEspecialistas?: { n: number };
 }
 
 /** Esquema de parâmetros no formato aceito pelos provedores (subconjunto de JSON Schema/OpenAPI). */
