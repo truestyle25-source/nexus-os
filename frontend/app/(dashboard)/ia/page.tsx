@@ -439,6 +439,8 @@ export default function Page() {
 
   const abrirPainel = (p: Painel) => {
     if (isVoiceMode) exitVoiceMode();
+    // No celular a barra lateral cobre a tela: fecha para mostrar o painel escolhido.
+    if (typeof window !== "undefined" && window.innerWidth <= 768) setSidebarOpen(false);
     setPainel(p);
     if (p === "historico") nexusAi.conversas().then(setConversas).catch(() => setConversas([]));
   };
@@ -465,6 +467,8 @@ export default function Page() {
   };
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+  // No celular a conversa abre com a barra lateral fechada (ela abre pelo botão de menu).
+  useEffect(() => { if (window.innerWidth <= 768) setSidebarOpen(false); }, []);
 
   const handleMicClick = () => {
     if (isRecording) {
@@ -585,7 +589,7 @@ export default function Page() {
         .voice-btn-end{width:64px;height:64px;border-radius:999px;background:var(--nx-red);border:none;display:grid;place-items:center;color:var(--nx-ink);cursor:pointer;box-shadow:0 8px 24px color-mix(in srgb,var(--nx-red) 32%,transparent);transition:all .2s}
         .voice-btn-end:hover{transform:scale(1.08);background:color-mix(in srgb,var(--nx-red) 88%,var(--nx-ink));box-shadow:0 12px 30px color-mix(in srgb,var(--nx-red) 42%,transparent)}
         .voice-btn-end:active{transform:scale(0.94)}
-        @media(max-width:768px){.sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main{width:100%}.wave-orb-container{width:200px;height:200px}}
+        @media(max-width:768px){.sidebar{position:fixed!important;left:0;top:0;bottom:0;transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main{width:100%}.wave-orb-container{width:200px;height:200px}}
 `}</style>
       <div className="nexus-bg">
         <div className="nexus-bg-a" />
