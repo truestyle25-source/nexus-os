@@ -56,6 +56,19 @@ function Verificacao({ d }: { d: ResultadoIA["detalhes"] | undefined }) {
 }
 type Origem = "texto" | "audio" | "modo_voz";
 
+/** Identidade da ATMA, a essência inteligente do NEXUS OS. */
+const CUMPRIMENTO_ATMA = "Olá! Que bom ter você por aqui. Sou a ATMA. O que vamos fazer hoje?";
+
+/**
+ * Voz reserva (quando a voz neural do servidor não responde): prefere uma voz FEMININA em
+ * português do Brasil disponível no aparelho, para a ATMA não virar uma voz masculina ou robótica.
+ */
+const VOZES_FEMININAS_PT = /thalita|francisca|maria|luciana|vit[oó]ria|leticia|let[ií]cia|helena|camila|fernanda|joana|raquel|google português do brasil/i;
+function vozReservaDaAtma(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  const pt = voices.filter((v) => v.lang === "pt-BR" || v.lang.toLowerCase().startsWith("pt"));
+  return pt.find((v) => v.lang === "pt-BR" && VOZES_FEMININAS_PT.test(v.name)) || pt.find((v) => VOZES_FEMININAS_PT.test(v.name)) || pt.find((v) => v.lang === "pt-BR") || pt[0] || null;
+}
+
 const shortcuts = ["Quanto vendi hoje?", "Estoque baixo?", "Resumo financeiro"];
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, route: "/" },
@@ -157,7 +170,7 @@ export default function Page() {
     }
   };
 
-  // Síntese de Voz Neural Humana (Edge TTS pt-BR-FranciscaNeural) igual Meta AI
+  // Voz da ATMA: voz neural do servidor (Edge TTS, Thalita calma); reserva: voz feminina do navegador
   const speak = async (texto: string) => {
     if (!texto) return;
 
@@ -232,11 +245,9 @@ export default function Page() {
       if (typeof window !== "undefined" && "speechSynthesis" in window && isVoiceModeRef.current) {
         const u = new SpeechSynthesisUtterance(cleanText);
         u.lang = "pt-BR";
-        const voices = window.speechSynthesis.getVoices();
-        u.voice =
-          voices.find((v) => v.name.toLowerCase().includes("google") && (v.lang === "pt-BR" || v.lang.startsWith("pt"))) ||
-          voices.find((v) => v.lang === "pt-BR" || v.lang.startsWith("pt")) ||
-          null;
+        u.voice = vozReservaDaAtma(window.speechSynthesis.getVoices());
+        u.rate = 0.96; // natural e moderada, como a voz principal da ATMA
+        u.pitch = 0.95; // levemente mais grave: evita a voz aguda
 
         u.onend = () => {
           if (isVoiceModeRef.current) {
@@ -286,6 +297,8 @@ export default function Page() {
     setIsRecording(false);
   };
 
+  const atmaCumprimentouRef = useRef(false);
+
   // 2. TOGGLE DO MODO VOZ (Botão azul Waves)
   const enterVoiceMode = () => {
     stopAnyAudio();
@@ -294,6 +307,14 @@ export default function Page() {
     setVoiceStatus("listening");
     setVoiceUserTranscript("");
     setVoiceAiTranscript("");
+    // A ATMA se apresenta na primeira vez que o modo voz é aberto nesta sessão;
+    // ao terminar de falar, o speak() já volta a ouvir.
+    if (!atmaCumprimentouRef.current) {
+      atmaCumprimentouRef.current = true;
+      setVoiceAiTranscript(CUMPRIMENTO_ATMA);
+      void speak(CUMPRIMENTO_ATMA);
+      return;
+    }
     setTimeout(() => {
       startListening();
     }, 120);
@@ -833,9 +854,9 @@ export default function Page() {
                   {voiceStatus === "listening"
                     ? "Ouvindo você..."
                     : voiceStatus === "thinking"
-                    ? "Nexus pensando..."
+                    ? "ATMA pensando..."
                     : voiceStatus === "speaking"
-                    ? "Nexus falando..."
+                    ? "ATMA falando..."
                     : "Conversando com Nexus"}
                 </span>
               </div>
@@ -874,7 +895,7 @@ export default function Page() {
               <div className="voice-status-title">
                 {voiceStatus === "listening" && "Ouvindo você... Fale agora"}
                 {voiceStatus === "thinking" && "Processando resposta..."}
-                {voiceStatus === "speaking" && "NEXUS falando..."}
+                {voiceStatus === "speaking" && "ATMA falando..."}
                 {voiceStatus === "idle" && "Pronto. Toque para falar."}
               </div>
 
