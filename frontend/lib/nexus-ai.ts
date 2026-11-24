@@ -13,6 +13,9 @@ export interface ConsumoIA { uso: { execucoes: number; tokensEntrada: number; to
 
 export interface MemoriaIA { id: string; tipo: string; titulo: string; conteudo: string; updatedAt: string }
 export interface DocumentoIA { id: string; titulo: string; modulo: string | null; caracteres: number; trechos: number; createdAt: string }
+export interface InsightIA { id: string; origem: string; tipo: string; modulo: string; severidade: string; titulo: string; descricao: string; evidencias: Record<string, unknown> | null; status: string; createdAt: string }
+export interface AprovacaoIA { id: string; acao: string; titulo: string; proposta: Record<string, unknown>; impacto: string | null; valorCentavos: number | null; nivel: number; status: string; decididoPor: string | null; decididoEm: string | null; motivo: string | null; resultado: Record<string, unknown> | null; erro: string | null; expiraEm: string; createdAt: string; podeDecidir: boolean }
+export interface AutomacoesIA { regras: { tipo: string; nome: string; regra: string; severidade: string; eventos7dias: number }[]; insightsDiarios: { eventos7dias: number; regra: string }; filaPendente: number; acoes: { acao: string; nome: string; descricao: string; permissao: string; ativa: boolean; valorMaxCentavos: number | null }[] }
 export const TIPOS_MEMORIA: [string, string][] = [['META', 'Meta'], ['POLITICA', 'Política'], ['CRITERIO', 'Critério'], ['PREFERENCIA', 'Preferência'], ['DECISAO', 'Decisão']];
 
 const B = '/api/v1/nexus-ai';
@@ -29,6 +32,12 @@ export const nexusAi = {
   documentos: () => api.get<{ documentos: DocumentoIA[] }>(`${B}/documentos`).then((r) => r.data.documentos),
   adicionarDocumento: (d: { titulo: string; conteudo: string }) => api.post(`${B}/documentos`, d).then((r) => r.data),
   excluirDocumento: (id: string) => api.delete(`${B}/documentos/${id}`).then((r) => r.data),
+  insights: (status?: string) => api.get<{ insights: InsightIA[] }>(`${B}/insights`, { params: status ? { status } : {} }).then((r) => r.data.insights),
+  marcarInsight: (id: string, status: 'ABERTO' | 'LIDO' | 'DESCARTADO') => api.post<InsightIA>(`${B}/insights/${id}/status`, { status }).then((r) => r.data),
+  aprovacoes: (status?: string) => api.get<{ aprovacoes: AprovacaoIA[] }>(`${B}/aprovacoes`, { params: status ? { status } : {} }).then((r) => r.data.aprovacoes),
+  decidir: (id: string, decisao: 'aprovar' | 'rejeitar', motivo?: string) => api.post<AprovacaoIA>(`${B}/aprovacoes/${id}/${decisao}`, { motivo }).then((r) => r.data),
+  automacoes: () => api.get<AutomacoesIA>(`${B}/automacoes`).then((r) => r.data),
+  salvarAutomacao: (acao: string, d: { ativa: boolean; valorMaxCentavos: number | null }) => api.put(`${B}/automacoes/${acao}`, d).then((r) => r.data),
 };
 
 /** Nomes amigáveis das ferramentas (fontes mostradas ao usuário). */
@@ -40,6 +49,7 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   resumo_financeiro: 'Resumo financeiro', contas_vencidas: 'Contas vencidas', fluxo_caixa_projetado: 'Fluxo de caixa projetado', despesas_por_categoria: 'Despesas por categoria', resultado_periodo: 'Resultado (DRE)',
   consultar_especialista: 'Consulta a especialista', consultar_memoria: 'Memória da empresa', buscar_documentos: 'Documentos internos', investigacoes_anteriores: 'Investigações anteriores',
   previsao_demanda: 'Previsão de demanda', previsao_caixa: 'Previsão de caixa', detectar_anomalias: 'Detecção de anomalias', simular_preco: 'Simulação de preço',
+  propor_compra_reposicao: 'Proposta de compra',
   resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 

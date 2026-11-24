@@ -181,6 +181,8 @@ test('Fase B — provedores reais, webhook do WhatsApp e isolamento', { skip: !B
     const corpo = JSON.stringify(evento({ messages: [] }));
     assert.equal((await app.inject({ method: 'POST', url: `/integracoes/whatsapp/webhook/${registroA}`, headers: { 'content-type': 'application/json' }, payload: corpo })).statusCode, 401);
     assert.equal((await webhook(registroA, evento({ messages: [] }), 'segredo-errado')).statusCode, 401);
+    // Recusas ficam registradas para o monitoramento de segurança da NEXUS AI (WEBHOOK_INVALIDO).
+    assert.equal(await prisma.integracaoEvento.count({ where: { empresaId: A.empresa.id, provedor: 'whatsapp', codigoErro: 'ASSINATURA_INVALIDA' } }), 2);
   });
 
   await t.test('WhatsApp: mensagem recebida gravada uma vez (idempotente); outro número ignorado', async () => {

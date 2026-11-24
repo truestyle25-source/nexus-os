@@ -26,15 +26,18 @@ import {
   BookOpen,
   ShieldCheck,
   AlertTriangle,
+  Bell,
+  ClipboardCheck,
 } from "lucide-react";
 import api, { getToken } from "@/lib/api";
 import { mensagemDeErroApi } from "@/lib/erros-api";
 import { formatDateTime } from "@/lib/format";
 import { nexusAi, NOME_FERRAMENTA, novaChaveIA, limparTextoIA, type ResultadoIA } from "@/lib/nexus-ai";
 import { DocumentosEmpresa, MemoriaEmpresa } from "@/components/nexus-ai/Conhecimento";
+import { Aprovacoes, Automacoes, Inteligencia } from "@/components/nexus-ai/Automacoes";
 
 type Message = { id: string; role: "user" | "assistant"; text: string; erro?: boolean; detalhes?: ResultadoIA["detalhes"] };
-type Painel = null | "historico" | "memoria" | "documentos";
+type Painel = null | "historico" | "memoria" | "documentos" | "inteligencia" | "aprovacoes" | "automacoes";
 
 /** Selo de verificação e fontes (NEXUS AI): números conferidos com os dados das ferramentas. */
 function Verificacao({ d }: { d: ResultadoIA["detalhes"] | undefined }) {
@@ -637,6 +640,9 @@ export default function Page() {
           <button className={`nav-btn${painel === "historico" ? " active" : ""}`} onClick={() => abrirPainel("historico")}><History size={16} />Histórico</button>
           <button className={`nav-btn${painel === "memoria" ? " active" : ""}`} onClick={() => abrirPainel("memoria")}><Brain size={16} />Memória da empresa</button>
           <button className={`nav-btn${painel === "documentos" ? " active" : ""}`} onClick={() => abrirPainel("documentos")}><BookOpen size={16} />Documentos</button>
+          <button className={`nav-btn${painel === "inteligencia" ? " active" : ""}`} onClick={() => abrirPainel("inteligencia")}><Bell size={16} />Inteligência</button>
+          <button className={`nav-btn${painel === "aprovacoes" ? " active" : ""}`} onClick={() => abrirPainel("aprovacoes")}><ClipboardCheck size={16} />Aprovações</button>
+          <button className={`nav-btn${painel === "automacoes" ? " active" : ""}`} onClick={() => abrirPainel("automacoes")}><Zap size={16} />Automações</button>
           <button className="nav-btn active" style={{ marginTop: 8 }} onClick={handleSairIA}>
             <LogOut size={16} />
             Sair da IA
@@ -891,7 +897,7 @@ export default function Page() {
           painel ? (
             <div className="chat-area"><div className="chat-inner">
               <button className="pill" onClick={() => setPainel(null)} style={{ marginBottom: 8 }}><X size={14} />Voltar à conversa</button>
-              {painel === "memoria" ? <MemoriaEmpresa /> : painel === "documentos" ? <DocumentosEmpresa /> : (
+              {painel === "memoria" ? <MemoriaEmpresa /> : painel === "documentos" ? <DocumentosEmpresa /> : painel === "inteligencia" ? <Inteligencia onInvestigar={(p) => { setPainel(null); void handleSendMessage(p, "texto"); }} /> : painel === "aprovacoes" ? <Aprovacoes /> : painel === "automacoes" ? <Automacoes /> : (
                 <div style={{ marginTop: 16 }}>
                   {conversas === null ? <p style={{ fontSize: 13, color: "var(--nx-ink-3)" }}>Carregando…</p> : conversas.length === 0 ? <p style={{ fontSize: 13, color: "var(--nx-ink-3)" }}>Nenhuma conversa ainda.</p> : conversas.map((c) => (
                     <button key={c.id} className="nav-btn" onClick={() => void abrirConversa(c.id)} style={{ justifyContent: "space-between" }}>

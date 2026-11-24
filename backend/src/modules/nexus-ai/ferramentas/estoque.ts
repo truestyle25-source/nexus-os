@@ -47,16 +47,18 @@ async function saldosPorProduto(ctx: ContextoIA, filialId?: string | null, produ
 
 const filialArg = { filialId: { type: 'string' as const, description: 'ID da filial (opcional; sem ele, todas as filiais).' } };
 
-export const buscarProdutos: Ferramenta<{ termo: string; limite: number }> = {
+export const buscarProdutos: Ferramenta<{ termo?: string; limite: number; filialId?: string }> = {
   nome: 'buscar_produtos',
-  descricao: 'Procura produtos por nome, SKU ou código de barras. Devolve id, nome, SKU, unidade, se é kit e o saldo total. Use para descobrir o id antes das outras ferramentas.',
-  parametros: { type: 'object', properties: { termo: { type: 'string', description: 'Parte do nome, SKU ou código de barras.' }, limite: { type: 'integer', description: 'Máximo de resultados (1 a 20). Padrão 10.' } }, required: ['termo'] },
-  validar: z.object({ termo: z.string().trim().min(1).max(80), limite: z.coerce.number().int().min(1).max(20).default(10) }),
+  descricao: 'Procura produtos por nome, SKU ou código de barras (sem termo, lista os produtos em ordem alfabética). Devolve id, nome, SKU, unidade, se é kit e o saldo total; com filialId, também o saldo naquela filial. Use para descobrir o id ou para listar os saldos de vários produtos de uma filial numa única chamada.',
+  parametros: { type: 'object', properties: { termo: { type: 'string', description: 'Parte do nome, SKU ou código de barras (opcional).' }, limite: { type: 'integer', description: 'Máximo de resultados (1 a 50). Padrão 10.' }, ...filialArg } },
+  validar: z.object({ termo: z.string().trim().min(1).max(80).optional(), limite: z.coerce.number().int().min(1).max(50).default(10), filialId: z.string().max(40).optional() }),
   permissao: { modulo: 'produtos', acao: 'visualizar' },
-  async executar(ctx, { termo, limite }) {
+  async executar(ctx, { termo, limite, filialId }) {
+    const filial = await filialValida(ctx, filialId);
     const prods = await produtosPorTermo(ctx, termo, undefined, limite);
     const saldos = await saldosPorProduto(ctx, null, prods.map((p) => p.id));
-    return { termo, encontrados: prods.length, produtos: prods.map((p) => ({ id: p.id, nome: p.nome, sku: p.sku, unidade: p.unidade, ehKit: p.ehKit, status: p.status, saldoTotal: arred(saldos.get(p.id) ?? 0, 3) })) };
+    const naFilial = filial ? await saldosPorProduto(ctx, filial.id, prods.map((p) => p.id)) : null;
+    return { termo: termo ?? null, ...(filial ? { filial: filial.nome } : {}), encontrados: prods.length, produtos: prods.map((p) => ({ id: p.id, nome: p.nome, sku: p.sku, unidade: p.unidade, ehKit: p.ehKit, status: p.status, saldoTotal: arred(saldos.get(p.id) ?? 0, 3), ...(naFilial ? { saldoNaFilial: arred(naFilial.get(p.id) ?? 0, 3) } : {}) })) };
   },
 };
 

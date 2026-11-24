@@ -11,6 +11,7 @@ import { FERRAMENTAS_FINANCEIRO } from './ferramentas/financeiro.js';
 import { FERRAMENTAS_COMPRAS } from './ferramentas/compras.js';
 import { FERRAMENTAS_CONHECIMENTO } from './ferramentas/conhecimento.js';
 import { FERRAMENTAS_ANALISE } from './ferramentas/analise.js';
+import { FERRAMENTAS_ACOES } from './ferramentas/acoes.js';
 import type { Agente } from './tipos.js';
 
 let carregado = false;
@@ -29,6 +30,10 @@ const ANALISE: Record<string, string[]> = {
 };
 const PAPEL_ANALISE = 'Para previsões, anomalias e simulações use as ferramentas analíticas (previsao_demanda, previsao_caixa, detectar_anomalias, simular_preco quando disponíveis): informe o método e o período que a ferramenta devolver e deixe claro que previsão e simulação são estimativas.';
 
+/** Fase 06: agentes que podem PREPARAR propostas (nível 2). Nada executa sem aprovação. */
+const PROPOSTAS: Record<string, string[]> = { compras: ['propor_compra_reposicao'], estoque: ['propor_compra_reposicao'] };
+const PAPEL_PROPOSTA = 'Quando o usuário pedir para comprar/repor, PREPARE a proposta chamando propor_compra_reposicao (id do produto vindo de ferramenta; quantidade pedida pelo usuário ou calculada por ferramenta). Sem fornecedorId ela usa o fornecedor padrão do cadastro do produto — não deixe de chamá-la só porque comparar_fornecedores veio vazio; se ela devolver erro, explique o erro. Isso não cria o pedido: diga que a proposta ficou aguardando aprovação na tela Aprovações. Nunca diga que o pedido foi criado se o status não for EXECUTADA.';
+
 export const AGENTES: Agente[] = [
   {
     id: 'nexus', nome: 'NEXUS BRAIN', versao: '1.0',
@@ -37,6 +42,7 @@ export const AGENTES: Agente[] = [
       'Você é o NEXUS BRAIN, o analista-chefe da empresa. Para perguntas que envolvem mais de uma área (ex.: "por que o lucro caiu?"), consulte os especialistas com consultar_especialista, uma pergunta objetiva por especialista, no máximo 4 consultas.',
       'Use consultar_memoria para metas e políticas, buscar_documentos para procedimentos internos e investigacoes_anteriores para análises já feitas. Para perguntas simples de visão geral use visao_geral_empresa.',
       'Junte as conclusões em uma resposta organizada: causa principal, evidências (com os números exatamente como os especialistas trouxeram) e recomendações. Diga quando um especialista não pôde ser consultado por falta de permissão.',
+      'Pedidos de AÇÃO (preparar compra ou reposição) não são perguntas: consulte o especialista de compras repassando o pedido completo do usuário (produto, quantidade, fornecedor) começando por "Prepare a proposta:". Na resposta, diga se a proposta ficou aguardando aprovação na tela Aprovações ou qual erro impediu.',
       BASE_LEITURA,
     ].join('\n'),
     ferramentas: ['consultar_especialista', 'consultar_memoria', 'buscar_documentos', 'investigacoes_anteriores', 'visao_geral_empresa', 'listar_filiais'],
@@ -86,7 +92,7 @@ export const AGENTES: Agente[] = [
     descricao: 'Compras por status e fornecedor, pedidos pendentes e atrasados, evolução de custo e comparação de fornecedores — somente leitura.',
     papel: [
       'Você analisa compras e fornecedores. Consulte: resumo_compras, compras_pendentes (atrasos), historico_custo_produto (evolução do preço pago), comparar_fornecedores (preço, prazo, pedido mínimo) e sugestao_reposicao (quanto comprar).',
-      'Para um produto citado pelo nome, use buscar_produtos para obter o id. Recomendações de compra são sugestões: o pedido é criado pelo usuário no módulo Compras.',
+      'Para um produto citado pelo nome, use buscar_produtos para obter o id. Quando pedirem para comprar ou repor, prepare a proposta com propor_compra_reposicao: o pedido só é criado depois da aprovação de um usuário.',
       BASE_LEITURA,
     ].join('\n'),
     ferramentas: ['listar_filiais', 'buscar_produtos', 'resumo_compras', 'compras_pendentes', 'historico_custo_produto', 'comparar_fornecedores', 'sugestao_reposicao'],
@@ -97,7 +103,14 @@ export const AGENTES: Agente[] = [
 export function carregarCatalogo() {
   if (carregado) return;
   carregado = true;
-  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS, ...FERRAMENTAS_CONHECIMENTO, ...FERRAMENTAS_ANALISE]);
+  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS, ...FERRAMENTAS_CONHECIMENTO, ...FERRAMENTAS_ANALISE, ...FERRAMENTAS_ACOES]);
+  for (const a of AGENTES) {
+    const extras = PROPOSTAS[a.id];
+    if (!extras) continue;
+    a.ferramentas.push(...extras.filter((f) => !a.ferramentas.includes(f)));
+    a.papel = a.papel.split(BASE_LEITURA).join('Você não cria, altera nem exclui nada diretamente: ações com efeito só como proposta para aprovação humana.') + `\n${PAPEL_PROPOSTA}`;
+    a.autonomiaMax = 2;
+  }
   for (const a of AGENTES) {
     const extras = ANALISE[a.id] ?? [];
     if (!extras.length) continue;

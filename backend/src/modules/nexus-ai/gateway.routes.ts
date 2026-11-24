@@ -18,6 +18,8 @@ import { contexto, iniciarInvestigacao, montarResultado, retomarInvestigacao } f
 import { situacaoConsumo } from './consumo.js';
 import { provedorAtual } from './provedores/roteador.js';
 import { estadoCircuito } from './provedores/gemini.js';
+import { acaoAprovavel, acoesAprovaveis, decidir, listarAprovacoes, listarAutomacoes, salvarAutomacao } from './aprovacoes.service.js';
+import { DESCRICAO_REGRAS } from './eventos/regras.js';
 import { TIPOS_MEMORIA, adicionarDocumento, excluirDocumento, excluirMemoria, indexarDocumento, listarDocumentos, listarMemoria, salvarMemoria } from './conhecimento.service.js';
 
 const porEmpresa = (req: any) => (req.user?.empresaId ? `e:${req.user.empresaId}` : null);
@@ -81,5 +83,53 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
   });
   app.post(`${B}/documentos/reindexar`, { preHandler: [auth, administrar] }, async (req: any) => ({ vetorizados: await indexarDocumento(req.user.empresaId) }));
   app.delete(`${B}/documentos/:id`, { preHandler: [auth, administrar] }, async (req: any) => excluirDocumento(req.user.empresaId, req.params.id));
+  // Fase 06 — Inteligência (insights), Aprovações e Automações.
+  // Insights e propostas só aparecem para quem tem permissão de ver o módulo de origem.
+  const modulosVisiveis = async (usuarioId: string, modulos: string[]) => {
+    const r = await Promise.all([...new Set(modulos)].map(async (m) => [m, await temPermissao(usuarioId, m as any, 'visualizar')] as const));
+    return new Set(r.filter(([, ok]) => ok).map(([m]) => m));
+  };
+  app.get(`${B}/insights`, { preHandler: [auth, usar] }, async (req: any) => {
+    const { status } = z.object({ status: z.enum(['ABERTO', 'LIDO', 'DESCARTADO']).optional() }).parse(req.query ?? {});
+    const itens = await prisma.aIInsight.findMany({ where: { empresaId: req.user.empresaId, ...(status ? { status } : { status: { not: 'DESCARTADO' } }) }, orderBy: { createdAt: 'desc' }, take: 200 });
+    const ok = await modulosVisiveis(req.user.id, itens.map((i) => i.modulo));
+    return { insights: itens.filter((i) => ok.has(i.modulo)) };
+  });
+  app.post(`${B}/insights/:id/status`, { preHandler: [auth, usar] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().max(40) }).parse(req.params);
+    const { status } = z.object({ status: z.enum(['ABERTO', 'LIDO', 'DESCARTADO']) }).parse(req.body ?? {});
+    const i = await prisma.aIInsight.findFirst({ where: { id, empresaId: req.user.empresaId } });
+    if (!i || !(await temPermissao(req.user.id, i.modulo as any, 'visualizar'))) throw NaoEncontrado('Insight não encontrado.');
+    return prisma.aIInsight.update({ where: { id }, data: { status } });
+  });
+  app.get(`${B}/aprovacoes`, { preHandler: [auth, usar] }, async (req: any) => {
+    const { status } = z.object({ status: z.enum(['PENDENTE', 'EXECUTADA', 'REJEITADA', 'FALHOU', 'EXPIRADA']).optional() }).parse(req.query ?? {});
+    const itens = await listarAprovacoes(req.user.empresaId, status);
+    const ok = await modulosVisiveis(req.user.id, itens.map((a) => acaoAprovavel(a.acao)?.permissao.modulo ?? 'ia'));
+    const podeDecidir = new Map<string, boolean>();
+    for (const a of acoesAprovaveis()) podeDecidir.set(a.id, await temPermissao(req.user.id, a.permissao.modulo, a.permissao.acao));
+    return { aprovacoes: itens.filter((a) => ok.has(acaoAprovavel(a.acao)?.permissao.modulo ?? 'ia')).map((a) => ({ ...a, podeDecidir: podeDecidir.get(a.acao) ?? false })) };
+  });
+  app.post(`${B}/aprovacoes/:id/:decisao`, { preHandler: [auth, usar] }, async (req: any) => {
+    const p = z.object({ id: z.string().max(40), decisao: z.enum(['aprovar', 'rejeitar']) }).parse(req.params);
+    const { motivo } = z.object({ motivo: z.string().max(300).optional() }).parse(req.body ?? {});
+    return decidir(req.user.empresaId, req.user.id, p.id, p.decisao, motivo);
+  });
+  app.get(`${B}/automacoes`, { preHandler: [auth, usar] }, async (req: any) => {
+    const desde = new Date(Date.now() - 7 * 86_400_000);
+    const porTipo = await prisma.aIEvento.groupBy({ by: ['tipo'], where: { empresaId: req.user.empresaId, createdAt: { gte: desde } }, _count: { _all: true } });
+    const pendentes = await prisma.aIEvento.count({ where: { empresaId: req.user.empresaId, status: { in: ['PENDENTE', 'PROCESSANDO'] } } });
+    const cont = new Map(porTipo.map((t) => [t.tipo, t._count._all]));
+    return {
+      regras: DESCRICAO_REGRAS.map((r) => ({ ...r, eventos7dias: cont.get(r.tipo) ?? 0 })),
+      insightsDiarios: { eventos7dias: cont.get('ANOMALIA') ?? 0, regra: 'Uma vez por dia: vendas, cancelamentos, despesas e perdas dos últimos 7 dias comparados com as 8 semanas anteriores.' },
+      filaPendente: pendentes,
+      acoes: await listarAutomacoes(req.user.empresaId),
+    };
+  });
+  app.put(`${B}/automacoes/:acao`, { preHandler: [auth, administrar] }, async (req: any) => {
+    const { acao } = z.object({ acao: z.string().max(60) }).parse(req.params);
+    const d = z.object({ ativa: z.boolean(), valorMaxCentavos: z.number().int().min(0).max(100_000_000).nullable() }).parse(req.body ?? {});
+    return { acoes: await salvarAutomacao(req.user.empresaId, req.user.id, acao, d) };
+  });
 }
-

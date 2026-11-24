@@ -175,7 +175,12 @@ export async function whatsappWebhookRoutes(app: FastifyInstance): Promise<void>
     if (!p.success) return reply.code(404).send();
     const cred = await verificarAssinaturaWebhook(p.data.registroId);
     const bruto: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-    if (!cred || !assinaturaValida(bruto, req.headers['x-hub-signature-256'], cred.segredos.appSecret)) return reply.code(401).send();
+    if (!cred) return reply.code(401).send();
+    if (!assinaturaValida(bruto, req.headers['x-hub-signature-256'], cred.segredos.appSecret)) {
+      // Registrado para o monitoramento de segurança da NEXUS AI (regra WEBHOOK_INVALIDO).
+      await registrarEvento({ empresaId: cred.empresaId, provedor: 'whatsapp', operacao: 'SINCRONIZAR', ok: false, codigoErro: 'ASSINATURA_INVALIDA', mensagem: 'Aviso de webhook recusado: assinatura inválida.' }).catch(() => undefined);
+      return reply.code(401).send();
+    }
     let payload: unknown;
     try { payload = JSON.parse(bruto.toString('utf8')); } catch { return reply.code(400).send(); }
     const inicio = Date.now();
@@ -209,7 +214,11 @@ export async function cobrancasWebhookRoutes(app: FastifyInstance): Promise<void
     const cred = await credenciaisPorRegistro(p.data.registroId, 'ASAAS');
     const recebido = Buffer.from(String(req.headers['asaas-access-token'] ?? ''));
     const esperado = Buffer.from(cred?.segredos.webhookToken ?? '');
-    if (!cred || !esperado.length || recebido.length !== esperado.length || !timingSafeEqual(recebido, esperado)) return reply.code(401).send();
+    if (!cred) return reply.code(401).send();
+    if (!esperado.length || recebido.length !== esperado.length || !timingSafeEqual(recebido, esperado)) {
+      await registrarEvento({ empresaId: cred.empresaId, provedor: 'asaas', operacao: 'SINCRONIZAR', ok: false, codigoErro: 'ASSINATURA_INVALIDA', mensagem: 'Aviso de webhook recusado: token inválido.' }).catch(() => undefined);
+      return reply.code(401).send();
+    }
     const evento = String(req.body?.event ?? '');
     const idPagamento = String(req.body?.payment?.id ?? '');
     if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED_IN_CASH'].includes(evento) && idPagamento) {

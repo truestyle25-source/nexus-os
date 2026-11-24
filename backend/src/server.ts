@@ -73,6 +73,7 @@ import { iniciarAgendadorML, pararAgendadorML } from './modules/integracoes/agen
 import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integracoes/shopee/shopee-scheduler.js';
 import { iniciarAgendadorIntegracoes, pararAgendadorIntegracoes } from './modules/integracoes/central/integracoes-agendador.js';
 import { nexusAiRoutes } from './modules/nexus-ai/gateway.routes.js';
+import { iniciarMonitorNexusAI, pararMonitorNexusAI } from './modules/nexus-ai/eventos/agendador.js';
 
 dotenv.config();
 
@@ -309,6 +310,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   void comoSistema('agendador:shopee', () => iniciarAgendadorShopee());
   // Central de Integrações: pedidos WooCommerce automáticos e retenção (LGPD). INTEGRACOES_AGENDADOR=false desliga.
   void comoSistema('agendador:integracoes', () => iniciarAgendadorIntegracoes());
+  // NEXUS AI: monitoramento de segurança determinístico (funciona sem o provedor de IA). NEXUS_AI_MONITOR=false desliga.
+  void comoSistema('agendador:nexus-ai-monitor', () => iniciarMonitorNexusAI());
 
   async function encerrarComCuidado(sinal: string) {
     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);
@@ -316,6 +319,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     await pararAgendadorML();
     await pararAgendadorShopee();
     await pararAgendadorIntegracoes();
+    pararMonitorNexusAI();
     await app.close();
     await prisma.$disconnect();
   }

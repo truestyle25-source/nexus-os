@@ -56,6 +56,10 @@ test('NEXUS AI — Agente de Estoque (ferramentas + avaliação)', { skip: !BANC
       assert.equal(r.porFilial.find((x: any) => x.filial === 'Matriz').situacao, 'Abaixo do mínimo');
       const b = await f('buscar_produtos', { termo: 'farinha' });
       assert.equal(b.encontrados, 1, 'produto de outra empresa não aparece'); assert.equal(b.produtos[0].saldoTotal, 55);
+      const naMatriz = await f('buscar_produtos', { filialId: A.id, limite: 50 });
+      assert.equal(naMatriz.filial, 'Matriz'); assert.ok(naMatriz.encontrados >= 1, 'sem termo lista os produtos');
+      const farMatriz = naMatriz.produtos.find((p: any) => p.id === b.produtos[0].id);
+      assert.equal(farMatriz.saldoTotal, 55); assert.ok(farMatriz.saldoNaFilial < 55, 'saldo só da filial pedida');
     });
 
     await t.test('A2 abaixo do mínimo (total e por filial)', async () => {

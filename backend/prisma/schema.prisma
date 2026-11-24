@@ -163,6 +163,10 @@ model Empresa {
   aiLimite                 AILimite?
   aiMemorias               AIMemoria[]
   aiDocumentos             AIDocumento[]
+  aiEventos                AIEvento[]
+  aiInsights               AIInsight[]
+  aiAprovacoes             AIAprovacao[]
+  aiAutomacoes             AIAutomacao[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -2032,6 +2036,8 @@ enum TipoAlerta {
   HORA_EXTRA
   ANOMALIA_IA
   COMPRA_PENDENTE
+  SEGURANCA
+  INTEGRACAO
 }
 
 enum PrioridadeAlerta {
@@ -3820,14 +3826,107 @@ model AIDocumento {
 }
 
 model AITrecho {
-  id          String      @id @default(cuid())
+  id          String                      @id @default(cuid())
   empresaId   String
   documentoId String
-  documento   AIDocumento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  documento   AIDocumento                 @relation(fields: [documentoId], references: [id], onDelete: Cascade)
   ordem       Int
-  texto       String      @db.Text
+  texto       String                      @db.Text
   /// Vetor semântico (pgvector, 768 dimensões, gemini-embedding-001). Opcional.
   embedding   Unsupported("vector(768)")?
 
   @@index([empresaId, documentoId])
+}
+
+// --- NEXUS AI — Fase 06: eventos, insights, aprovações e automações ---------------------
+// Outbox de eventos de negócio e de segurança. A DETECÇÃO é determinística (regras no código,
+// monitor.ts) e grava aqui com chave única por evento; o worker (lease) processa uma única vez,
+// cria o Alerta e o insight mesmo com o provedor de IA fora do ar.
+model AIEvento {
+  id            String    @id @default(cuid())
+  empresaId     String
+  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo          String // LOGIN_FALHO | PERMISSAO_ALTERADA | CANCELAMENTOS | AJUSTE_ESTOQUE | INTEGRACAO_FALHA | WEBHOOK_INVALIDO | MANIPULACAO_IA | ANOMALIA
+  chave         String // idempotência: o mesmo fato nunca vira dois eventos
+  severidade    String    @default("MEDIA") // BAIXA | MEDIA | ALTA | CRITICA
+  dados         Json
+  status        String    @default("PENDENTE") // PENDENTE | PROCESSANDO | CONCLUIDO | FALHOU
+  tentativas    Int       @default(0)
+  leaseExpiraEm DateTime?
+  instancia     String?
+  erro          String?
+  processadoEm  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([empresaId, chave])
+  @@index([status, leaseExpiraEm])
+  @@index([empresaId, createdAt])
+}
+
+// Descoberta da IA ou do monitor (ligada ao Alerta). `modulo` restringe a leitura a quem tem
+// <modulo>.visualizar. Evidências são os números calculados pelas regras.
+model AIInsight {
+  id         String   @id @default(cuid())
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  eventoId   String?  @unique
+  alertaId   String?
+  origem     String   @default("MONITOR") // MONITOR | ROTINA | IA
+  tipo       String
+  modulo     String
+  severidade String   @default("MEDIA")
+  titulo     String
+  descricao  String   @db.Text
+  evidencias Json?
+  periodo    String?
+  status     String   @default("ABERTO") // ABERTO | LIDO | DESCARTADO
+  createdAt  DateTime @default(now())
+
+  @@index([empresaId, status, createdAt])
+}
+
+// Ação preparada pela IA aguardando decisão humana (nível 2) ou liberada por política (nível 3).
+// Aprovar duas vezes não executa duas vezes: a transição PENDENTE→EXECUTANDO é atômica.
+model AIAprovacao {
+  id             String    @id @default(cuid())
+  empresaId      String
+  empresa        Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  acao           String // ex.: criar_compra_rascunho
+  titulo         String
+  proposta       Json // parâmetros validados da ação
+  evidencias     Json?
+  impacto        String?
+  valorCentavos  Int?
+  nivel          Int       @default(2)
+  status         String    @default("PENDENTE") // PENDENTE | EXECUTANDO | EXECUTADA | REJEITADA | FALHOU | EXPIRADA
+  solicitadoPor  String?
+  execucaoId     String?
+  insightId      String?
+  decididoPor    String? // usuário ou "politica:<acao>"
+  decididoEm     DateTime?
+  motivo         String?
+  resultado      Json?
+  erro           String?
+  idempotencyKey String
+  expiraEm       DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([empresaId, idempotencyKey])
+  @@index([empresaId, status, createdAt])
+}
+
+// Política de automação controlada (nível 3) por empresa e ação. Desligada por padrão.
+model AIAutomacao {
+  id               String   @id @default(cuid())
+  empresaId        String
+  empresa          Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  acao             String
+  ativa            Boolean  @default(false)
+  valorMaxCentavos Int?
+  atualizadoPor    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([empresaId, acao])
 }
