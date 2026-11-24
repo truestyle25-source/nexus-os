@@ -54,6 +54,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Segredo GEMINI_API_KEY configurado
+        # Roda antes do checkout: a pasta backend (padrão do job) ainda não existe.
+        working-directory: .
         run: |
           if [ -z "$GEMINI_API_KEY" ]; then
             echo "::error::Segredo GEMINI_API_KEY não configurado no repositório: a avaliação real da NEXUS AI não pode rodar."
