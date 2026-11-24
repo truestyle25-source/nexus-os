@@ -12,6 +12,9 @@ type Aba = 'conversar' | 'historico';
 const SUGESTOES: Record<string, string[]> = {
   estoque: ['Quais produtos estão abaixo do mínimo?', 'Quais produtos estão em ruptura nos últimos 30 dias?', 'O que está parado há 60 dias e quanto vale?', 'Quanto devo repor para cobrir 15 dias?'],
   geral: ['Me dê um resumo da empresa nos últimos 30 dias.'],
+  comercial: ['Como foram as vendas nos últimos 30 dias comparadas com o período anterior?', 'Quais produtos têm a menor margem?', 'Quem são os clientes que mais compram?'],
+  financeiro: ['Como está o fluxo de caixa das próximas 4 semanas?', 'Quais contas a receber estão vencidas?', 'Por que o resultado do mês mudou?'],
+  compras: ['Existe algum pedido de compra atrasado?', 'Qual fornecedor tem o melhor preço para este produto?', 'O custo de algum insumo subiu?'],
 };
 
 function Detalhes({ d }: { d: ResultadoIA['detalhes'] }) {

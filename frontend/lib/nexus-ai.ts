@@ -26,6 +26,9 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   visao_geral_empresa: 'Visão geral da empresa', listar_filiais: 'Filiais', buscar_produtos: 'Busca de produtos', saldo_estoque: 'Saldo de estoque',
   produtos_abaixo_minimo: 'Produtos abaixo do mínimo', movimentacoes_estoque: 'Movimentações de estoque', giro_estoque: 'Giro e cobertura',
   produtos_parados: 'Produtos parados', rupturas_estoque: 'Rupturas', sugestao_reposicao: 'Sugestão de reposição', composicao_kit: 'Composição de kit',
+  resumo_vendas: 'Resumo de vendas', vendas_por_dia: 'Vendas por dia', vendas_por_produto: 'Vendas por produto', margem_por_produto: 'Margem por produto', vendas_por_vendedor: 'Vendas por vendedor', clientes_principais: 'Clientes',
+  resumo_financeiro: 'Resumo financeiro', contas_vencidas: 'Contas vencidas', fluxo_caixa_projetado: 'Fluxo de caixa projetado', despesas_por_categoria: 'Despesas por categoria', resultado_periodo: 'Resultado (DRE)',
+  resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 
 export const novaChaveIA = () => `ia-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
