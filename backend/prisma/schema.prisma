@@ -161,6 +161,8 @@ model Empresa {
   aiExecucoes              AIExecucao[]
   aiConsumos               AIConsumo[]
   aiLimite                 AILimite?
+  aiMemorias               AIMemoria[]
+  aiDocumentos             AIDocumento[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -3715,7 +3717,9 @@ model AIExecucao {
   usuarioId      String?
   conversaId     String?
   agente         String
-  origem         String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO
+  // Investigação do NEXUS BRAIN que acionou esta (especialista consultado); nulo = investigação principal.
+  execucaoPaiId  String?
+  origem         String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO | SUBAGENTE
   entrada        String                 @db.Text
   status         String // EXECUTANDO | CONCLUIDA | FALHOU | AGUARDANDO_PROVEDOR | LIMITE | BLOQUEADA
   etapas         Json? // histórico de passos (chamadas de ferramenta e resultados) para retomada
@@ -3775,4 +3779,53 @@ model AILimite {
   custoMesCentavos     Int?
   bloqueadoManualmente Boolean  @default(false)
   atualizadoEm         DateTime @updatedAt
+}
+
+// ============================================================================
+// NEXUS AI — Fase 04: memória empresarial, base documental e hierarquia de investigações.
+// ============================================================================
+
+// Memória autorizada da empresa (metas, políticas, critérios, decisões). Editável e
+// excluível; o conteúdo é DADO para a IA (nunca instrução) e passa pela proteção contra manipulação.
+model AIMemoria {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo      String // META | POLITICA | CRITERIO | PREFERENCIA | DECISAO
+  titulo    String
+  conteudo  String   @db.Text
+  ativa     Boolean  @default(true)
+  criadoPor String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([empresaId, ativa])
+}
+
+// Base documental (manuais, procedimentos, políticas). Texto dividido em trechos para busca
+// contextual (busca de texto do PostgreSQL em português). `modulo` restringe a leitura a quem
+// tem <modulo>.visualizar.
+model AIDocumento {
+  id         String     @id @default(cuid())
+  empresaId  String
+  empresa    Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  titulo     String
+  modulo     String?
+  caracteres Int
+  criadoPor  String?
+  createdAt  DateTime   @default(now())
+  trechos    AITrecho[]
+
+  @@index([empresaId])
+}
+
+model AITrecho {
+  id          String      @id @default(cuid())
+  empresaId   String
+  documentoId String
+  documento   AIDocumento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  ordem       Int
+  texto       String      @db.Text
+
+  @@index([empresaId, documentoId])
 }

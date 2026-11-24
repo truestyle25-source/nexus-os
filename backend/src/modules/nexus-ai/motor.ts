@@ -110,8 +110,9 @@ export async function retomarInvestigacao(ctx: ContextoIA, execucaoId: string): 
   return executarLaco(ctx, a, ex.id, base, (ex.etapas ?? []) as Etapa[]);
 }
 
-async function executarLaco(ctx: ContextoIA, a: Agente, execucaoId: string, base: MensagemIA[], etapasIniciais: Etapa[]): Promise<ResultadoInvestigacao> {
+async function executarLaco(ctxBase: ContextoIA, a: Agente, execucaoId: string, base: MensagemIA[], etapasIniciais: Etapa[]): Promise<ResultadoInvestigacao> {
   const inicio = Date.now();
+  const ctx: ContextoIA = { ...ctxBase, execucaoId };
   const etapas: Etapa[] = [...etapasIniciais];
   const ferramentasDoAgente = a.ferramentas.map(buscarFerramenta).filter(Boolean) as NonNullable<ReturnType<typeof buscarFerramenta>>[];
   const prov = provedorAtual();
@@ -199,4 +200,24 @@ export async function montarResultado(execucaoId: string): Promise<ResultadoInve
     resposta: ex.resposta ?? (ex.status === 'AGUARDANDO_PROVEDOR' ? 'O provedor de IA está indisponível no momento. A investigação foi guardada e pode ser retomada sem refazer o que já foi feito.' : ex.status === 'FALHOU' ? 'A investigação não pôde ser concluída.' : null),
     detalhes: { fontes: ex.ferramentas.filter((f) => f.ok).map((f) => ({ ferramenta: f.ferramenta, args: f.entrada })), verificacao: (ex.verificacao as any) ?? null, limitacoes, agente: ex.agente, modelo: ex.modelo },
   };
+}
+
+/**
+ * Especialista consultado pelo NEXUS BRAIN: vira uma investigação FILHA (ligada pela
+ * execucaoPaiId), com a mesma empresa, o mesmo usuário e as MESMAS permissões. Um
+ * especialista não consulta outro (profundidade máxima 1). Devolve a resposta e os dados
+ * das ferramentas — que entram na verificação de números do BRAIN.
+ */
+export async function executarEspecialista(ctx: ContextoIA, agenteId: string, pergunta: string) {
+  if ((ctx.profundidade ?? 0) >= 1) return { erro: 'Um especialista não pode consultar outro especialista.' };
+  const a = buscarAgente(agenteId);
+  if (!a || a.id === 'nexus') return { erro: `Especialista "${agenteId}" não existe.` };
+  if (!ctx.sistema && (!ctx.usuarioId || !(await temPermissao(ctx.usuarioId, a.permissaoMinima.modulo, a.permissaoMinima.acao)))) {
+    return { erro: `O usuário não tem permissão para o ${a.nome}; essa parte da análise não pode ser feita.` };
+  }
+  if (ctx.execucaoId && (await prisma.aIExecucao.count({ where: { execucaoPaiId: ctx.execucaoId } })) >= 4) return { erro: 'Limite de 4 consultas a especialistas nesta investigação.' };
+  const filho = await prisma.aIExecucao.create({ data: { empresaId: ctx.empresaId, usuarioId: ctx.usuarioId, agente: a.id, origem: 'SUBAGENTE', execucaoPaiId: ctx.execucaoId ?? null, entrada: pergunta.slice(0, 2000), status: 'EXECUTANDO', etapas: [] } });
+  const r = await executarLaco({ ...ctx, profundidade: 1 }, a, filho.id, [{ tipo: 'usuario', texto: pergunta }], []);
+  const dados = await prisma.aIExecucaoFerramenta.findMany({ where: { execucaoId: filho.id, ok: true }, orderBy: { createdAt: 'asc' }, select: { ferramenta: true, resultado: true } });
+  return { especialista: a.nome, status: r.status, resposta: r.resposta, dados: dados.map((d) => ({ ferramenta: d.ferramenta, resultado: d.resultado })) };
 }

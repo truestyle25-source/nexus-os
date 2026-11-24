@@ -1,15 +1,17 @@
 'use client';
-// Central NEXUS AI — Conversar e Histórico (Fase 02). Toda resposta mostra as fontes (ferramentas
+// Central NEXUS AI — Conversar, Histórico, Memória e Documentos (Fases 02–04). Toda resposta mostra as fontes (ferramentas
 // consultadas), se os números foram conferidos com os dados e as limitações. Visual nos tokens
 // --nx-* do sistema (mesma linguagem da Central de Integrações).
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bot, CheckCircle2, History, Loader2, MessageSquarePlus, RefreshCw, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertTriangle, BookOpen, Bot, Brain, CheckCircle2, History, Loader2, MessageSquarePlus, RefreshCw, Send, ShieldCheck, Sparkles } from 'lucide-react';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatDateTime } from '@/lib/format';
+import { DocumentosEmpresa, MemoriaEmpresa } from '@/components/nexus-ai/Conhecimento';
 import { nexusAi, NOME_FERRAMENTA, novaChaveIA, type AgenteIA, type ConsumoIA, type MensagemIA, type ResultadoIA } from '@/lib/nexus-ai';
 
-type Aba = 'conversar' | 'historico';
+type Aba = 'conversar' | 'historico' | 'memoria' | 'documentos';
 const SUGESTOES: Record<string, string[]> = {
+  nexus: ['Por que o lucro caiu nos últimos 30 dias?', 'Quais são os maiores riscos da empresa agora?', 'Estamos dentro das metas da empresa?', 'O que diz nosso procedimento de recebimento?'],
   estoque: ['Quais produtos estão abaixo do mínimo?', 'Quais produtos estão em ruptura nos últimos 30 dias?', 'O que está parado há 60 dias e quanto vale?', 'Quanto devo repor para cobrir 15 dias?'],
   geral: ['Me dê um resumo da empresa nos últimos 30 dias.'],
   comercial: ['Como foram as vendas nos últimos 30 dias comparadas com o período anterior?', 'Quais produtos têm a menor margem?', 'Quem são os clientes que mais compram?'],
@@ -34,7 +36,7 @@ export default function NexusAiPage() {
   const [aba, setAba] = useState<Aba>('conversar');
   const [agentes, setAgentes] = useState<AgenteIA[]>([]);
   const [provedorOk, setProvedorOk] = useState(true);
-  const [agente, setAgente] = useState('estoque');
+  const [agente, setAgente] = useState('nexus');
   const [conversaId, setConversaId] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<MensagemIA[]>([]);
   const [pergunta, setPergunta] = useState('');
@@ -95,8 +97,8 @@ export default function NexusAiPage() {
         </div>
       </div>
 
-      <div className="mt-5 flex gap-4 border-b border-[var(--nx-border)]" role="tablist">
-        {([['conversar', 'Conversar', Bot], ['historico', 'Histórico', History]] as const).map(([id, rot, Ic]) => (
+      <div className="mt-5 flex gap-4 overflow-x-auto border-b border-[var(--nx-border)]" role="tablist">
+        {([['conversar', 'Conversar', Bot], ['historico', 'Histórico', History], ['memoria', 'Memória', Brain], ['documentos', 'Documentos', BookOpen]] as const).map(([id, rot, Ic]) => (
           <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)} className={`h-10 inline-flex items-center gap-1.5 text-[13px] font-medium border-b-2 ${aba === id ? 'border-[var(--nx-accent)] text-[var(--nx-ink)]' : 'border-transparent text-[var(--nx-ink-3)] hover:text-[var(--nx-ink-2)]'}`}><Ic className="w-4 h-4" />{rot}</button>
         ))}
       </div>
@@ -142,7 +144,7 @@ export default function NexusAiPage() {
             <button type="submit" disabled={enviando || !pergunta.trim() || !agenteAtual?.disponivel || consumo?.bloqueado} className="h-11 px-4 rounded-[10px] bg-[var(--nx-accent)] text-[13px] font-medium text-[var(--nx-ink)] inline-flex items-center gap-2 disabled:opacity-50"><Send className="w-4 h-4" /><span className="hidden sm:inline">Perguntar</span></button>
           </form>
         </div>
-      ) : (
+      ) : aba === 'memoria' ? <MemoriaEmpresa /> : aba === 'documentos' ? <DocumentosEmpresa /> : (
         <div className="mt-4 rounded-[16px] border border-[var(--nx-border)] bg-[var(--nx-surface)] p-4">
           {conversas === null ? <p className="text-[13px] text-[var(--nx-ink-3)]">Carregando…</p> : conversas.length === 0 ? <p className="text-[13px] text-[var(--nx-ink-3)]">Nenhuma conversa ainda.</p> : (
             <ul className="divide-y divide-[var(--nx-border)]">

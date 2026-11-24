@@ -11,6 +11,10 @@ export interface ResultadoIA {
 export interface MensagemIA { id: string; papel: 'USUARIO' | 'NEXUS'; conteudo: string; detalhes: ResultadoIA['detalhes']; execucaoId: string | null; createdAt: string }
 export interface ConsumoIA { uso: { execucoes: number; tokensEntrada: number; tokensSaida: number; custoCentavos: number }; limites: { execucoesMes: number; custoMesCentavos: number; bloqueadoManualmente: boolean }; percentual: number; alerta: boolean; bloqueado: boolean; motivo: string | null }
 
+export interface MemoriaIA { id: string; tipo: string; titulo: string; conteudo: string; updatedAt: string }
+export interface DocumentoIA { id: string; titulo: string; modulo: string | null; caracteres: number; trechos: number; createdAt: string }
+export const TIPOS_MEMORIA: [string, string][] = [['META', 'Meta'], ['POLITICA', 'Política'], ['CRITERIO', 'Critério'], ['PREFERENCIA', 'Preferência'], ['DECISAO', 'Decisão']];
+
 const B = '/api/v1/nexus-ai';
 export const nexusAi = {
   agentes: () => api.get<{ agentes: AgenteIA[]; provedor: { nome: string; configurado: boolean; circuito: { aberto: boolean } } }>(`${B}/agentes`).then((r) => r.data),
@@ -19,6 +23,12 @@ export const nexusAi = {
   conversas: () => api.get<{ conversas: { id: string; titulo: string; updatedAt: string }[] }>(`${B}/conversas`).then((r) => r.data.conversas),
   conversa: (id: string) => api.get<{ id: string; titulo: string; mensagens: MensagemIA[] }>(`${B}/conversas/${id}`).then((r) => r.data),
   consumo: () => api.get<ConsumoIA>(`${B}/consumo`).then((r) => r.data),
+  memoria: () => api.get<{ itens: MemoriaIA[] }>(`${B}/memoria`).then((r) => r.data.itens),
+  salvarMemoria: (d: { tipo: string; titulo: string; conteudo: string }) => api.post<MemoriaIA>(`${B}/memoria`, d).then((r) => r.data),
+  excluirMemoria: (id: string) => api.delete(`${B}/memoria/${id}`).then((r) => r.data),
+  documentos: () => api.get<{ documentos: DocumentoIA[] }>(`${B}/documentos`).then((r) => r.data.documentos),
+  adicionarDocumento: (d: { titulo: string; conteudo: string }) => api.post(`${B}/documentos`, d).then((r) => r.data),
+  excluirDocumento: (id: string) => api.delete(`${B}/documentos/${id}`).then((r) => r.data),
 };
 
 /** Nomes amigáveis das ferramentas (fontes mostradas ao usuário). */
@@ -28,6 +38,7 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   produtos_parados: 'Produtos parados', rupturas_estoque: 'Rupturas', sugestao_reposicao: 'Sugestão de reposição', composicao_kit: 'Composição de kit',
   resumo_vendas: 'Resumo de vendas', vendas_por_dia: 'Vendas por dia', vendas_por_produto: 'Vendas por produto', margem_por_produto: 'Margem por produto', vendas_por_vendedor: 'Vendas por vendedor', clientes_principais: 'Clientes',
   resumo_financeiro: 'Resumo financeiro', contas_vencidas: 'Contas vencidas', fluxo_caixa_projetado: 'Fluxo de caixa projetado', despesas_por_categoria: 'Despesas por categoria', resultado_periodo: 'Resultado (DRE)',
+  consultar_especialista: 'Consulta a especialista', consultar_memoria: 'Memória da empresa', buscar_documentos: 'Documentos internos', investigacoes_anteriores: 'Investigações anteriores',
   resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 

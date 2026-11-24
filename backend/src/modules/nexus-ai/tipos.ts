@@ -17,6 +17,10 @@ export interface ContextoIA {
   permissoes: Map<string, boolean>;
   /** Permissões efetivas para execuções de sistema (eventos): só o que o agente declara. */
   sistema?: boolean;
+  /** Investigação em andamento (o BRAIN usa para ligar os especialistas consultados). */
+  execucaoId?: string;
+  /** 0 = investigação principal; 1 = especialista consultado pelo BRAIN (não consulta outros). */
+  profundidade?: number;
 }
 
 /** Esquema de parâmetros no formato aceito pelos provedores (subconjunto de JSON Schema/OpenAPI). */

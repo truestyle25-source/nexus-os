@@ -9,13 +9,28 @@ import { FERRAMENTAS_ESTOQUE } from './ferramentas/estoque.js';
 import { FERRAMENTAS_COMERCIAL } from './ferramentas/comercial.js';
 import { FERRAMENTAS_FINANCEIRO } from './ferramentas/financeiro.js';
 import { FERRAMENTAS_COMPRAS } from './ferramentas/compras.js';
+import { FERRAMENTAS_CONHECIMENTO } from './ferramentas/conhecimento.js';
 import type { Agente } from './tipos.js';
 
 let carregado = false;
 
 const BASE_LEITURA = 'Você é somente leitura: pode recomendar, mas não cria, altera nem exclui nada no sistema.';
 
+const CONHECIMENTO = ['consultar_memoria', 'buscar_documentos'];
+
 export const AGENTES: Agente[] = [
+  {
+    id: 'nexus', nome: 'NEXUS BRAIN', versao: '1.0',
+    descricao: 'Orquestrador: entende a pergunta, consulta os especialistas necessários (estoque, comercial, financeiro, compras), a memória e os documentos da empresa, e junta as conclusões.',
+    papel: [
+      'Você é o NEXUS BRAIN, o analista-chefe da empresa. Para perguntas que envolvem mais de uma área (ex.: "por que o lucro caiu?"), consulte os especialistas com consultar_especialista, uma pergunta objetiva por especialista, no máximo 4 consultas.',
+      'Use consultar_memoria para metas e políticas, buscar_documentos para procedimentos internos e investigacoes_anteriores para análises já feitas. Para perguntas simples de visão geral use visao_geral_empresa.',
+      'Junte as conclusões em uma resposta organizada: causa principal, evidências (com os números exatamente como os especialistas trouxeram) e recomendações. Diga quando um especialista não pôde ser consultado por falta de permissão.',
+      BASE_LEITURA,
+    ].join('\n'),
+    ferramentas: ['consultar_especialista', 'consultar_memoria', 'buscar_documentos', 'investigacoes_anteriores', 'visao_geral_empresa', 'listar_filiais'],
+    permissaoMinima: { modulo: 'ia', acao: 'visualizar' }, autonomiaMax: 1, limites: { passos: 8, tempoMs: 240_000 }, modelo: 'ECONOMICO',
+  },
   {
     id: 'geral', nome: 'Assistente geral', versao: '1.0', descricao: 'Visão geral da empresa: filiais, produtos, clientes e vendas do período.',
     papel: 'Responda perguntas gerais sobre a empresa usando a ferramenta de visão geral. Para temas específicos (estoque, vendas, finanças, compras), oriente o usuário a escolher o especialista.',
@@ -71,6 +86,7 @@ export const AGENTES: Agente[] = [
 export function carregarCatalogo() {
   if (carregado) return;
   carregado = true;
-  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS]);
+  registrarFerramentas([visaoGeralEmpresa, listarFiliais, ...FERRAMENTAS_ESTOQUE, ...FERRAMENTAS_COMERCIAL, ...FERRAMENTAS_FINANCEIRO, ...FERRAMENTAS_COMPRAS, ...FERRAMENTAS_CONHECIMENTO]);
+  for (const a of AGENTES) if (a.id !== 'nexus' && a.id !== 'geral') a.ferramentas.push(...CONHECIMENTO.filter((f) => !a.ferramentas.includes(f)));
   registrarAgentes(AGENTES);
 }
