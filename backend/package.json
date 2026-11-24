@@ -25,7 +25,7 @@
     "exceljs": "^4.4.0",
     "fastify": "^5.12.8",
     "imapflow": "2.11.0",
-    "node-edge-tts": "^1.2.10",
+    "node-edge-tts": "^1.2.12",
     "nodemailer": "10.4.0",
     "pino": "9.14.0",
     "zod": "^4.6.2"
