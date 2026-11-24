@@ -25,6 +25,7 @@ import { lerPrefs } from '@/lib/prefs';
 const menuPrincipal = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'IA NEXUS', href: '/ia', icon: Sparkles },
+  { name: 'NEXUS AI', href: '/nexus-ai', icon: Sparkles },
   { name: 'PDV', href: '/pdv', icon: ShoppingCart },
   { name: 'Vendas', href: '/vendas', icon: TrendingUp },
   { name: 'Produtos', href: '/produtos', icon: Package },

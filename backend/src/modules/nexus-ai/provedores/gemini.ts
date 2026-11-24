@@ -57,7 +57,7 @@ export const gemini: Provedor = {
     const corpo = {
       systemInstruction: { parts: [{ text: sistema }] },
       contents: paraConteudos(mensagens),
-      ...(ferramentas.length ? { tools: [{ functionDeclarations: ferramentas.map((f: Ferramenta) => ({ name: f.nome, description: f.descricao, parameters: f.parametros })) }] } : {}),
+      ...(ferramentas.length ? { tools: [{ functionDeclarations: ferramentas.map((f: Ferramenta) => ({ name: f.nome, description: f.descricao, ...(Object.keys(f.parametros.properties).length ? { parameters: f.parametros } : {}) })) }] } : {}),
       generationConfig: { temperature: 0.2, maxOutputTokens: maxTokens ?? 2048 },
     };
     let ultimoErro = 'falha desconhecida';
@@ -74,7 +74,10 @@ export const gemini: Provedor = {
       }
       if (r.status === 429 || r.status >= 500) {
         ultimoErro = `provedor respondeu HTTP ${r.status}`;
-        if (t < TENTATIVAS) { await espera(800 * 2 ** (t - 1)); continue; }
+        // 429 = limite por minuto do provedor: respeita Retry-After (ou espera 4 s e 12 s) antes de desistir.
+        const retryAfter = Number(r.headers.get('retry-after'));
+        const pausa = r.status === 429 ? Math.min(30_000, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 4000 * 3 ** (t - 1)) : 800 * 2 ** (t - 1);
+        if (t < TENTATIVAS) { await espera(pausa); continue; }
         registrarFalha(); throw new ProvedorIndisponivel(ultimoErro);
       }
       const json = (await r.json().catch(() => ({}))) as any;

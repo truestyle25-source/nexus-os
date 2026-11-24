@@ -21,7 +21,7 @@ import { executarFerramenta, ferramenta as buscarFerramenta, FerramentaNegada } 
 import { provedorAtual } from './provedores/roteador.js';
 import { custoCentavos, registrarConsumo, situacaoConsumo } from './consumo.js';
 import { filtrarSaida, pareceInjecao, REGRAS_GERAIS } from './seguranca.js';
-import { verificarResposta, type ResultadoVerificacao } from './verificador.js';
+import { extrairNumeros, numerosConhecidos, verificarResposta, type ResultadoVerificacao } from './verificador.js';
 
 type Etapa = MensagemIA;
 
@@ -148,7 +148,10 @@ async function executarLaco(ctx: ContextoIA, a: Agente, execucaoId: string, base
       }
       // Primeiro remove segredos (o que nunca pode chegar à tela), depois verifica os números.
       const texto = filtrarSaida((r.texto ?? '').trim()).texto;
-      const verificacao = verificarResposta(texto, resultadosFerramentas());
+      // Números da pergunta e parâmetros usados nas ferramentas também são fontes válidas.
+      const perguntasDoUsuario = base.filter((m) => m.tipo === 'usuario').map((m) => (m as { texto: string }).texto).join(' ');
+      const extras = [...extrairNumeros(perguntasDoUsuario).map((n) => n.valor), ...numerosConhecidos(fontes().map((x) => x.args))];
+      const verificacao = verificarResposta(texto, resultadosFerramentas(), extras);
       if (!verificacao.aprovada && tentativasVerificacao === 0) {
         tentativasVerificacao++;
         etapas.push({ tipo: 'modelo', texto, bruto: r.bruto });

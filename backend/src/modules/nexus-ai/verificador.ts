@@ -41,7 +41,9 @@ export function extrairNumeros(texto: string): { texto: string; valor: number; p
     .replace(/^\s*\d+[.)]\s/gm, ' ') // marcadores de lista "1." "2)"
     .replace(/\b(19|20)\d{2}\b/g, ' '); // anos
   const achados: { texto: string; valor: number; percentual: boolean }[] = [];
-  const re = /-?(?:R\$\s?)?\d{1,3}(?:\.\d{3})+(?:,\d+)?%?|-?(?:R\$\s?)?\d+(?:[.,]\d+)?%?/g;
+  // Dígitos colados a letras, hífen, sublinhado ou barra fazem parte de códigos (SKU, ids):
+  // não são números da análise e não são verificados.
+  const re = /(?<![\p{L}\d_\-\/`])-?(?:R\$\s?)?(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)%?(?![\p{L}\d_\-`])/gu;
   for (const m of limpo.matchAll(re)) {
     const v = lerNumeroBR(m[0]);
     if (v !== null) achados.push({ texto: m[0].trim(), valor: v, percentual: m[0].includes('%') });
@@ -57,8 +59,12 @@ function bate(alvo: number, conhecido: number): boolean {
   return false;
 }
 
-export function verificarResposta(resposta: string, resultados: unknown[]): ResultadoVerificacao {
-  const conhecidos = numerosConhecidos(resultados);
+/**
+ * `extras`: números que o próprio usuário informou (pergunta) e parâmetros usados nas
+ * ferramentas (ex.: 60 dias) — o modelo pode repeti-los sem que venham de um resultado.
+ */
+export function verificarResposta(resposta: string, resultados: unknown[], extras: number[] = []): ResultadoVerificacao {
+  const conhecidos = [...numerosConhecidos(resultados), ...extras];
   const numeros = extrairNumeros(resposta).map((n) => {
     const candidatos = n.percentual ? [n.valor, n.valor / 100] : [n.valor];
     const conferido = candidatos.some((c) => conhecidos.some((k) => bate(c, k) || (n.percentual && bate(c, k * 100))));

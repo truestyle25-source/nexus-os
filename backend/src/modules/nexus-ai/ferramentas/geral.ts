@@ -33,3 +33,15 @@ export const visaoGeralEmpresa: Ferramenta<{ dias: number }> = {
     return { periodo: p.descricao, filiaisAtivas: filiais, produtosAtivos: produtos, clientes, vendasFinalizadas: vendas._count._all, faturamento, ticketMedio: vendas._count._all ? arred(faturamento / vendas._count._all) : 0 };
   },
 };
+
+export const listarFiliais: Ferramenta<Record<string, never>> = {
+  nome: 'listar_filiais',
+  descricao: 'Lista as filiais da empresa (id, nome e situação). Use para converter o nome de uma filial no id exigido pelas outras ferramentas.',
+  parametros: { type: 'object', properties: {} },
+  validar: z.object({}).passthrough() as any,
+  permissao: { modulo: 'dashboard', acao: 'visualizar' },
+  async executar(ctx) {
+    const filiais = await prisma.filial.findMany({ where: { empresaId: ctx.empresaId }, select: { id: true, nome: true, status: true }, orderBy: { nome: 'asc' } });
+    return { total: filiais.length, filiais };
+  },
+};
