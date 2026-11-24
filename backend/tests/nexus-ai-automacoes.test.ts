@@ -11,7 +11,7 @@ import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
 import { MODULOS, ACOES } from '../src/lib/permissoes-catalogo.js';
 import { carregarCatalogo } from '../src/modules/nexus-ai/catalogo.js';
 import { executarFerramenta } from '../src/modules/nexus-ai/ferramentas/registro.js';
-import { contexto, iniciarInvestigacao } from '../src/modules/nexus-ai/motor.js';
+import { contexto, iniciarInvestigacao, recuperarInterrompidas } from '../src/modules/nexus-ai/motor.js';
 import { agente } from '../src/modules/nexus-ai/agentes/registro.js';
 import { definirProvedorDeTeste } from '../src/modules/nexus-ai/provedores/roteador.js';
 import { foraDoHorario, varrer } from '../src/modules/nexus-ai/eventos/regras.js';
@@ -191,6 +191,14 @@ test('NEXUS AI — Fase 06: monitoramento, aprovações e automações', { skip:
       assert.equal(await prisma.aIInsight.count({ where: { empresaId: outra.id } }), 0, 'sem histórico não há padrão para comparar');
       await insightsDiarios();
       assert.equal(await prisma.aIInsight.count({ where: { empresaId: empresa.id, tipo: 'ANOMALIA' } }), 1, 'uma vez por dia');
+    });
+    await t.test('Recuperação: investigação interrompida por reinício volta a ser retomável', async () => {
+      const velha = await prisma.aIExecucao.create({ data: { empresaId: empresa.id, usuarioId: gestor.id, agente: 'estoque', entrada: 'x', status: 'EXECUTANDO' } });
+      const atual = await prisma.aIExecucao.create({ data: { empresaId: empresa.id, usuarioId: gestor.id, agente: 'estoque', entrada: 'y', status: 'EXECUTANDO' } });
+      await prisma.$executeRaw`UPDATE "AIExecucao" SET "updatedAt" = now() - interval '30 minutes' WHERE id = ${velha.id}`;
+      assert.ok((await recuperarInterrompidas()) >= 1);
+      assert.equal((await prisma.aIExecucao.findUniqueOrThrow({ where: { id: velha.id } })).status, 'AGUARDANDO_PROVEDOR');
+      assert.equal((await prisma.aIExecucao.findUniqueOrThrow({ where: { id: atual.id } })).status, 'EXECUTANDO', 'em andamento não é tocada');
     });
   } finally {
     definirProvedorDeTeste(null);

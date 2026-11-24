@@ -96,6 +96,16 @@ export async function iniciarInvestigacao(ctx: ContextoIA, p: { agenteId: string
   return executarLaco(ctx, a, ex.id, [...historico, { tipo: 'usuario', texto: pergunta }], []);
 }
 
+/**
+ * Investigações paradas em EXECUTANDO sem progresso há mais que `minutos` (o processo caiu ou o
+ * servidor reiniciou no meio) voltam para AGUARDANDO_PROVEDOR: ficam retomáveis a partir das
+ * etapas já salvas, sem refazer ferramentas. O limite de tempo dos agentes é bem menor (≤ 4 min).
+ */
+export async function recuperarInterrompidas(minutos = 10, agora = new Date()): Promise<number> {
+  const r = await prisma.aIExecucao.updateMany({ where: { status: 'EXECUTANDO', updatedAt: { lt: new Date(agora.getTime() - minutos * 60_000) } }, data: { status: 'AGUARDANDO_PROVEDOR', erro: 'Interrompida por reinício do servidor; pode ser retomada.' } });
+  return r.count;
+}
+
 export async function retomarInvestigacao(ctx: ContextoIA, execucaoId: string): Promise<ResultadoInvestigacao> {
   const ex = await prisma.aIExecucao.findFirst({ where: { id: execucaoId, empresaId: ctx.empresaId } });
   if (!ex) throw NaoEncontrado('Investigação não encontrada.');

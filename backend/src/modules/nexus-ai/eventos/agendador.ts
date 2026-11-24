@@ -13,7 +13,7 @@ import { comoSistema } from '../../../lib/tenant-context.js';
 import { executarUmaVezPorDia } from '../../../lib/tarefa-agendada.js';
 import { logDe } from '../../../lib/logger.js';
 import { detectarAnomalias } from '../ferramentas/analise.js';
-import { contexto } from '../motor.js';
+import { contexto, recuperarInterrompidas } from '../motor.js';
 import { registrarEventos, varrer, type EventoDetectado } from './regras.js';
 import { processarFila } from './worker.js';
 
@@ -22,6 +22,7 @@ let timer: NodeJS.Timeout | null = null;
 let rodando = false;
 
 export async function cicloMonitor(): Promise<{ novos: number; processados: number; falhas: string[] }> {
+  await comoSistema('nexus-ai:recuperar-interrompidas', () => recuperarInterrompidas()).catch(() => 0);
   const v = await varrer();
   const processados = await processarFila();
   if (v.falhas.length) log.warn({ regras: v.falhas }, 'regras do monitor falharam neste ciclo');
