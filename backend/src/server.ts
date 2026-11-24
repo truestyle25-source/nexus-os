@@ -72,6 +72,9 @@ import { tarefasAtrasadas } from './lib/tarefa-agendada.js';
 import { iniciarAgendadorML, pararAgendadorML } from './modules/integracoes/agendador-ml.js';
 import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integracoes/shopee/shopee-scheduler.js';
 import { iniciarAgendadorIntegracoes, pararAgendadorIntegracoes } from './modules/integracoes/central/integracoes-agendador.js';
+import { nexusAiRoutes } from './modules/nexus-ai/gateway.routes.js';
+import { iniciarMonitorNexusAI, pararMonitorNexusAI } from './modules/nexus-ai/eventos/agendador.js';
+import { registrarExportacaoSeFor } from './modules/nexus-ai/eventos/exportacoes.js';
 
 dotenv.config();
 
@@ -113,6 +116,9 @@ const app = Fastify({
 // Cabeçalhos de segurança em TODA resposta da API.
 // A CSP restritiva vale só para respostas JSON (a API não serve páginas); PDFs e
 // downloads continuam abrindo normalmente.
+// Toda exportação bem-sucedida fica na auditoria (monitoramento de exportação em massa da NEXUS AI).
+app.addHook('onResponse', registrarExportacaoSeFor);
+
 app.addHook('onSend', async (request, reply, payload) => {
   reply.header('X-Request-Id', request.id);
   reply.header('X-Content-Type-Options', 'nosniff');
@@ -277,6 +283,7 @@ await app.register(shopeeRoutes);
 await app.register(centralIntegracoesRoutes);
 await app.register(whatsappWebhookRoutes);
 await app.register(cobrancasWebhookRoutes);
+await app.register(nexusAiRoutes);
 await app.register(pixRoutes);
 await app.register(lgpdRoutes);
 await app.register(apiPublicaRoutes);
@@ -307,6 +314,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   void comoSistema('agendador:shopee', () => iniciarAgendadorShopee());
   // Central de Integrações: pedidos WooCommerce automáticos e retenção (LGPD). INTEGRACOES_AGENDADOR=false desliga.
   void comoSistema('agendador:integracoes', () => iniciarAgendadorIntegracoes());
+  // NEXUS AI: monitoramento de segurança determinístico (funciona sem o provedor de IA). NEXUS_AI_MONITOR=false desliga.
+  void comoSistema('agendador:nexus-ai-monitor', () => iniciarMonitorNexusAI());
 
   async function encerrarComCuidado(sinal: string) {
     app.log.info(`${sinal} recebido, encerrando NEXUS OS...`);
@@ -314,6 +323,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     await pararAgendadorML();
     await pararAgendadorShopee();
     await pararAgendadorIntegracoes();
+    pararMonitorNexusAI();
     await app.close();
     await prisma.$disconnect();
   }

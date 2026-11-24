@@ -34,6 +34,7 @@ enum AcaoAuditoria {
   SINCRONIZAR
   ALTERAR_PERMISSAO
   ALTERAR_CONFIG
+  EXPORTAR
 }
 
 enum TipoMovEstoque {
@@ -157,6 +158,16 @@ model Empresa {
   whatsappMensagens        WhatsappMensagem[]
   emailEnvios              EmailEnvio[]
   whatsappDescadastros     WhatsappDescadastro[]
+  aiConversas              AIConversa[]
+  aiExecucoes              AIExecucao[]
+  aiConsumos               AIConsumo[]
+  aiLimite                 AILimite?
+  aiMemorias               AIMemoria[]
+  aiDocumentos             AIDocumento[]
+  aiEventos                AIEvento[]
+  aiInsights               AIInsight[]
+  aiAprovacoes             AIAprovacao[]
+  aiAutomacoes             AIAutomacao[]
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -2026,6 +2037,8 @@ enum TipoAlerta {
   HORA_EXTRA
   ANOMALIA_IA
   COMPRA_PENDENTE
+  SEGURANCA
+  INTEGRACAO
 }
 
 enum PrioridadeAlerta {
@@ -2472,6 +2485,7 @@ model IntegracaoEvento {
   createdAt  DateTime @default(now())
 
   @@index([empresaId, provedor, createdAt])
+  @@index([createdAt]) // varredura do monitor de segurança (falhas recentes de todas as empresas)
 }
 
 // --- Sincronização automática do Mercado Livre --------------------------------
@@ -3454,6 +3468,7 @@ model LoginAttempt {
 
   @@index([ip, createdAt])
   @@index([email, createdAt])
+  @@index([createdAt]) // varredura do monitor de segurança (logins falhos recentes)
 }
 
 // --- Rate limit distribuído (janela fixa) ---
@@ -3666,4 +3681,260 @@ model WhatsappDescadastro {
   createdAt DateTime @default(now())
 
   @@unique([empresaId, telefone])
+}
+
+// ============================================================================
+// NEXUS AI — Fase 01 (fundação). Domínio próprio da inteligência; o PostgreSQL
+// continua sendo a fonte da verdade dos dados de negócio. Tudo por empresa (RLS).
+// ============================================================================
+
+// Conversa na Central NEXUS AI (substitui gradualmente ConversaIA, que é mantida).
+model AIConversa {
+  id        String       @id @default(cuid())
+  empresaId String
+  empresa   Empresa      @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId String
+  titulo    String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  mensagens AIMensagem[]
+
+  @@index([empresaId, usuarioId, updatedAt])
+}
+
+model AIMensagem {
+  id         String     @id @default(cuid())
+  empresaId  String
+  conversaId String
+  conversa   AIConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  papel      String // USUARIO | NEXUS
+  conteudo   String     @db.Text
+  execucaoId String?
+  // Fontes, período, limitações e verificação dos números (só nas respostas da NEXUS).
+  detalhes   Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([empresaId, conversaId, createdAt])
+}
+
+// Uma investigação (pergunta do usuário ou evento). Guarda cada etapa para poder
+// RETOMAR depois de falha do provedor sem refazer o que já foi feito.
+model AIExecucao {
+  id                  String                 @id @default(cuid())
+  empresaId           String
+  empresa             Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId           String?
+  conversaId          String?
+  agente              String
+  // Investigação do NEXUS BRAIN que acionou esta (especialista consultado); nulo = investigação principal.
+  execucaoPaiId       String?
+  origem              String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO | SUBAGENTE
+  entrada             String                 @db.Text
+  status              String // EXECUTANDO | CONCLUIDA | FALHOU | AGUARDANDO_PROVEDOR | LIMITE | BLOQUEADA
+  etapas              Json? // histórico de passos (chamadas de ferramenta e resultados) para retomada
+  resposta            String?                @db.Text
+  verificacao         Json? // resultado do verificador de números
+  erro                String?
+  modelo              String?
+  tokensEntrada       Int                    @default(0)
+  tokensSaida         Int                    @default(0)
+  custoCentavos       Int                    @default(0)
+  duracaoMs           Int?
+  idempotencyKey      String?
+  // Retorno do usuário sobre a resposta (plano 5A.4): CORRETA | INCORRETA, para revisão.
+  avaliacao           String?
+  avaliacaoComentario String?
+  avaliadoPor         String?
+  avaliadoEm          DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  ferramentas         AIExecucaoFerramenta[]
+
+  @@unique([empresaId, idempotencyKey])
+  @@index([empresaId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model AIExecucaoFerramenta {
+  id         String     @id @default(cuid())
+  empresaId  String
+  execucaoId String
+  execucao   AIExecucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  ferramenta String
+  entrada    Json?
+  resultado  Json? // resultado estruturado (fonte dos números da resposta)
+  ok         Boolean
+  erro       String?
+  duracaoMs  Int?
+  createdAt  DateTime   @default(now())
+
+  @@index([empresaId, execucaoId])
+}
+
+// Consumo por empresa e dia (tokens, custo estimado, investigações).
+model AIConsumo {
+  id            String  @id @default(cuid())
+  empresaId     String
+  empresa       Empresa @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  dia           String // AAAA-MM-DD (UTC)
+  execucoes     Int     @default(0)
+  tokensEntrada Int     @default(0)
+  tokensSaida   Int     @default(0)
+  custoCentavos Int     @default(0)
+
+  @@unique([empresaId, dia])
+}
+
+// Limites por empresa (nulo = padrão da plataforma). Bloqueio desliga só a IA.
+model AILimite {
+  empresaId            String   @id
+  empresa              Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  execucoesMes         Int?
+  custoMesCentavos     Int?
+  bloqueadoManualmente Boolean  @default(false)
+  atualizadoEm         DateTime @updatedAt
+}
+
+// ============================================================================
+// NEXUS AI — Fase 04: memória empresarial, base documental e hierarquia de investigações.
+// ============================================================================
+
+// Memória autorizada da empresa (metas, políticas, critérios, decisões). Editável e
+// excluível; o conteúdo é DADO para a IA (nunca instrução) e passa pela proteção contra manipulação.
+model AIMemoria {
+  id        String   @id @default(cuid())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo      String // META | POLITICA | CRITERIO | PREFERENCIA | DECISAO
+  titulo    String
+  conteudo  String   @db.Text
+  ativa     Boolean  @default(true)
+  criadoPor String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([empresaId, ativa])
+}
+
+// Base documental (manuais, procedimentos, políticas). Texto dividido em trechos para busca
+// contextual (busca de texto do PostgreSQL em português). `modulo` restringe a leitura a quem
+// tem <modulo>.visualizar.
+model AIDocumento {
+  id         String     @id @default(cuid())
+  empresaId  String
+  empresa    Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  titulo     String
+  modulo     String?
+  caracteres Int
+  criadoPor  String?
+  createdAt  DateTime   @default(now())
+  trechos    AITrecho[]
+
+  @@index([empresaId])
+}
+
+model AITrecho {
+  id          String                      @id @default(cuid())
+  empresaId   String
+  documentoId String
+  documento   AIDocumento                 @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  ordem       Int
+  texto       String                      @db.Text
+  /// Vetor semântico (pgvector, 768 dimensões, gemini-embedding-001). Opcional.
+  embedding   Unsupported("vector(768)")?
+
+  @@index([empresaId, documentoId])
+}
+
+// --- NEXUS AI — Fase 06: eventos, insights, aprovações e automações ---------------------
+// Outbox de eventos de negócio e de segurança. A DETECÇÃO é determinística (regras no código,
+// monitor.ts) e grava aqui com chave única por evento; o worker (lease) processa uma única vez,
+// cria o Alerta e o insight mesmo com o provedor de IA fora do ar.
+model AIEvento {
+  id            String    @id @default(cuid())
+  empresaId     String
+  empresa       Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo          String // LOGIN_FALHO | PERMISSAO_ALTERADA | CANCELAMENTOS | AJUSTE_ESTOQUE | INTEGRACAO_FALHA | WEBHOOK_INVALIDO | MANIPULACAO_IA | ANOMALIA
+  chave         String // idempotência: o mesmo fato nunca vira dois eventos
+  severidade    String    @default("MEDIA") // BAIXA | MEDIA | ALTA | CRITICA
+  dados         Json
+  status        String    @default("PENDENTE") // PENDENTE | PROCESSANDO | CONCLUIDO | FALHOU
+  tentativas    Int       @default(0)
+  leaseExpiraEm DateTime?
+  instancia     String?
+  erro          String?
+  processadoEm  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([empresaId, chave])
+  @@index([status, leaseExpiraEm])
+  @@index([empresaId, createdAt])
+}
+
+// Descoberta da IA ou do monitor (ligada ao Alerta). `modulo` restringe a leitura a quem tem
+// <modulo>.visualizar. Evidências são os números calculados pelas regras.
+model AIInsight {
+  id         String   @id @default(cuid())
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  eventoId   String?  @unique
+  alertaId   String?
+  origem     String   @default("MONITOR") // MONITOR | ROTINA | IA
+  tipo       String
+  modulo     String
+  severidade String   @default("MEDIA")
+  titulo     String
+  descricao  String   @db.Text
+  evidencias Json?
+  periodo    String?
+  status     String   @default("ABERTO") // ABERTO | LIDO | DESCARTADO
+  createdAt  DateTime @default(now())
+
+  @@index([empresaId, status, createdAt])
+}
+
+// Ação preparada pela IA aguardando decisão humana (nível 2) ou liberada por política (nível 3).
+// Aprovar duas vezes não executa duas vezes: a transição PENDENTE→EXECUTANDO é atômica.
+model AIAprovacao {
+  id             String    @id @default(cuid())
+  empresaId      String
+  empresa        Empresa   @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  acao           String // ex.: criar_compra_rascunho
+  titulo         String
+  proposta       Json // parâmetros validados da ação
+  evidencias     Json?
+  impacto        String?
+  valorCentavos  Int?
+  nivel          Int       @default(2)
+  status         String    @default("PENDENTE") // PENDENTE | EXECUTANDO | EXECUTADA | REJEITADA | FALHOU | EXPIRADA
+  solicitadoPor  String?
+  execucaoId     String?
+  insightId      String?
+  decididoPor    String? // usuário ou "politica:<acao>"
+  decididoEm     DateTime?
+  motivo         String?
+  resultado      Json?
+  erro           String?
+  idempotencyKey String
+  expiraEm       DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([empresaId, idempotencyKey])
+  @@index([empresaId, status, createdAt])
+}
+
+// Política de automação controlada (nível 3) por empresa e ação. Desligada por padrão.
+model AIAutomacao {
+  id               String   @id @default(cuid())
+  empresaId        String
+  empresa          Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  acao             String
+  ativa            Boolean  @default(false)
+  valorMaxCentavos Int?
+  atualizadoPor    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([empresaId, acao])
 }

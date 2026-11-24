@@ -32,7 +32,8 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:17
+        # Postgres 17 com a extensão pgvector (busca semântica da NEXUS AI, migração 202611290000).
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -75,8 +76,9 @@ jobs:
 
       # Prova que as migrações versionadas geram EXATAMENTE o schema.prisma.
       # Sem isto, uma mudança no schema sem migração passaria despercebida.
+      # Tolera só o índice HNSW do pgvector, que o Prisma não sabe representar (ver o script).
       - name: Schema e migrações em sincronia (drift)
-        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+        run: node scripts/verificar-drift.cjs
 
       - name: Testes (papel postgres)
         run: npx tsx --test --test-concurrency=1 tests/*.test.ts

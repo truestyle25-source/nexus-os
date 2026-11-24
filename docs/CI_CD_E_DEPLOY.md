@@ -56,6 +56,20 @@ poderia ser mesclado. Aumente quando entrar outra pessoa.
    alguma tabela ficar sem RLS.
 5. Conferir: `migrate status`, diff = 0, RLS 100% (menos `_prisma_migrations`) e `/health/ready`.
 
+**NEXUS AI (migrações 202611270000 a 202612010000, todas aditivas):**
+- **Pré-requisito antes do passo 3:** a migração `202611290000_nexus_ai_pgvector` usa a extensão `vector`, que só um
+  superusuário cria (testado: o papel `nexus_migrator` recebe *"permission denied to create extension"*). Um
+  administrador (SQL Editor do Supabase, papel `postgres`) roda antes, **no schema public**:
+  `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;`
+  Se a extensão já existir, confira onde está: `SELECT extnamespace::regnamespace FROM pg_extension WHERE extname = 'vector';`
+  — precisa ser `public` (o código usa o tipo `vector` e o operador `<=>` sem prefixo de schema). Com a extensão
+  criada, a migração roda normalmente pelo `nexus_migrator` (testado: tabela, índice HNSW e operador).
+- As migrações criam as tabelas `AIConversa`, `AIMensagem`, `AIExecucao`, `AIExecucaoFerramenta`, `AIConsumo`,
+  `AILimite`, `AIMemoria`, `AIDocumento`, `AITrecho`, `AIEvento`, `AIInsight`, `AIAprovacao` e `AIAutomacao`:
+  rodar o passo 4 (RLS) depois.
+- O drift do passo 5 mostra uma única diferença esperada, `DROP INDEX "AITrecho_embedding_idx"` (índice HNSW que o
+  Prisma não representa). Use `node scripts/verificar-drift.cjs`, que tolera só essa linha.
+
 **Migração desta entrega:** `202611211000_pilares_infra` cria a coluna `Usuario.sessoesValidasDesde` e as tabelas
 `RateLimitJanela` e `TarefaAgendada`. É aditiva. **Deve ser aplicada antes ou junto do deploy do backend**:
 o código novo usa essas tabelas no login e no rate limit.
