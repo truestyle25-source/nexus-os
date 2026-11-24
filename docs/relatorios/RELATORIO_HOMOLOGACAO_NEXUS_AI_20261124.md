@@ -147,3 +147,23 @@
 - **Primeira rodada completa**, depois de todas as mudanças de prompt: 21 de 22 passaram. A outra respondeu corretamente e falhou só pelo texto exato que o teste exigia; o teste foi corrigido.
 - **Repetições seguintes:** foram barradas por **HTTP 429**, porque a cota da chave do Gemini se esgotou depois de muitas avaliações no mesmo dia. O sistema tratou o 429 como previsto: a investigação ficou guardada, sem erro de tela, com o botão de retomar.
 - **Recomendação:** repetir a bateria quando a cota renovar, ou pelo workflow do GitHub com o segredo cadastrado.
+
+## 12. Publicação em produção (24/11/2026)
+
+Autorizada pelo responsável ("push e suba produção").
+
+| Etapa | Resultado |
+|---|---|
+| Backup antes de qualquer mudança | `backups/nexus_pre_nexus_ai_2026-11-24T18-41-11Z.dump` (494 KB, 105 tabelas). Restaurado num Postgres descartável: contagens idênticas às da produção |
+| Extensão `vector` | Criada pelo administrador no schema public (versão 0.8.2) |
+| Migrações (papel `nexus_migrator`) | As 6 da NEXUS AI foram aplicadas; `migrate status` em dia |
+| RLS | Reaplicado: 117 de 118 tabelas com RLS (só `_prisma_migrations` fica de fora, como esperado); `nexus_app` com acesso às tabelas novas |
+| Drift | `scripts/verificar-drift.cjs` em sincronia; a única diferença é o índice vetorial, tolerado |
+| PR [truestyle25-source/nexus-os#28](https://github.com/truestyle25-source/nexus-os/pull/28) | CI verde (backend, frontend, imagem Docker, gitleaks) e merge com merge commit `4778a92` |
+| Gitleaks | Falso positivo (token inventado num teste) registrado no `.gitleaksignore`, com autorização do responsável; o valor do teste foi trocado |
+
+### Pendências registradas (ações do responsável)
+
+1. **Cadastrar o segredo `GEMINI_API_KEY` no GitHub** (Settings → Secrets and variables → Actions). Sem ele, o check "NEXUS AI (avaliação com modelo real)" falha em todo PR que mexe na IA, de propósito.
+2. **Cota da chave do Gemini:** as repetições finais da avaliação real esbarraram no limite da chave (HTTP 429). Avaliar se o plano da chave atende ao uso em produção somado à avaliação do CI. Depois, rodar de novo a bateria completa.
+3. **WhatsApp:** aguardando o token permanente da Meta (pendência anterior, à parte).
