@@ -157,6 +157,10 @@ model Empresa {
   whatsappMensagens        WhatsappMensagem[]
   emailEnvios              EmailEnvio[]
   whatsappDescadastros     WhatsappDescadastro[]
+  aiConversas              AIConversa[]
+  aiExecucoes              AIExecucao[]
+  aiConsumos               AIConsumo[]
+  aiLimite                 AILimite?
   integracaoPDVs           IntegracaoPDV[]
   integracaoPontos         IntegracaoPonto[]
   lancamentoFolhas         LancamentoFolha[]
@@ -3666,4 +3670,109 @@ model WhatsappDescadastro {
   createdAt DateTime @default(now())
 
   @@unique([empresaId, telefone])
+}
+
+// ============================================================================
+// NEXUS AI — Fase 01 (fundação). Domínio próprio da inteligência; o PostgreSQL
+// continua sendo a fonte da verdade dos dados de negócio. Tudo por empresa (RLS).
+// ============================================================================
+
+// Conversa na Central NEXUS AI (substitui gradualmente ConversaIA, que é mantida).
+model AIConversa {
+  id        String       @id @default(cuid())
+  empresaId String
+  empresa   Empresa      @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId String
+  titulo    String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  mensagens AIMensagem[]
+
+  @@index([empresaId, usuarioId, updatedAt])
+}
+
+model AIMensagem {
+  id         String     @id @default(cuid())
+  empresaId  String
+  conversaId String
+  conversa   AIConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  papel      String // USUARIO | NEXUS
+  conteudo   String     @db.Text
+  execucaoId String?
+  // Fontes, período, limitações e verificação dos números (só nas respostas da NEXUS).
+  detalhes   Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([empresaId, conversaId, createdAt])
+}
+
+// Uma investigação (pergunta do usuário ou evento). Guarda cada etapa para poder
+// RETOMAR depois de falha do provedor sem refazer o que já foi feito.
+model AIExecucao {
+  id             String                 @id @default(cuid())
+  empresaId      String
+  empresa        Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId      String?
+  conversaId     String?
+  agente         String
+  origem         String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO
+  entrada        String                 @db.Text
+  status         String // EXECUTANDO | CONCLUIDA | FALHOU | AGUARDANDO_PROVEDOR | LIMITE | BLOQUEADA
+  etapas         Json? // histórico de passos (chamadas de ferramenta e resultados) para retomada
+  resposta       String?                @db.Text
+  verificacao    Json? // resultado do verificador de números
+  erro           String?
+  modelo         String?
+  tokensEntrada  Int                    @default(0)
+  tokensSaida    Int                    @default(0)
+  custoCentavos  Int                    @default(0)
+  duracaoMs      Int?
+  idempotencyKey String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  ferramentas    AIExecucaoFerramenta[]
+
+  @@unique([empresaId, idempotencyKey])
+  @@index([empresaId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model AIExecucaoFerramenta {
+  id         String     @id @default(cuid())
+  empresaId  String
+  execucaoId String
+  execucao   AIExecucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  ferramenta String
+  entrada    Json?
+  resultado  Json? // resultado estruturado (fonte dos números da resposta)
+  ok         Boolean
+  erro       String?
+  duracaoMs  Int?
+  createdAt  DateTime   @default(now())
+
+  @@index([empresaId, execucaoId])
+}
+
+// Consumo por empresa e dia (tokens, custo estimado, investigações).
+model AIConsumo {
+  id            String  @id @default(cuid())
+  empresaId     String
+  empresa       Empresa @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  dia           String // AAAA-MM-DD (UTC)
+  execucoes     Int     @default(0)
+  tokensEntrada Int     @default(0)
+  tokensSaida   Int     @default(0)
+  custoCentavos Int     @default(0)
+
+  @@unique([empresaId, dia])
+}
+
+// Limites por empresa (nulo = padrão da plataforma). Bloqueio desliga só a IA.
+model AILimite {
+  empresaId            String   @id
+  empresa              Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  execucoesMes         Int?
+  custoMesCentavos     Int?
+  bloqueadoManualmente Boolean  @default(false)
+  atualizadoEm         DateTime @updatedAt
 }

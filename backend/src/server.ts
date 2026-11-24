@@ -72,6 +72,7 @@ import { tarefasAtrasadas } from './lib/tarefa-agendada.js';
 import { iniciarAgendadorML, pararAgendadorML } from './modules/integracoes/agendador-ml.js';
 import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integracoes/shopee/shopee-scheduler.js';
 import { iniciarAgendadorIntegracoes, pararAgendadorIntegracoes } from './modules/integracoes/central/integracoes-agendador.js';
+import { nexusAiRoutes } from './modules/nexus-ai/gateway.routes.js';
 
 dotenv.config();
 
@@ -277,6 +278,7 @@ await app.register(shopeeRoutes);
 await app.register(centralIntegracoesRoutes);
 await app.register(whatsappWebhookRoutes);
 await app.register(cobrancasWebhookRoutes);
+await app.register(nexusAiRoutes);
 await app.register(pixRoutes);
 await app.register(lgpdRoutes);
 await app.register(apiPublicaRoutes);
