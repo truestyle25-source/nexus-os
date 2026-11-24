@@ -56,6 +56,21 @@ function Verificacao({ d }: { d: ResultadoIA["detalhes"] | undefined }) {
 }
 type Origem = "texto" | "audio" | "modo_voz";
 
+/** Frases curtas que a ATMA diz enquanto analisa (tocam na hora: o áudio já vem preparado). */
+const AVISOS_ATMA = ["Deixa eu analisar isso para você.", "Um instante, estou consultando seus dados.", "Certo, vou verificar agora."];
+
+/**
+ * No modo voz, fala só o começo de uma resposta longa (a resposta completa fica escrita na
+ * tela). O backend já pede respostas curtas por voz; isto é a garantia.
+ */
+function resumoParaFala(texto: string, limite = 320): string {
+  if (texto.length <= limite) return texto;
+  const frases = texto.replace(/\s+/g, " ").match(/[^.!?]+[.!?]+/g) ?? [texto];
+  let falado = "";
+  for (const f of frases) { if ((falado + f).length > limite && falado) break; falado += f; }
+  return `${falado.trim()} Os detalhes estão na tela.`;
+}
+
 /** Identidade da ATMA, a essência inteligente do NEXUS OS. */
 const CUMPRIMENTO_ATMA = "Olá! Que bom ter você por aqui. Sou a ATMA. O que vamos fazer hoje?";
 
@@ -170,10 +185,55 @@ export default function Page() {
     }
   };
 
+  // Áudio da voz neural da ATMA (servidor). Reutilizado pela fala e pelos avisos.
+  const obterAudioTTS = async (texto: string): Promise<Blob> => {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("nexus_api_url")?.trim() : "";
+    let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
+    if (stored) {
+      try {
+        const u = new URL(stored);
+        if ((u.protocol === "http:" || u.protocol === "https:") && u.origin !== window.location.origin) baseUrl = u.origin;
+      } catch {}
+    }
+    const token = getToken();
+    const response = await fetch(`${baseUrl}/api/v1/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ text: texto }),
+    });
+    if (!response.ok) throw new Error("TTS HTTP " + response.status);
+    return response.blob();
+  };
+
+  // Aviso curto enquanto a ATMA analisa (a pergunta pode levar alguns segundos). Os áudios são
+  // preparados ao abrir o modo voz, então tocam na hora; ao terminar, NÃO reabre o microfone.
+  const avisosRef = useRef<string[]>([]);
+  const avisoIndiceRef = useRef(0);
+  const avisoTocandoRef = useRef<Promise<void> | null>(null);
+  const prepararAvisos = () => {
+    if (avisosRef.current.length) return;
+    void Promise.all(AVISOS_ATMA.map((t) => obterAudioTTS(t).then((b) => URL.createObjectURL(b)).catch(() => null)))
+      .then((urls) => { avisosRef.current = urls.filter((u): u is string => !!u); });
+  };
+  const tocarAviso = () => {
+    const lista = avisosRef.current;
+    if (!lista.length || !isVoiceModeRef.current) return;
+    const audio = new Audio(lista[avisoIndiceRef.current++ % lista.length]);
+    currentAudioRef.current = audio;
+    avisoTocandoRef.current = new Promise<void>((fim) => {
+      audio.onended = () => fim();
+      audio.onerror = () => fim();
+      setTimeout(fim, 4000);
+    }).finally(() => { avisoTocandoRef.current = null; });
+    void audio.play().catch(() => undefined);
+  };
+
   // Voz da ATMA: voz neural do servidor (Edge TTS, Thalita calma); reserva: voz feminina do navegador
   const speak = async (texto: string) => {
     if (!texto) return;
 
+    // Deixa o aviso "estou analisando" terminar antes de responder (no máximo 4 s).
+    if (avisoTocandoRef.current) await avisoTocandoRef.current;
     // Para qualquer áudio antigo
     stopAnyAudio();
 
@@ -185,29 +245,7 @@ export default function Page() {
     if (!cleanText) return;
 
     try {
-      const stored = typeof window !== "undefined" ? localStorage.getItem("nexus_api_url")?.trim() : "";
-      let baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
-      if (stored) {
-        try {
-          const u = new URL(stored);
-          if ((u.protocol === "http:" || u.protocol === "https:") && u.origin !== window.location.origin) {
-            baseUrl = u.origin;
-          }
-        } catch {}
-      }
-      const token = getToken();
-      const response = await fetch(`${baseUrl}/api/v1/tts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ text: cleanText }),
-      });
-
-      if (!response.ok) throw new Error("TTS HTTP " + response.status);
-
-      const blob = await response.blob();
+      const blob = await obterAudioTTS(cleanText);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       currentAudioRef.current = audio;
@@ -307,6 +345,7 @@ export default function Page() {
     setVoiceStatus("listening");
     setVoiceUserTranscript("");
     setVoiceAiTranscript("");
+    prepararAvisos();
     // A ATMA se apresenta na primeira vez que o modo voz é aberto nesta sessão;
     // ao terminar de falar, o speak() já volta a ouvir.
     if (!atmaCumprimentouRef.current) {
@@ -400,7 +439,10 @@ export default function Page() {
 
     try {
       // NEXUS BRAIN: consulta os especialistas com ferramentas tipadas e verifica os números.
-      const data = await nexusAi.perguntar({ pergunta: text, agente: "nexus", conversaId: conversaId ?? undefined, idempotencyKey: novaChaveIA() });
+      // Por voz: resposta curta e, se a pergunta for de uma área só, direto ao especialista (mais rápido).
+      const porVoz = origem === "modo_voz" && isVoiceModeRef.current;
+      if (porVoz) tocarAviso();
+      const data = await nexusAi.perguntar({ pergunta: text, agente: "nexus", conversaId: conversaId ?? undefined, idempotencyKey: novaChaveIA(), modo: porVoz ? "voz" : "texto" });
       if (data.conversaId) setConversaId(data.conversaId);
       const respostaText = limparTextoIA(String(data.resposta || "").trim()) || "A IA não retornou resposta para esta pergunta.";
 
@@ -432,7 +474,7 @@ export default function Page() {
       // "Configure GEMINI_API_KEY no .env", que é informação de configuração
       // para o gestor, não uma conversa.
       if (origem === "modo_voz" && !semModelo) {
-        await speak(respostaText);
+        await speak(resumoParaFala(respostaText));
       }
       // Se origem for 'texto' ou 'audio', NÃO FALA. Apenas mostra texto.
     } catch (err: any) {

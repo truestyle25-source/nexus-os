@@ -14,6 +14,7 @@ import { createRateLimiter } from '../../middlewares/rateLimiter.js';
 import { temPermissao } from '../../lib/permissoes.js';
 import { carregarCatalogo } from './catalogo.js';
 import { todosAgentes } from './agentes/registro.js';
+import { agenteParaVoz } from './roteamento-voz.js';
 import { contexto, iniciarInvestigacao, montarResultado, retomarInvestigacao } from './motor.js';
 import { situacaoConsumo } from './consumo.js';
 import { provedorAtual } from './provedores/roteador.js';
@@ -38,8 +39,12 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post(`${B}/perguntar`, { preHandler: [auth, usar, limitePerguntas] }, async (req: any) => {
-    const d = z.object({ pergunta: z.string().min(1).max(2000), agente: z.string().max(40).default('geral'), conversaId: z.string().max(40).optional(), idempotencyKey: z.string().min(8).max(100).optional() }).parse(req.body ?? {});
-    return iniciarInvestigacao(contexto(req.user.empresaId, req.user.id, { filialId: req.user.filialId ?? null }), { agenteId: d.agente, pergunta: d.pergunta, conversaId: d.conversaId ?? null, idempotencyKey: d.idempotencyKey ?? null });
+    const d = z.object({ pergunta: z.string().min(1).max(2000), agente: z.string().max(40).default('geral'), conversaId: z.string().max(40).optional(), idempotencyKey: z.string().min(8).max(100).optional(), modo: z.enum(['texto', 'voz']).default('texto') }).parse(req.body ?? {});
+    const ctx = contexto(req.user.empresaId, req.user.id, { filialId: req.user.filialId ?? null });
+    // Modo voz: resposta curta para ser falada e, se a pergunta for de uma área só, direto ao especialista.
+    if (d.modo === 'voz') ctx.voz = true;
+    const agenteId = d.modo === 'voz' && d.agente === 'nexus' ? await agenteParaVoz(d.pergunta, req.user.id) : d.agente;
+    return iniciarInvestigacao(ctx, { agenteId, pergunta: d.pergunta, conversaId: d.conversaId ?? null, idempotencyKey: d.idempotencyKey ?? null });
   });
 
   app.post(`${B}/execucoes/:id/retomar`, { preHandler: [auth, usar, limitePerguntas] }, async (req: any) =>

@@ -21,7 +21,7 @@ export const TIPOS_MEMORIA: [string, string][] = [['META', 'Meta'], ['POLITICA',
 const B = '/api/v1/nexus-ai';
 export const nexusAi = {
   agentes: () => api.get<{ agentes: AgenteIA[]; provedor: { nome: string; configurado: boolean; circuito: { aberto: boolean } } }>(`${B}/agentes`).then((r) => r.data),
-  perguntar: (corpo: { pergunta: string; agente: string; conversaId?: string; idempotencyKey: string }) => api.post<ResultadoIA>(`${B}/perguntar`, corpo).then((r) => r.data),
+  perguntar: (corpo: { pergunta: string; agente: string; conversaId?: string; idempotencyKey: string; modo?: 'texto' | 'voz' }) => api.post<ResultadoIA>(`${B}/perguntar`, corpo).then((r) => r.data),
   avaliar: (execucaoId: string, avaliacao: 'CORRETA' | 'INCORRETA', comentario?: string) => api.post(`${B}/execucoes/${execucaoId}/avaliacao`, { avaliacao, comentario }).then((r) => r.data),
   retomar: (execucaoId: string) => api.post<ResultadoIA>(`${B}/execucoes/${execucaoId}/retomar`, {}).then((r) => r.data),
   conversas: () => api.get<{ conversas: { id: string; titulo: string; updatedAt: string }[] }>(`${B}/conversas`).then((r) => r.data.conversas),

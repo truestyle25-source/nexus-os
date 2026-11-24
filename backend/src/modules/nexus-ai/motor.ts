@@ -39,8 +39,11 @@ export function contexto(empresaId: string, usuarioId: string | null, opcoes: { 
   return { empresaId, usuarioId, filialId: opcoes.filialId ?? null, permissoes: new Map(), sistema: opcoes.sistema };
 }
 
-function papelCompleto(a: Agente) {
-  return `${REGRAS_GERAIS}\n\nSua especialidade: ${a.nome}.\n${a.papel}\nData de hoje: ${new Date().toISOString().slice(0, 10)}.`;
+/** Instrução extra quando a resposta será FALADA pela ATMA (modo voz). */
+const REGRA_VOZ = 'MODO VOZ: esta resposta será falada em voz alta. Responda em no máximo 3 frases curtas, começando pela conclusão, com só os números principais. Sem listas, títulos, tabelas ou ids. Se houver limitação, diga em uma frase curta no fim.';
+
+function papelCompleto(a: Agente, ctx?: ContextoIA) {
+  return `${REGRAS_GERAIS}${ctx?.voz ? `\n${REGRA_VOZ}` : ''}\n\nSua especialidade: ${a.nome}.\n${a.papel}\nData de hoje: ${new Date().toISOString().slice(0, 10)}.`;
 }
 
 async function historicoDaConversa(empresaId: string, conversaId: string | null): Promise<MensagemIA[]> {
@@ -123,6 +126,8 @@ export async function retomarInvestigacao(ctx: ContextoIA, execucaoId: string): 
 async function executarLaco(ctxBase: ContextoIA, a: Agente, execucaoId: string, base: MensagemIA[], etapasIniciais: Etapa[]): Promise<ResultadoInvestigacao> {
   const inicio = Date.now();
   const ctx: ContextoIA = { ...ctxBase, execucaoId };
+  // Reserva de consultas a especialistas desta investigação (retomada: conta as que já existem).
+  if (a.ferramentas.includes('consultar_especialista')) ctx.consultasEspecialistas = { n: await prisma.aIExecucaoFerramenta.count({ where: { execucaoId, ferramenta: 'consultar_especialista' } }) };
   const etapas: Etapa[] = [...etapasIniciais];
   const ferramentasDoAgente = a.ferramentas.map(buscarFerramenta).filter(Boolean) as NonNullable<ReturnType<typeof buscarFerramenta>>[];
   const prov = provedorAtual();
@@ -135,24 +140,26 @@ async function executarLaco(ctxBase: ContextoIA, a: Agente, execucaoId: string, 
   try {
     for (let passo = 0; passo < a.limites.passos; passo++) {
       if (Date.now() - inicio > a.limites.tempoMs) break;
-      const r = await prov.gerar({ sistema: papelCompleto(a), mensagens: [...base, ...etapas], ferramentas: ferramentasDoAgente, nivel: a.modelo ?? 'AVANCADO' });
+      const r = await prov.gerar({ sistema: papelCompleto(a, ctx), mensagens: [...base, ...etapas], ferramentas: ferramentasDoAgente, nivel: a.modelo ?? 'AVANCADO' });
       tokensE += r.tokensEntrada; tokensS += r.tokensSaida; modelo = r.modelo;
       if (r.chamadas?.length) {
         etapas.push({ tipo: 'modelo', chamadas: r.chamadas, ...(r.texto ? { texto: r.texto } : {}), bruto: r.bruto });
-        const resultados: { nome: string; resposta: unknown }[] = [];
-        for (const c of r.chamadas) {
+        // Ferramentas pedidas no MESMO passo rodam em paralelo (ex.: o BRAIN consultando vendas e
+        // financeiro ao mesmo tempo). A ordem dos resultados é a ordem das chamadas.
+        const resultados: { nome: string; resposta: unknown }[] = new Array(r.chamadas.length);
+        await Promise.all(r.chamadas.map(async (c, i) => {
           const t0 = Date.now();
           try {
             const { args, resultado, injecoes } = await executarFerramenta(ctx, c.nome, a.ferramentas, c.args);
-            resultados.push({ nome: c.nome, resposta: resultado });
+            resultados[i] = { nome: c.nome, resposta: resultado };
             await prisma.aIExecucaoFerramenta.create({ data: { empresaId: ctx.empresaId, execucaoId, ferramenta: c.nome, entrada: args as any, resultado: resultado as any, ok: true, duracaoMs: Date.now() - t0, ...(injecoes.length ? { erro: `Instruções embutidas neutralizadas em: ${injecoes.slice(0, 5).join(', ')}` } : {}) } });
             if (injecoes.length) await registrarAuditoria({ empresaId: ctx.empresaId, usuarioId: ctx.usuarioId ?? undefined, acao: 'CRIAR', entidade: 'AIEventoSeguranca', entidadeId: execucaoId, valorNovo: { motivo: 'instrucao_embutida_em_dados', ferramenta: c.nome, campos: injecoes.slice(0, 5) }, origem: 'IA' } as any).catch(() => {});
           } catch (e) {
             const msg = e instanceof FerramentaNegada ? e.message : e instanceof Error && e.name === 'ZodError' ? 'Argumentos inválidos para a ferramenta.' : 'Falha ao consultar os dados.';
-            resultados.push({ nome: c.nome, resposta: { erro: msg } });
+            resultados[i] = { nome: c.nome, resposta: { erro: msg } };
             await prisma.aIExecucaoFerramenta.create({ data: { empresaId: ctx.empresaId, execucaoId, ferramenta: c.nome, entrada: c.args as any, ok: false, erro: msg, duracaoMs: Date.now() - t0 } });
           }
-        }
+        }));
         etapas.push({ tipo: 'ferramenta', resultados });
         await salvarEtapas();
         continue;
@@ -228,7 +235,10 @@ export async function executarEspecialista(ctx: ContextoIA, agenteId: string, pe
   if (!ctx.sistema && (!ctx.usuarioId || !(await temPermissao(ctx.usuarioId, a.permissaoMinima.modulo, a.permissaoMinima.acao)))) {
     return { erro: `O usuário não tem permissão para o ${a.nome}; essa parte da análise não pode ser feita.` };
   }
-  if (ctx.execucaoId && (await prisma.aIExecucao.count({ where: { execucaoPaiId: ctx.execucaoId } })) >= 4) return { erro: 'Limite de 4 consultas a especialistas nesta investigação.' };
+  // Reserva síncrona (sem await entre conferir e somar): chamadas em paralelo não furam o limite.
+  const reserva = ctx.consultasEspecialistas;
+  if (reserva) { if (reserva.n >= 4) return { erro: 'Limite de 4 consultas a especialistas nesta investigação.' }; reserva.n++; }
+  else if (ctx.execucaoId && (await prisma.aIExecucao.count({ where: { execucaoPaiId: ctx.execucaoId } })) >= 4) return { erro: 'Limite de 4 consultas a especialistas nesta investigação.' };
   const filho = await prisma.aIExecucao.create({ data: { empresaId: ctx.empresaId, usuarioId: ctx.usuarioId, agente: a.id, origem: 'SUBAGENTE', execucaoPaiId: ctx.execucaoId ?? null, entrada: pergunta.slice(0, 2000), status: 'EXECUTANDO', etapas: [] } });
   const r = await executarLaco({ ...ctx, profundidade: 1 }, a, filho.id, [{ tipo: 'usuario', texto: pergunta }], []);
   const dados = await prisma.aIExecucaoFerramenta.findMany({ where: { execucaoId: filho.id, ok: true }, orderBy: { createdAt: 'asc' }, select: { ferramenta: true, resultado: true } });
