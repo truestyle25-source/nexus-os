@@ -3,7 +3,7 @@
 // preparadas pela IA aguardando decisão) e Automações (regras ativas e políticas nível 3).
 // O backend decide permissões: aqui só aparece o que o usuário pode ver e decidir.
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Loader2, MessageSquare, ShieldAlert, X } from 'lucide-react';
+import { Check, Loader2, MessageSquare, ShieldAlert, UserX, X } from 'lucide-react';
 import { mensagemDeErroApi } from '@/lib/erros-api';
 import { formatBRL, formatDateTime } from '@/lib/format';
 import { nexusAi, type AprovacaoIA, type AutomacoesIA, type InsightIA } from '@/lib/nexus-ai';
@@ -18,6 +18,13 @@ const COR_SEV: Record<string, string> = { CRITICA: 'var(--nx-danger,#dc2626)', A
 const ROTULO_SEV: Record<string, string> = { CRITICA: 'Crítico', ALTA: 'Alto', MEDIA: 'Médio', BAIXA: 'Baixo' };
 const ROTULO_STATUS: Record<string, string> = { PENDENTE: 'Aguardando decisão', EXECUTADA: 'Executada', REJEITADA: 'Rejeitada', FALHOU: 'Falhou', EXPIRADA: 'Expirada' };
 
+/** Alertas que apontam um usuário: dá para preparar o bloqueio (a decisão fica em Aprovações). */
+const alvoDoInsight = (i: InsightIA): string | null => {
+  const e = (i.evidencias ?? {}) as Record<string, unknown>;
+  const id = i.tipo === 'LOGIN_FALHO' ? e.usuarioId : i.tipo === 'PERMISSAO_ALTERADA' ? e.usuarioAlteradoId : i.tipo === 'EXPORTACAO_MASSA' ? e.usuarioId : null;
+  return typeof id === 'string' && id !== 'desconhecido' ? id : null;
+};
+
 function Aviso({ erro }: { erro: string | null }) {
   return erro ? <p role="alert" className="text-[12px] text-[var(--nx-danger,#dc2626)] mt-2">{erro}</p> : null;
 }
@@ -29,8 +36,14 @@ export function Inteligencia({ onInvestigar }: { onInvestigar: (pergunta: string
   const [status, setStatus] = useState<'ABERTO' | 'LIDO' | 'DESCARTADO' | ''>('');
   const [itens, setItens] = useState<InsightIA[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const carregar = useCallback(() => { setItens(null); nexusAi.insights(status || undefined).then(setItens).catch((e) => { setItens([]); setErro(mensagemDeErroApi(e, 'Não foi possível carregar os alertas.')); }); }, [status]);
   useEffect(carregar, [carregar]);
+  async function proporBloqueio(i: InsightIA) {
+    setErro(null); setAviso(null);
+    try { const a = await nexusAi.proporBloqueio(i.id); setAviso(`${a.titulo}: proposta aguardando decisão na tela Aprovações. Nada foi alterado ainda.`); }
+    catch (e) { setErro(mensagemDeErroApi(e, 'Não foi possível preparar o bloqueio.')); }
+  }
   async function marcar(i: InsightIA, s: 'LIDO' | 'DESCARTADO') {
     setErro(null);
     try { await nexusAi.marcarInsight(i.id, s); carregar(); } catch (e) { setErro(mensagemDeErroApi(e, 'Não foi possível atualizar.')); }
@@ -42,6 +55,7 @@ export function Inteligencia({ onInvestigar }: { onInvestigar: (pergunta: string
         {([['', 'Abertos e lidos'], ['ABERTO', 'Abertos'], ['LIDO', 'Lidos'], ['DESCARTADO', 'Descartados']] as const).map(([v, r]) => <button key={v} type="button" onClick={() => setStatus(v)} className={filtro(status === v)}>{r}</button>)}
       </div>
       <Aviso erro={erro} />
+      {aviso && <p role="status" className="text-[12px] text-[var(--nx-ink-2)] mt-2">{aviso}</p>}
       {itens === null ? <p className="mt-4 text-[13px] text-[var(--nx-ink-3)]">Carregando…</p> : itens.length === 0 ? <p className="mt-4 text-[13px] text-[var(--nx-ink-3)]">Nenhum alerta por aqui.</p> : (
         <ul className="mt-4 divide-y divide-[var(--nx-border)]">
           {itens.map((i) => (
@@ -54,6 +68,7 @@ export function Inteligencia({ onInvestigar }: { onInvestigar: (pergunta: string
               <p className="text-[12px] text-[var(--nx-ink-2)] break-words">{i.descricao}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" className={secundario} onClick={() => onInvestigar(`Investigue este alerta e diga o que verificar: ${i.titulo}. ${i.descricao}`)}><MessageSquare className="w-4 h-4" />Investigar com a IA</button>
+                {alvoDoInsight(i) && i.status !== 'DESCARTADO' && <button type="button" className={secundario} onClick={() => void proporBloqueio(i)}><UserX className="w-4 h-4" />Preparar bloqueio do usuário</button>}
                 {i.status === 'ABERTO' && <button type="button" className={secundario} onClick={() => void marcar(i, 'LIDO')}><Check className="w-4 h-4" />Marcar como lido</button>}
                 {i.status !== 'DESCARTADO' && <button type="button" className={secundario} onClick={() => void marcar(i, 'DESCARTADO')}><X className="w-4 h-4" />Descartar</button>}
               </div>
@@ -100,6 +115,8 @@ export function Aprovacoes() {
               {a.impacto && <p className="text-[12px] text-[var(--nx-ink-2)] break-words">{a.impacto}</p>}
               {typeof a.proposta?.motivo === 'string' && a.proposta.motivo && <p className="text-[12px] text-[var(--nx-ink-3)] break-words">Motivo: {a.proposta.motivo}</p>}
               {a.status === 'EXECUTADA' && a.resultado?.numero != null && <p className="text-[12px] text-[var(--nx-ink-2)]">Pedido CP-{String(a.resultado.numero).padStart(6, '0')} criado em rascunho no módulo Compras.</p>}
+              {a.status === 'EXECUTADA' && a.acao === 'ajustar_estoque_minimo' && <p className="text-[12px] text-[var(--nx-ink-2)]">Estoque mínimo alterado de {String(a.resultado?.anterior)} para {String(a.resultado?.estoqueMinimo)}.</p>}
+              {a.status === 'EXECUTADA' && a.acao === 'bloquear_usuario' && <p className="text-[12px] text-[var(--nx-ink-2)]">Usuário bloqueado e sessões encerradas. Para desfazer, reative-o no módulo Usuários.</p>}
               {a.status === 'REJEITADA' && a.motivo && <p className="text-[12px] text-[var(--nx-ink-3)]">Motivo da rejeição: {a.motivo}</p>}
               {a.status === 'FALHOU' && <p className="text-[12px] text-[var(--nx-danger,#dc2626)] break-words">Falhou, nada foi alterado: {a.erro}</p>}
               {a.status === 'PENDENTE' && (a.podeDecidir ? (
@@ -149,7 +166,22 @@ export function Automacoes() {
         </ul>
       </div>
       <div className={cartao}>
+        <p className="text-[13px] text-[var(--nx-ink)]">Qualidade das respostas (30 dias)</p>
+        <p className="text-[12px] text-[var(--nx-ink-2)] mt-1">{dados.avaliacoes.corretas} marcada(s) como correta e {dados.avaliacoes.incorretas} como incorreta pelos usuários.</p>
+        {dados.avaliacoes.ultimasIncorretas && dados.avaliacoes.ultimasIncorretas.length > 0 && (
+          <ul className="mt-3 divide-y divide-[var(--nx-border)]">
+            {dados.avaliacoes.ultimasIncorretas.map((i) => (
+              <li key={i.id} className="py-2">
+                <p className="text-[13px] text-[var(--nx-ink)] break-words">{i.pergunta}</p>
+                <p className="text-[11px] text-[var(--nx-ink-3)] break-words">{formatDateTime(i.quando)} · agente {i.agente}{i.comentario ? ` · "${i.comentario}"` : ''}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className={cartao}>
         <p className="text-[13px] text-[var(--nx-ink)]">Execução automática (nível 3) — desligada por padrão</p>
+        <p className="text-[12px] text-[var(--nx-ink-3)] mt-1">Bloquear usuário e ajustar estoque mínimo sempre exigem aprovação humana e não podem ser automatizados.</p>
         <p className="text-[12px] text-[var(--nx-ink-2)] mt-1">Com a política ligada, propostas até o valor máximo são executadas sem esperar aprovação, se quem pediu tiver a permissão da ação. Acima do valor, continuam aguardando. Alterar exige permissão de administrar a IA.</p>
         <Aviso erro={erro} />
         <ul className="mt-3 divide-y divide-[var(--nx-border)]">

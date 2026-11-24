@@ -35,8 +35,9 @@ import { formatDateTime } from "@/lib/format";
 import { nexusAi, NOME_FERRAMENTA, novaChaveIA, limparTextoIA, type ResultadoIA } from "@/lib/nexus-ai";
 import { DocumentosEmpresa, MemoriaEmpresa } from "@/components/nexus-ai/Conhecimento";
 import { Aprovacoes, Automacoes, Inteligencia } from "@/components/nexus-ai/Automacoes";
+import { AvaliarResposta } from "@/components/nexus-ai/AvaliarResposta";
 
-type Message = { id: string; role: "user" | "assistant"; text: string; erro?: boolean; detalhes?: ResultadoIA["detalhes"] };
+type Message = { id: string; role: "user" | "assistant"; text: string; erro?: boolean; detalhes?: ResultadoIA["detalhes"]; execucaoId?: string | null; status?: string };
 type Painel = null | "historico" | "memoria" | "documentos" | "inteligencia" | "aprovacoes" | "automacoes";
 
 /** Selo de verificação e fontes (NEXUS AI): números conferidos com os dados das ferramentas. */
@@ -395,6 +396,8 @@ export default function Page() {
         text: respostaText,
         erro: semModelo,
         detalhes: data.detalhes,
+        execucaoId: data.execucaoId,
+        status: data.status,
       };
       setMessages((p) => [...p, aiMsg]);
 
@@ -437,6 +440,17 @@ export default function Page() {
     }
   };
 
+  // Investigação que ficou aguardando o provedor: retoma do ponto em que parou (sem refazer ferramentas).
+  const [retomando, setRetomando] = useState<string | null>(null);
+  const retomarMensagem = async (m: Message) => {
+    if (!m.execucaoId) return;
+    setRetomando(m.id);
+    try {
+      const r = await nexusAi.retomar(m.execucaoId);
+      setMessages((p) => p.map((x) => (x.id === m.id ? { ...x, text: limparTextoIA(r.resposta ?? x.text), erro: r.status !== "CONCLUIDA", detalhes: r.detalhes, status: r.status } : x)));
+    } catch { /* a mensagem continua com o botão para tentar de novo */ } finally { setRetomando(null); }
+  };
+
   const abrirPainel = (p: Painel) => {
     if (isVoiceMode) exitVoiceMode();
     // No celular a barra lateral cobre a tela: fecha para mostrar o painel escolhido.
@@ -448,7 +462,7 @@ export default function Page() {
     try {
       const c = await nexusAi.conversa(id);
       setConversaId(c.id);
-      setMessages(c.mensagens.map((m) => ({ id: m.id, role: m.papel === "USUARIO" ? "user" : "assistant", text: m.papel === "USUARIO" ? m.conteudo : limparTextoIA(m.conteudo), detalhes: m.detalhes })));
+      setMessages(c.mensagens.map((m) => ({ id: m.id, role: m.papel === "USUARIO" ? "user" : "assistant", text: m.papel === "USUARIO" ? m.conteudo : limparTextoIA(m.conteudo), detalhes: m.detalhes, execucaoId: m.execucaoId, status: m.status ?? undefined, erro: m.papel === "NEXUS" && !!m.status && m.status !== "CONCLUIDA" })));
       setPainel(null);
     } catch { /* a lista continua aberta */ }
   };
@@ -927,6 +941,12 @@ export default function Page() {
                     <div className={m.role === "user" ? "bubble-user" : `bubble-ai${m.erro ? " erro" : ""}`}>
                       <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
                       {m.role === "assistant" && <Verificacao d={m.detalhes} />}
+                      {m.role === "assistant" && m.execucaoId && m.status === "AGUARDANDO_PROVEDOR" && (
+                        <button className="pill" style={{ marginTop: 8 }} disabled={retomando === m.id} onClick={() => void retomarMensagem(m)}>
+                          {retomando === m.id ? "Retomando…" : "Retomar investigação"}
+                        </button>
+                      )}
+                      {m.role === "assistant" && m.execucaoId && !m.erro && <AvaliarResposta execucaoId={m.execucaoId} inicial={m.detalhes?.avaliacao ?? null} />}
                     </div>
                   </div>
                 ))}

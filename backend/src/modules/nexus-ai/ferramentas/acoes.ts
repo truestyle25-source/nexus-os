@@ -35,4 +35,25 @@ export const proporCompraReposicao: Ferramenta<{ produtoId: string; quantidade: 
   },
 };
 
-export const FERRAMENTAS_ACOES = [proporCompraReposicao];
+export const proporAjusteEstoqueMinimo: Ferramenta<{ produtoId: string; estoqueMinimo: number; motivo?: string }> = {
+  nome: 'propor_ajuste_estoque_minimo',
+  descricao: 'Prepara uma PROPOSTA de novo estoque mínimo para um produto (não altera nada). Use o id do produto de outra ferramenta e um valor calculado por ferramenta (ex.: previsao_demanda). Fica aguardando aprovação na tela Aprovações.',
+  parametros: { type: 'object', properties: {
+    produtoId: { type: 'string', description: 'Id do produto (de uma ferramenta, nunca inventado).' },
+    estoqueMinimo: { type: 'number', description: 'Novo estoque mínimo, vindo de um cálculo de ferramenta.' },
+    motivo: { type: 'string', description: 'Justificativa curta.' },
+  }, required: ['produtoId', 'estoqueMinimo'] },
+  validar: z.object({ produtoId: z.string().min(1).max(40), estoqueMinimo: z.coerce.number().min(0).max(10_000_000), motivo: z.string().max(300).optional() }),
+  permissao: { modulo: 'estoque', acao: 'visualizar' },
+  async executar(ctx, args) {
+    if (!ctx.usuarioId) return { erro: 'Propostas só podem ser preparadas a pedido de um usuário.' };
+    try {
+      const ap = await criarProposta({ empresaId: ctx.empresaId, usuarioId: ctx.usuarioId, acao: 'ajustar_estoque_minimo', args, execucaoId: ctx.execucaoId ?? null });
+      return { aprovacaoId: ap.id, status: ap.status, titulo: ap.titulo, impacto: ap.impacto, jaExistia: ap.reaproveitada, observacao: 'Aguardando aprovação de um usuário com permissão de editar produtos (tela Aprovações). Nada foi alterado ainda.' };
+    } catch (e) {
+      return { erro: e instanceof Error ? e.message : 'Não foi possível preparar a proposta.' };
+    }
+  },
+};
+
+export const FERRAMENTAS_ACOES = [proporCompraReposicao, proporAjusteEstoqueMinimo];

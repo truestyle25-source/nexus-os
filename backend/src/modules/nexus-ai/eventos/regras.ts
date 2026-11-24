@@ -21,6 +21,7 @@ export const LIMIARES = {
   ajusteEstoque: { valorMinimo: 1000, foraDoHorario: { de: 22, ate: 6 } },
   integracaoFalhas: { quantidade: 5, minutos: 60 },
   webhookInvalido: { quantidade: 3, minutos: 60 },
+  exportacoes: { quantidade: 10, minutos: 60, sensiveis: ['clientes', 'rh', 'financeiro', 'fornecedores', 'relatorios', 'usuarios', 'radar'] },
 };
 
 export const DESCRICAO_REGRAS = [
@@ -30,6 +31,7 @@ export const DESCRICAO_REGRAS = [
   { tipo: 'AJUSTE_ESTOQUE', nome: 'Ajuste de estoque grande ou fora do horário', regra: `Ajuste, perda, avaria ou descarte de R$ ${LIMIARES.ajusteEstoque.valorMinimo} ou mais a custo, ou feito entre ${LIMIARES.ajusteEstoque.foraDoHorario.de}h e ${LIMIARES.ajusteEstoque.foraDoHorario.ate}h`, severidade: 'ALTA' },
   { tipo: 'INTEGRACAO_FALHA', nome: 'Falhas repetidas de integração', regra: `${LIMIARES.integracaoFalhas.quantidade} ou mais falhas do mesmo provedor em ${LIMIARES.integracaoFalhas.minutos} minutos`, severidade: 'MEDIA' },
   { tipo: 'WEBHOOK_INVALIDO', nome: 'Webhook com assinatura inválida', regra: `${LIMIARES.webhookInvalido.quantidade} ou mais avisos recebidos com assinatura inválida em ${LIMIARES.webhookInvalido.minutos} minutos`, severidade: 'ALTA' },
+  { tipo: 'EXPORTACAO_MASSA', nome: 'Exportação de dados em massa', regra: `${LIMIARES.exportacoes.quantidade} ou mais exportações do mesmo usuário em ${LIMIARES.exportacoes.minutos} minutos, ou exportação de dados sensíveis (clientes, RH, financeiro, fornecedores, relatórios) entre ${LIMIARES.ajusteEstoque.foraDoHorario.de}h e ${LIMIARES.ajusteEstoque.foraDoHorario.ate}h`, severidade: 'ALTA' },
   { tipo: 'MANIPULACAO_IA', nome: 'Tentativa de manipulação da IA', regra: 'Pergunta bloqueada por instrução suspeita ou dado com instrução embutida neutralizado', severidade: 'ALTA' },
 ];
 
@@ -72,12 +74,14 @@ async function permissoesAlteradas(desde: Date): Promise<EventoDetectado[]> {
   const alvos = await prisma.usuario.findMany({ where: { id: { in: linhas.map((l) => l.entidadeId).filter((x): x is string => !!x) } }, select: { id: true, nome: true } });
   const nome = new Map(alvos.map((a) => [a.id, a.nome]));
   return linhas.map((l) => ({ empresaId: l.empresaId!, tipo: 'PERMISSAO_ALTERADA', chave: `perm:${l.id}`, severidade: 'ALTA' as const,
-    dados: { auditoriaId: l.id, alteradoPor: l.usuario?.nome ?? '(sistema)', usuarioAlterado: (l.entidadeId && nome.get(l.entidadeId)) ?? l.entidadeId ?? '(desconhecido)', quando: l.createdAt.toISOString() } }));
+    dados: { auditoriaId: l.id, usuarioAlteradoId: l.entidadeId, alteradoPorId: l.usuarioId, alteradoPor: l.usuario?.nome ?? '(sistema)', usuarioAlterado: (l.entidadeId && nome.get(l.entidadeId)) ?? l.entidadeId ?? '(desconhecido)', quando: l.createdAt.toISOString() } }));
 }
 
 async function cancelamentos(desde: Date): Promise<EventoDetectado[]> {
   const L = LIMIARES.cancelamentos;
-  const vendas = await prisma.venda.findMany({ where: { status: { in: ['CANCELADA', 'ESTORNADA', 'DEVOLVIDA'] }, updatedAt: { gte: desde } }, select: { empresaId: true, funcionarioId: true, total: true, updatedAt: true, status: true }, take: 20_000 });
+  // createdAt limita a busca às vendas dos últimos 30 dias (usa o índice existente; Venda não tem
+  // índice em updatedAt e criar um travaria o PDV). Cancelar venda mais antiga que isso não entra.
+  const vendas = await prisma.venda.findMany({ where: { status: { in: ['CANCELADA', 'ESTORNADA', 'DEVOLVIDA'] }, createdAt: { gte: new Date(desde.getTime() - 30 * 86_400_000) }, updatedAt: { gte: desde } }, select: { empresaId: true, funcionarioId: true, total: true, updatedAt: true, status: true }, take: 20_000 });
   const grupos = new Map<string, { empresaId: string; func: string; b: number; n: number; valor: number; status: Record<string, number> }>();
   for (const v of vendas) {
     const func = v.funcionarioId ?? 'sem-operador'; const b = balde(v.updatedAt, L.minutos); const k = `${v.empresaId}|${func}|${b}`;
@@ -136,7 +140,30 @@ async function manipulacaoIA(desde: Date): Promise<EventoDetectado[]> {
   ];
 }
 
-export const REGRAS: Record<string, (desde: Date) => Promise<EventoDetectado[]>> = { loginsFalhos, permissoesAlteradas, cancelamentos, ajustesEstoque, integracoes, manipulacaoIA };
+async function exportacoes(desde: Date): Promise<EventoDetectado[]> {
+  const L = LIMIARES.exportacoes;
+  const linhas = await prisma.auditoria.findMany({ where: { acao: 'EXPORTAR', empresaId: { not: null }, createdAt: { gte: desde } }, select: { id: true, empresaId: true, usuarioId: true, entidadeId: true, contexto: true, ip: true, createdAt: true }, take: 20_000 });
+  const usuarios = await prisma.usuario.findMany({ where: { id: { in: [...new Set(linhas.map((l) => l.usuarioId).filter((x): x is string => !!x))] } }, select: { id: true, nome: true } });
+  const nome = new Map(usuarios.map((u) => [u.id, u.nome]));
+  const eventos: EventoDetectado[] = [];
+  const grupos = new Map<string, { empresaId: string; usuarioId: string; b: number; n: number; modulos: Record<string, number>; primeira: Date; ultima: Date }>();
+  for (const l of linhas) {
+    const u = l.usuarioId ?? 'desconhecido'; const b = balde(l.createdAt, L.minutos); const k = `${l.empresaId}|${u}|${b}`;
+    const g = grupos.get(k) ?? { empresaId: l.empresaId!, usuarioId: u, b, n: 0, modulos: {}, primeira: l.createdAt, ultima: l.createdAt };
+    g.n++; const m = l.entidadeId ?? 'desconhecido'; g.modulos[m] = (g.modulos[m] ?? 0) + 1; g.ultima = l.createdAt; grupos.set(k, g);
+    if (L.sensiveis.includes(m) && foraDoHorario(l.createdAt)) {
+      eventos.push({ empresaId: l.empresaId!, tipo: 'EXPORTACAO_MASSA', chave: `exphora:${l.id}`, severidade: 'MEDIA',
+        dados: { motivo: 'fora do horário', usuarioId: u, usuario: nome.get(u) ?? '(desconhecido)', exportacoes: 1, porModulo: { [m]: 1 }, quando: l.createdAt.toISOString() } });
+    }
+  }
+  for (const g of grupos.values()) if (g.n >= L.quantidade) {
+    eventos.push({ empresaId: g.empresaId, tipo: 'EXPORTACAO_MASSA', chave: `exp:${g.usuarioId}:${g.b}`, severidade: 'ALTA',
+      dados: { motivo: 'volume', usuarioId: g.usuarioId, usuario: nome.get(g.usuarioId) ?? '(desconhecido)', exportacoes: g.n, porModulo: g.modulos, janelaMinutos: L.minutos, primeira: g.primeira.toISOString(), ultima: g.ultima.toISOString() } });
+  }
+  return eventos;
+}
+
+export const REGRAS: Record<string, (desde: Date) => Promise<EventoDetectado[]>> = { loginsFalhos, permissoesAlteradas, cancelamentos, ajustesEstoque, integracoes, manipulacaoIA, exportacoes };
 
 /** Grava eventos na outbox; os já existentes (mesma chave) são ignorados. */
 export async function registrarEventos(eventos: EventoDetectado[]): Promise<number> {

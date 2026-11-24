@@ -9,13 +9,14 @@
 
 | Área | Resultado |
 |---|---|
-| Testes automatizados (backend, usuário administrador do banco) | **566 passaram, 0 falharam** (28 pulados: avaliações com modelo real e testes que exigem serviços externos) |
-| Testes automatizados (backend, usuário restrito com RLS) | **576 passaram, 0 falharam** (27 pulados) |
+| Testes automatizados (backend, usuário administrador do banco) | **574 passaram, 0 falharam** (28 pulados: avaliações com modelo real e testes que exigem serviços externos) — rodada 2 |
+| Testes automatizados (backend, usuário restrito com RLS) | **584 passaram, 0 falharam** (27 pulados) — rodada 2 |
 | Testes do frontend | **85 passaram, 0 falharam** |
-| Compilação TypeScript (backend e frontend) | sem erros |
-| Avaliação com o Gemini real (20 perguntas com resposta esperada) | **20 de 20 passaram** (algumas só depois de repetir por causa de erro 503 do Google — ver §5) |
-| Revisão visual (6 painéis + modo voz, desktop e celular) | sem rolagem lateral, sem erros de página, sem erros de API |
-| Falha encontrada nesta homologação | investigação interrompida por reinício ficava travada — **corrigida** (§4) |
+| Compilação TypeScript e build (backend e frontend) | sem erros |
+| Banco idêntico ao do CI, criado do zero (PostgreSQL 17 + pgvector) | migrações, drift, RLS, papéis e validações T9/T10 aprovados; todas as tabelas da IA com RLS |
+| Avaliação com o Gemini real (22 perguntas com resposta esperada) | Rodada 2, após todas as mudanças de prompt: **21 de 22 passaram**. A 22ª respondeu certo ("Dias de Atraso: 2"); o teste foi corrigido porque exigia a frase exata "2 dia". A repetição seguinte foi barrada pela **cota da chave do Gemini (HTTP 429)**, não por erro de qualidade (§11) |
+| Revisão visual (6 painéis + modo voz + avaliação, bloqueio e retomada; desktop e celular) | sem rolagem lateral, sem erros de página; as únicas respostas de erro foram as recusas esperadas |
+| Falhas encontradas e corrigidas | rodada 1: investigação travada após reinício (§4). Rodada 2: 6 falhas, incluindo 2 que quebrariam o CI e 1 que quebraria a migração em produção (§11) |
 
 ---
 
@@ -77,8 +78,7 @@
 
 - **Limite padrão por empresa:** 500 investigações e R$ 50,00 por mês. Aviso em 80%; em 100% só a IA para.
 - **Monitor de segurança:** um ciclo completo (6 regras + fila) levou **225 ms** num banco com 1.311 empresas de teste.
-- **Descobertas diárias:** cerca de 43 s para as 1.311 empresas, uma vez por dia, fora de qualquer requisição.
-  - *Ponto de atenção:* o tempo cresce com o número de empresas, porque elas são processadas uma por vez. Com milhares de empresas reais, convém dividir em lotes.
+- **Descobertas diárias:** cerca de **5 s** no banco de teste (867 empresas com movimento, de 1.311), uma vez por dia e fora de qualquer requisição. Antes da rodada 2 levava 43 s; agora roda em lotes, 4 empresas por vez.
 - **Lentidão observada:** as respostas mais lentas são as do BRAIN (até ~93 s), porque ele consulta vários especialistas em sequência.
 
 ## 7. Segurança
@@ -97,22 +97,53 @@
 - **Corrigido nesta rodada, com autorização:** o layout antigo da tela /ia no celular, que espremia a conversa.
 - **Limitação do modo voz:** foi verificado visualmente ("Ouvindo você… Fale agora") com um microfone simulado. O reconhecimento de fala real não pode ser testado de forma automatizada. O modo voz envia a frase pelo mesmo caminho do texto, que vai ao NEXUS BRAIN.
 
-## 9. Limitações conhecidas
+## 9. Limitações conhecidas (após a rodada 2)
 
-1. Exportação ou consulta em massa de dados sensíveis ainda não é monitorada: o NEXUS não registra essas operações hoje.
-2. Regra de cancelamentos: se uma venda já cancelada for editada mais tarde, ela pode entrar numa nova janela e gerar um segundo alerta.
-3. Só uma ação aprovável existe por enquanto: criar pedido de compra em rascunho.
-4. O botão "correta / incorreta" em cada resposta (plano 5A.4) não foi implementado.
-5. A bateria de avaliação com o modelo real roda sob demanda (`NEXUS_AI_AVALIACAO=1`), não a cada mudança no CI, porque depende da chave e da cota do Gemini.
+1. Regra de cancelamentos: considera só as vendas dos últimos 30 dias, para usar o índice que já existe e não criar outro na tabela de vendas, o que travaria o PDV. Também pode alertar de novo se uma venda já cancelada for editada mais tarde.
+2. O registro de exportações cobre as rotas que seguem o padrão de nome (`/export`, `/exportar`, `/pdf` e o relatório do Radar). Uma exportação futura com outro nome precisa seguir o padrão para entrar no monitoramento.
+3. A avaliação real roda no GitHub só quando o segredo `GEMINI_API_KEY` estiver cadastrado no repositório. Sem ele, o check falha de propósito, avisando. Cada execução consome cota da chave.
+4. Avaliações feitas em conversas antigas do histórico mostram o estado atual, mas o botão de retomar aparece só para respostas que ainda estão aguardando o provedor.
 
 ## 10. O que falta para produção (só com sua autorização)
 
-1. Push da branch e abertura do PR.
-2. Aplicar no Supabase as 4 migrações, todas apenas aditivas:
+1. Push da branch e abertura do PR. O CI agora usa PostgreSQL 17 com pgvector; sem essa troca, ele falharia.
+2. **Antes das migrações:** um administrador do Supabase cria a extensão no schema public, com `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;` (detalhes em `docs/CI_CD_E_DEPLOY.md`, seção 4).
+   - Testado: o papel `nexus_migrator` não consegue criar a extensão. Com a extensão já criada, a migração roda normalmente.
+3. Aplicar as 6 migrações, todas aditivas:
    - `202611270000_nexus_ai_fundacao`
    - `202611280000_nexus_ai_memoria_documentos`
-   - `202611290000_nexus_ai_pgvector` — cria a extensão `vector`, uma operação administrativa no Supabase
+   - `202611290000_nexus_ai_pgvector`
    - `202611300000_nexus_ai_eventos_aprovacoes`
-3. Reaplicar as políticas de RLS (`prisma/seguranca/01_rls_policies.sql`) para as tabelas novas.
-4. Merge e deploy.
-5. Opcional: `NEXUS_AI_MONITOR_SEG` (padrão 120 s) e os limites de custo por empresa.
+   - `202612010000_nexus_ai_exportacao_avaliacao`
+   - `202612010100_nexus_ai_indices_monitor`
+4. Reaplicar as políticas de RLS (`prisma/seguranca/01_rls_policies.sql`) e conferir o drift com `node scripts/verificar-drift.cjs`.
+5. Merge e deploy.
+6. Para a avaliação automática no GitHub: cadastrar o segredo `GEMINI_API_KEY` em Settings → Secrets and variables → Actions. Essa ação é sua.
+7. Opcional: `NEXUS_AI_MONITOR_SEG` (padrão 120 s), `NEXUS_AI_INSIGHTS_PARALELO` (padrão 4) e os limites de custo por empresa.
+
+## 11. Rodada 2 — pendências corrigidas e análise minuciosa
+
+### Pendências da rodada 1 (todas corrigidas)
+
+| Pendência | Correção | Prova |
+|---|---|---|
+| Exportação em massa não monitorada | Gancho central no servidor: toda exportação bem-sucedida vai para a auditoria (`EXPORTAR`), sem mexer em cada módulo. Regra nova `EXPORTACAO_MASSA`: 10 ou mais exportações em 60 min, ou dado sensível exportado entre 22h e 6h | Teste pela rota real: exportação ok é registrada, a recusada (403) não; 10 exportações viram 1 alerta ALTO, sem duplicar |
+| Faltava "correta / incorreta" | Botões em cada resposta, com comentário opcional quando incorreta. Só quem perguntou pode avaliar. O resumo de 30 dias fica em Automações, e as perguntas avaliadas como incorretas aparecem só para quem administra a IA | Teste de rota (dono, outro usuário, valor inválido, resumo admin × não admin); conferido na tela |
+| Só uma ação aprovável | Mais duas ações: **ajustar estoque mínimo** (a IA propõe) e **bloquear usuário**, preparado a partir de um alerta de logins falhos, permissão alterada ou exportação em massa. O bloqueio inativa a conta e encerra as sessões na hora. As duas exigem sempre aprovação humana e não podem ser automatizadas | Testes: quem não tem permissão não aprova; o token antigo passa a receber 401; ninguém bloqueia a própria conta |
+| Avaliação real não roda sozinha | Workflow `nexus-ai-avaliacao.yml`: roda a cada PR que muda a IA. Um 503 ou 429 é retomado automaticamente até 3 vezes | YAML validado; a nova tentativa foi exercitada na avaliação local (16 retomadas registradas) |
+| Rotina diária lenta | Só empresas com movimento nos 63 dias analisados, 4 por vez, gravando a cada lote | 43 s → **5 s** no banco de teste (867 de 1.311 empresas) |
+
+### Problemas que a análise minuciosa encontrou (todos corrigidos)
+
+1. **O CI quebraria:** a imagem `postgres:17` não tem pgvector. Trocada por `pgvector/pgvector:pg17`.
+2. **O CI quebraria:** a checagem de drift acusaria o índice vetorial, que o Prisma não representa. Agora é feita por `scripts/verificar-drift.cjs`, que tolera só esse índice. Testado que ele acusa uma tabela fora das migrações.
+3. **A migração quebraria em produção:** o papel `nexus_migrator` não pode criar a extensão `vector`. Foi documentado o pré-requisito do administrador (item 10.2) e testado o caminho que funciona.
+4. **Leitura completa de tabela a cada 2 min:** as regras de logins e de integrações não tinham índice por data. A migração `202612010100` cria esses índices. Na tabela de vendas não foi criado índice, para não travar o PDV; a regra passou a usar o índice existente.
+5. **Tela sem retomada:** a mensagem dizia "pode ser retomada", mas não havia botão. Agora há "Retomar investigação".
+6. **Autobloqueio:** um alerta sobre a própria conta gerava proposta de bloqueio. Agora é recusado já na preparação.
+
+### Avaliação real nesta rodada
+
+- **Primeira rodada completa**, depois de todas as mudanças de prompt: 21 de 22 passaram. A outra respondeu corretamente e falhou só pelo texto exato que o teste exigia; o teste foi corrigido.
+- **Repetições seguintes:** foram barradas por **HTTP 429**, porque a cota da chave do Gemini se esgotou depois de muitas avaliações no mesmo dia. O sistema tratou o 429 como previsto: a investigação ficou guardada, sem erro de tela, com o botão de retomar.
+- **Recomendação:** repetir a bateria quando a cota renovar, ou pelo workflow do GitHub com o segredo cadastrado.

@@ -46,6 +46,14 @@ export function descrever(tipo: string, d: any): Conteudo {
       descricao: d.origem === 'pergunta bloqueada'
         ? `Uma pergunta de ${d.usuario} em ${hora(d.quando)} tentou mudar as regras da IA e foi bloqueada. Nada foi executado.`
         : `Um dado lido pela IA (${d.ferramenta ?? 'ferramenta'}${d.campos?.length ? `: ${d.campos.join(', ')}` : ''}) continha instruções direcionadas à IA. O conteúdo foi tratado como dado e não foi seguido. Revise o cadastro de origem.` };
+    case 'EXPORTACAO_MASSA': {
+      const mods = Object.entries(d.porModulo ?? {}).map(([m, n]) => `${m} (${n})`).join(', ');
+      return { modulo: 'auditoria', tipoAlerta: 'SEGURANCA',
+        titulo: d.motivo === 'volume' ? `${d.exportacoes} exportações em ${d.janelaMinutos} min — ${d.usuario}` : `Exportação de dados sensíveis fora do horário — ${d.usuario}`,
+        descricao: d.motivo === 'volume'
+          ? `${d.usuario} fez ${d.exportacoes} exportações em até ${d.janelaMinutos} minutos, entre ${hora(d.primeira)} e ${hora(d.ultima)}: ${mods}. Confirme se foi um trabalho autorizado.`
+          : `${d.usuario} exportou dados de ${mods} em ${hora(d.quando)}, fora do horário comercial. Confirme se foi autorizado.` };
+    }
     case 'ANOMALIA': {
       const moeda = d.area !== 'vendas' || d.tipo !== 'CANCELAMENTOS_ACIMA_DO_NORMAL';
       const fmt = (v: unknown) => (moeda ? R$(v) : `${Number(v).toLocaleString('pt-BR')}%`);

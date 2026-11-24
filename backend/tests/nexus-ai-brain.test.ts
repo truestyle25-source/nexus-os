@@ -4,6 +4,7 @@
  * Parte com provedor de roteiro (determinística) + avaliação real em NEXUS_AI_AVALIACAO=1.
  */
 import { test } from 'node:test';
+import { investigarComNovaTentativa } from './_avaliacao-real.js';
 import assert from 'node:assert/strict';
 import { prisma } from '../src/lib/prisma.js';
 import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
@@ -137,7 +138,7 @@ test('NEXUS AI — Fase 04: conhecimento e NEXUS BRAIN', { skip: !BANCO_DE_TESTE
 
     await t.test('B [nexus] Por que o lucro caiu? (modelo real, ≥2 especialistas)', { skip: !AVALIACAO_REAL && 'avaliação com modelo real: NEXUS_AI_AVALIACAO=1' }, async () => {
       definirProvedorDeTeste(null);
-      const r = await iniciarInvestigacao(contexto(empresa.id, u.id), { agenteId: 'nexus', pergunta: 'Por que o lucro dos últimos 30 dias caiu em relação aos 30 dias anteriores? Analise vendas e finanças.' });
+      const r = await investigarComNovaTentativa(contexto(empresa.id, u.id), { agenteId: 'nexus', pergunta: 'Por que o lucro dos últimos 30 dias caiu em relação aos 30 dias anteriores? Analise vendas e finanças.' });
       const filhos = await prisma.aIExecucao.findMany({ where: { execucaoPaiId: r.execucaoId }, select: { agente: true } });
       console.log(`[aval:nexus] → ${String(r.resposta).replace(/\s+/g, ' ').slice(0, 700)}\n  especialistas: ${filhos.map((x) => x.agente).join(', ')} · verificada: ${r.detalhes?.verificacao?.aprovada} ${r.detalhes?.verificacao?.divergentes?.join(',') ?? ''}`);
       assert.equal(r.status, 'CONCLUIDA');

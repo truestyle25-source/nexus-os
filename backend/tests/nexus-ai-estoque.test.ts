@@ -8,6 +8,7 @@
  *     Roda com NEXUS_AI_AVALIACAO=1 e GEMINI_API_KEY (custo real; fora do CI).
  */
 import { test } from 'node:test';
+import { investigarComNovaTentativa } from './_avaliacao-real.js';
 import assert from 'node:assert/strict';
 import { prisma } from '../src/lib/prisma.js';
 import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
@@ -120,7 +121,7 @@ test('NEXUS AI — Agente de Estoque (ferramentas + avaliação)', { skip: !BANC
     for (const c of casos) {
       await t.test(`B ${c.pergunta}`, { skip: !AVALIACAO_REAL && 'avaliação com modelo real: NEXUS_AI_AVALIACAO=1' }, async () => {
         await new Promise((ok) => setTimeout(ok, 6000)); // respeita o limite por minuto do provedor
-        const r = await iniciarInvestigacao(contexto(empresa.id, u.id), { agenteId: 'estoque', pergunta: c.pergunta });
+        const r = await investigarComNovaTentativa(contexto(empresa.id, u.id), { agenteId: 'estoque', pergunta: c.pergunta });
         console.log(`[aval] ${c.pergunta}\n  → ${String(r.resposta).replace(/\s+/g, ' ').slice(0, 400)}\n  fontes: ${r.detalhes?.fontes.map((x) => x.ferramenta).join(', ')} · verificada: ${r.detalhes?.verificacao?.aprovada}`);
         assert.equal(r.status, 'CONCLUIDA');
         assert.equal(r.detalhes?.verificacao?.aprovada, true, 'números conferidos com as ferramentas');

@@ -31,8 +31,8 @@ const ANALISE: Record<string, string[]> = {
 const PAPEL_ANALISE = 'Para previsões, anomalias e simulações use as ferramentas analíticas (previsao_demanda, previsao_caixa, detectar_anomalias, simular_preco quando disponíveis): informe o método e o período que a ferramenta devolver e deixe claro que previsão e simulação são estimativas.';
 
 /** Fase 06: agentes que podem PREPARAR propostas (nível 2). Nada executa sem aprovação. */
-const PROPOSTAS: Record<string, string[]> = { compras: ['propor_compra_reposicao'], estoque: ['propor_compra_reposicao'] };
-const PAPEL_PROPOSTA = 'Quando o usuário pedir para comprar/repor, PREPARE a proposta chamando propor_compra_reposicao (id do produto vindo de ferramenta; quantidade pedida pelo usuário ou calculada por ferramenta). Sem fornecedorId ela usa o fornecedor padrão do cadastro do produto — não deixe de chamá-la só porque comparar_fornecedores veio vazio; se ela devolver erro, explique o erro. Isso não cria o pedido: diga que a proposta ficou aguardando aprovação na tela Aprovações. Nunca diga que o pedido foi criado se o status não for EXECUTADA.';
+const PROPOSTAS: Record<string, string[]> = { compras: ['propor_compra_reposicao'], estoque: ['propor_compra_reposicao', 'propor_ajuste_estoque_minimo'] };
+const PAPEL_PROPOSTA = 'Quando o usuário pedir para comprar/repor, PREPARE a proposta chamando propor_compra_reposicao (id do produto vindo de ferramenta; quantidade pedida pelo usuário ou calculada por ferramenta). Sem fornecedorId ela usa o fornecedor padrão do cadastro do produto — não deixe de chamá-la só porque comparar_fornecedores veio vazio; se ela devolver erro, explique o erro. Isso não cria o pedido: diga que a proposta ficou aguardando aprovação na tela Aprovações. Para mudar o estoque mínimo de um produto, prepare com propor_ajuste_estoque_minimo (quando disponível). Nunca diga que algo foi criado ou alterado se o status não for EXECUTADA.';
 
 export const AGENTES: Agente[] = [
   {

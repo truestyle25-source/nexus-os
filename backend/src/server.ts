@@ -74,6 +74,7 @@ import { iniciarAgendadorShopee, pararAgendadorShopee } from './modules/integrac
 import { iniciarAgendadorIntegracoes, pararAgendadorIntegracoes } from './modules/integracoes/central/integracoes-agendador.js';
 import { nexusAiRoutes } from './modules/nexus-ai/gateway.routes.js';
 import { iniciarMonitorNexusAI, pararMonitorNexusAI } from './modules/nexus-ai/eventos/agendador.js';
+import { registrarExportacaoSeFor } from './modules/nexus-ai/eventos/exportacoes.js';
 
 dotenv.config();
 
@@ -115,6 +116,9 @@ const app = Fastify({
 // Cabeçalhos de segurança em TODA resposta da API.
 // A CSP restritiva vale só para respostas JSON (a API não serve páginas); PDFs e
 // downloads continuam abrindo normalmente.
+// Toda exportação bem-sucedida fica na auditoria (monitoramento de exportação em massa da NEXUS AI).
+app.addHook('onResponse', registrarExportacaoSeFor);
+
 app.addHook('onSend', async (request, reply, payload) => {
   reply.header('X-Request-Id', request.id);
   reply.header('X-Content-Type-Options', 'nosniff');

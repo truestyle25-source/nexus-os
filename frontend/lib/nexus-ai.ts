@@ -6,22 +6,23 @@ export interface FonteIA { ferramenta: string; args: unknown }
 export interface VerificacaoIA { aprovada: boolean; numeros: { texto: string; valor: number; conferido: boolean }[]; divergentes: string[] }
 export interface ResultadoIA {
   execucaoId: string; conversaId: string | null; status: string; resposta: string | null;
-  detalhes: { fontes: FonteIA[]; verificacao: VerificacaoIA | null; limitacoes: string | null; agente: string; modelo: string | null } | null;
+  detalhes: { fontes: FonteIA[]; verificacao: VerificacaoIA | null; limitacoes: string | null; agente: string; modelo: string | null; avaliacao?: 'CORRETA' | 'INCORRETA' | null } | null;
 }
-export interface MensagemIA { id: string; papel: 'USUARIO' | 'NEXUS'; conteudo: string; detalhes: ResultadoIA['detalhes']; execucaoId: string | null; createdAt: string }
+export interface MensagemIA { id: string; papel: 'USUARIO' | 'NEXUS'; conteudo: string; detalhes: ResultadoIA['detalhes']; execucaoId: string | null; status?: string | null; createdAt: string }
 export interface ConsumoIA { uso: { execucoes: number; tokensEntrada: number; tokensSaida: number; custoCentavos: number }; limites: { execucoesMes: number; custoMesCentavos: number; bloqueadoManualmente: boolean }; percentual: number; alerta: boolean; bloqueado: boolean; motivo: string | null }
 
 export interface MemoriaIA { id: string; tipo: string; titulo: string; conteudo: string; updatedAt: string }
 export interface DocumentoIA { id: string; titulo: string; modulo: string | null; caracteres: number; trechos: number; createdAt: string }
 export interface InsightIA { id: string; origem: string; tipo: string; modulo: string; severidade: string; titulo: string; descricao: string; evidencias: Record<string, unknown> | null; status: string; createdAt: string }
 export interface AprovacaoIA { id: string; acao: string; titulo: string; proposta: Record<string, unknown>; impacto: string | null; valorCentavos: number | null; nivel: number; status: string; decididoPor: string | null; decididoEm: string | null; motivo: string | null; resultado: Record<string, unknown> | null; erro: string | null; expiraEm: string; createdAt: string; podeDecidir: boolean }
-export interface AutomacoesIA { regras: { tipo: string; nome: string; regra: string; severidade: string; eventos7dias: number }[]; insightsDiarios: { eventos7dias: number; regra: string }; filaPendente: number; acoes: { acao: string; nome: string; descricao: string; permissao: string; ativa: boolean; valorMaxCentavos: number | null }[] }
+export interface AutomacoesIA { regras: { tipo: string; nome: string; regra: string; severidade: string; eventos7dias: number }[]; insightsDiarios: { eventos7dias: number; regra: string }; filaPendente: number; avaliacoes: { corretas: number; incorretas: number; ultimasIncorretas: { id: string; agente: string; pergunta: string; comentario: string | null; quando: string }[] | null }; acoes: { acao: string; nome: string; descricao: string; permissao: string; ativa: boolean; valorMaxCentavos: number | null }[] }
 export const TIPOS_MEMORIA: [string, string][] = [['META', 'Meta'], ['POLITICA', 'Política'], ['CRITERIO', 'Critério'], ['PREFERENCIA', 'Preferência'], ['DECISAO', 'Decisão']];
 
 const B = '/api/v1/nexus-ai';
 export const nexusAi = {
   agentes: () => api.get<{ agentes: AgenteIA[]; provedor: { nome: string; configurado: boolean; circuito: { aberto: boolean } } }>(`${B}/agentes`).then((r) => r.data),
   perguntar: (corpo: { pergunta: string; agente: string; conversaId?: string; idempotencyKey: string }) => api.post<ResultadoIA>(`${B}/perguntar`, corpo).then((r) => r.data),
+  avaliar: (execucaoId: string, avaliacao: 'CORRETA' | 'INCORRETA', comentario?: string) => api.post(`${B}/execucoes/${execucaoId}/avaliacao`, { avaliacao, comentario }).then((r) => r.data),
   retomar: (execucaoId: string) => api.post<ResultadoIA>(`${B}/execucoes/${execucaoId}/retomar`, {}).then((r) => r.data),
   conversas: () => api.get<{ conversas: { id: string; titulo: string; updatedAt: string }[] }>(`${B}/conversas`).then((r) => r.data.conversas),
   conversa: (id: string) => api.get<{ id: string; titulo: string; mensagens: MensagemIA[] }>(`${B}/conversas/${id}`).then((r) => r.data),
@@ -33,6 +34,7 @@ export const nexusAi = {
   adicionarDocumento: (d: { titulo: string; conteudo: string }) => api.post(`${B}/documentos`, d).then((r) => r.data),
   excluirDocumento: (id: string) => api.delete(`${B}/documentos/${id}`).then((r) => r.data),
   insights: (status?: string) => api.get<{ insights: InsightIA[] }>(`${B}/insights`, { params: status ? { status } : {} }).then((r) => r.data.insights),
+  proporBloqueio: (insightId: string) => api.post<AprovacaoIA>(`${B}/insights/${insightId}/propor-bloqueio`, {}).then((r) => r.data),
   marcarInsight: (id: string, status: 'ABERTO' | 'LIDO' | 'DESCARTADO') => api.post<InsightIA>(`${B}/insights/${id}/status`, { status }).then((r) => r.data),
   aprovacoes: (status?: string) => api.get<{ aprovacoes: AprovacaoIA[] }>(`${B}/aprovacoes`, { params: status ? { status } : {} }).then((r) => r.data.aprovacoes),
   decidir: (id: string, decisao: 'aprovar' | 'rejeitar', motivo?: string) => api.post<AprovacaoIA>(`${B}/aprovacoes/${id}/${decisao}`, { motivo }).then((r) => r.data),
@@ -49,7 +51,7 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   resumo_financeiro: 'Resumo financeiro', contas_vencidas: 'Contas vencidas', fluxo_caixa_projetado: 'Fluxo de caixa projetado', despesas_por_categoria: 'Despesas por categoria', resultado_periodo: 'Resultado (DRE)',
   consultar_especialista: 'Consulta a especialista', consultar_memoria: 'Memória da empresa', buscar_documentos: 'Documentos internos', investigacoes_anteriores: 'Investigações anteriores',
   previsao_demanda: 'Previsão de demanda', previsao_caixa: 'Previsão de caixa', detectar_anomalias: 'Detecção de anomalias', simular_preco: 'Simulação de preço',
-  propor_compra_reposicao: 'Proposta de compra',
+  propor_compra_reposicao: 'Proposta de compra', propor_ajuste_estoque_minimo: 'Proposta de estoque mínimo',
   resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 

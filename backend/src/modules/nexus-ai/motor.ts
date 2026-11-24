@@ -30,7 +30,7 @@ export interface ResultadoInvestigacao {
   conversaId: string | null;
   status: string;
   resposta: string | null;
-  detalhes: { fontes: { ferramenta: string; args: unknown }[]; verificacao: ResultadoVerificacao | null; limitacoes: string | null; agente: string; modelo: string | null } | null;
+  detalhes: { fontes: { ferramenta: string; args: unknown }[]; verificacao: ResultadoVerificacao | null; limitacoes: string | null; agente: string; modelo: string | null; avaliacao?: string | null } | null;
 }
 
 const MENSAGEM_NAO_VERIFICADA = 'Não consegui confirmar com segurança os números desta análise nos dados do sistema, então não vou apresentá-los. Tente reformular a pergunta ou restringir o período.';
@@ -211,7 +211,7 @@ export async function montarResultado(execucaoId: string): Promise<ResultadoInve
   return {
     execucaoId: ex.id, conversaId: ex.conversaId, status: ex.status,
     resposta: ex.resposta ?? (ex.status === 'AGUARDANDO_PROVEDOR' ? 'O provedor de IA está indisponível no momento. A investigação foi guardada e pode ser retomada sem refazer o que já foi feito.' : ex.status === 'FALHOU' ? 'A investigação não pôde ser concluída.' : null),
-    detalhes: { fontes: ex.ferramentas.filter((f) => f.ok).map((f) => ({ ferramenta: f.ferramenta, args: f.entrada })), verificacao: (ex.verificacao as any) ?? null, limitacoes, agente: ex.agente, modelo: ex.modelo },
+    detalhes: { fontes: ex.ferramentas.filter((f) => f.ok).map((f) => ({ ferramenta: f.ferramenta, args: f.entrada })), verificacao: (ex.verificacao as any) ?? null, limitacoes, agente: ex.agente, modelo: ex.modelo, avaliacao: ex.avaliacao ?? null },
   };
 }
 

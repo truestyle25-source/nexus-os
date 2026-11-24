@@ -1,0 +1,77 @@
+# Avaliação da NEXUS AI com o modelo real (plano 5A.4: bloqueio de regressão).
+#
+# Roda a bateria de perguntas com respostas esperadas (estoque, comercial, financeiro,
+# compras, BRAIN, previsões) contra o Gemini a cada mudança em agentes, ferramentas,
+# prompts ou no motor da IA. Uma resposta com número divergente, sem fonte ou que vaze
+# dado reprova o check.
+#
+# Regras:
+#  - Banco de teste efêmero (container), NUNCA produção.
+#  - A chave vem do segredo GEMINI_API_KEY do repositório (Settings > Secrets and
+#    variables > Actions). Sem o segredo o check FALHA com aviso — não passa sem avaliar.
+#  - 503 do provedor (sobrecarga) é retomado automaticamente nos testes (até 3 vezes).
+name: NEXUS AI — avaliação real
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/modules/nexus-ai/**'
+      - 'backend/tests/nexus-ai-*.test.ts'
+      - 'backend/tests/_avaliacao-real.ts'
+      - '.github/workflows/nexus-ai-avaliacao.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-ai-avaliacao-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  avaliacao:
+    name: NEXUS AI (avaliação com modelo real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nexus_os_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nexus_os_test
+      NODE_ENV: test
+      NEXUS_AI_AVALIACAO: '1'
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Segredo GEMINI_API_KEY configurado
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::Segredo GEMINI_API_KEY não configurado no repositório: a avaliação real da NEXUS AI não pode rodar."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Segredos de teste efêmeros
+        run: |
+          JWT=$(openssl rand -hex 32); echo "::add-mask::$JWT"; echo "JWT_SECRET=$JWT" >> "$GITHUB_ENV"
+          KEY=$(openssl rand -hex 32); echo "::add-mask::$KEY"; echo "CREDENTIALS_ENCRYPTION_KEY_TESTE=$KEY" >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund
+      - run: npx prisma generate
+      - name: Migrações no banco de teste isolado
+        run: npx prisma migrate deploy
+      - name: Bateria de avaliação (modelo real)
+        run: npx tsx --test --test-concurrency=1 tests/nexus-ai-*.test.ts

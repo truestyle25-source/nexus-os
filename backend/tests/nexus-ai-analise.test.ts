@@ -4,6 +4,7 @@
  * cálculo esperado. Avaliação com o modelo real (Gemini) em NEXUS_AI_AVALIACAO=1.
  */
 import { test } from 'node:test';
+import { investigarComNovaTentativa } from './_avaliacao-real.js';
 import assert from 'node:assert/strict';
 import { prisma } from '../src/lib/prisma.js';
 import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
@@ -117,7 +118,7 @@ test('NEXUS AI — Fase 05: previsões, anomalias e simulador', { skip: !BANCO_D
     for (const c of casos) {
       await t.test(`B [${c.ag}] ${c.pergunta}`, { skip: !AVALIACAO_REAL && 'avaliação com modelo real: NEXUS_AI_AVALIACAO=1' }, async () => {
         await new Promise((ok) => setTimeout(ok, 6000));
-        const r = await iniciarInvestigacao(c.ctx(), { agenteId: c.ag, pergunta: c.pergunta });
+        const r = await investigarComNovaTentativa(c.ctx(), { agenteId: c.ag, pergunta: c.pergunta });
         console.log(`[aval:${c.ag}] ${c.pergunta}\n  → ${String(r.resposta).replace(/\s+/g, ' ').slice(0, 500)}\n  fontes: ${r.detalhes?.fontes.map((x) => x.ferramenta).join(', ')} · verificada: ${r.detalhes?.verificacao?.aprovada} ${r.detalhes?.verificacao?.divergentes?.join(',') ?? ''}`);
         assert.equal(r.status, 'CONCLUIDA');
         assert.equal(r.detalhes?.verificacao?.aprovada, true, 'números conferidos com as ferramentas');

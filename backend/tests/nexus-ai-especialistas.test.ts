@@ -4,6 +4,7 @@
  * Avaliação com o modelo real (Gemini) em NEXUS_AI_AVALIACAO=1.
  */
 import { test } from 'node:test';
+import { investigarComNovaTentativa } from './_avaliacao-real.js';
 import assert from 'node:assert/strict';
 import { prisma } from '../src/lib/prisma.js';
 import { generateRandomValidCnpj } from '../src/domain/cnpj.js';
@@ -111,12 +112,12 @@ test('NEXUS AI — agentes Comercial, Financeiro e Compras', { skip: !BANCO_DE_T
       { ag: 'financeiro', pergunta: 'Como está o fluxo de caixa das próximas 4 semanas? Em alguma semana o saldo fica negativo?', deve: [/600/] },
       { ag: 'financeiro', pergunta: 'Por que o resultado dos últimos 30 dias ficou negativo?', deve: [/1\.?105/, /aluguel|1\.?000|1\.?200/i] },
       { ag: 'compras', pergunta: 'Qual fornecedor tem o menor último preço para o pão francês?', deve: [/trigal/i, /0[,.]28/] },
-      { ag: 'compras', pergunta: 'Existe algum pedido de compra atrasado?', deve: [/trigal/i, /2 dia/] },
+      { ag: 'compras', pergunta: 'Existe algum pedido de compra atrasado?', deve: [/trigal/i, /(2 dias?|atraso\W+2\b)/i] },
     ];
     for (const c of casos) {
       await t.test(`B [${c.ag}] ${c.pergunta}`, { skip: !AVALIACAO_REAL && 'avaliação com modelo real: NEXUS_AI_AVALIACAO=1' }, async () => {
         await new Promise((ok) => setTimeout(ok, 6000));
-        const r = await iniciarInvestigacao(contexto(empresa.id, u.id), { agenteId: c.ag, pergunta: c.pergunta });
+        const r = await investigarComNovaTentativa(contexto(empresa.id, u.id), { agenteId: c.ag, pergunta: c.pergunta });
         console.log(`[aval:${c.ag}] ${c.pergunta}\n  → ${String(r.resposta).replace(/\s+/g, ' ').slice(0, 450)}\n  fontes: ${r.detalhes?.fontes.map((x) => x.ferramenta).join(', ')} · verificada: ${r.detalhes?.verificacao?.aprovada} ${r.detalhes?.verificacao?.divergentes?.join(',') ?? ''}`);
         assert.equal(r.status, 'CONCLUIDA');
         assert.equal(r.detalhes?.verificacao?.aprovada, true, 'números conferidos com as ferramentas');

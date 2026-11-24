@@ -35,6 +35,8 @@ export interface AcaoAprovavel<A = any> {
   /** Permissão exigida de quem aprova (e de quem solicita, para a automação nível 3). */
   permissao: { modulo: Modulo; acao: Acao };
   validar: z.ZodType<A>;
+  /** Pode ser executada por política (nível 3)? Só ações com valor e efeito reversível. */
+  automatizavel?: boolean;
   preparar(empresaId: string, args: A, filialDaSessao?: string | null): Promise<PropostaPreparada>;
   executar(tx: Tx, empresaId: string, usuarioId: string, proposta: any, aprovacaoId: string): Promise<Record<string, unknown>>;
 }
@@ -50,6 +52,7 @@ const criarCompraRascunho: AcaoAprovavel<{ produtoId: string; quantidade: number
   nome: 'Criar pedido de compra (rascunho)',
   descricao: 'Cria um pedido de compra em rascunho no módulo Compras. O pedido não é enviado ao fornecedor nem gera pagamento.',
   permissao: { modulo: 'compras', acao: 'criar' },
+  automatizavel: true,
   validar: z.object({ produtoId: z.string().min(1).max(40), quantidade: z.coerce.number().positive().max(1_000_000), fornecedorId: z.string().max(40).optional(), filialId: z.string().max(40).optional(), motivo: z.string().max(300).optional() }),
   async preparar(empresaId, a, filialDaSessao) {
     const produto = await prisma.produto.findFirst({ where: { id: a.produtoId, empresaId }, select: { id: true, nome: true, custo: true, fornecedorId: true, unidade: true } });
@@ -87,8 +90,76 @@ const criarCompraRascunho: AcaoAprovavel<{ produtoId: string; quantidade: number
   },
 };
 
-const ACOES = new Map<string, AcaoAprovavel>([[criarCompraRascunho.id, criarCompraRascunho]]);
+// ---------------------------------------------------------------------------------------------
+// Ação: ajustar o estoque mínimo de um produto (ex.: a partir da previsão de demanda).
+// Reversível: o valor anterior fica na proposta e na auditoria.
+// ---------------------------------------------------------------------------------------------
+const ajustarEstoqueMinimo: AcaoAprovavel<{ produtoId: string; estoqueMinimo: number; motivo?: string }> = {
+  id: 'ajustar_estoque_minimo',
+  nome: 'Ajustar estoque mínimo',
+  descricao: 'Altera o estoque mínimo do cadastro de um produto. O valor anterior fica registrado para desfazer.',
+  permissao: { modulo: 'produtos', acao: 'editar' },
+  validar: z.object({ produtoId: z.string().min(1).max(40), estoqueMinimo: z.coerce.number().min(0).max(10_000_000), motivo: z.string().max(300).optional() }),
+  async preparar(empresaId, a) {
+    const p = await prisma.produto.findFirst({ where: { id: a.produtoId, empresaId }, select: { id: true, nome: true, unidade: true, estoqueMinimo: true } });
+    if (!p) throw new ErroDeNegocio('Produto não encontrado nesta empresa.', 404);
+    const atual = N(p.estoqueMinimo); const novo = Math.round(a.estoqueMinimo * 1000) / 1000;
+    if (atual === novo) throw new ErroDeNegocio(`O estoque mínimo de ${p.nome} já é ${novo}.`, 422);
+    return {
+      titulo: `Estoque mínimo de ${p.nome}: ${atual} → ${novo} ${p.unidade || ''}`.trim(),
+      impacto: `Muda o estoque mínimo do cadastro de ${p.nome} de ${atual} para ${novo} ${p.unidade || ''}. Alertas de estoque baixo e sugestões de reposição passam a usar o novo valor.`.replace(/\s+\./, '.'),
+      valorCentavos: null,
+      proposta: { produtoId: p.id, produto: p.nome, anterior: atual, estoqueMinimo: novo, motivo: a.motivo ?? null },
+    };
+  },
+  async executar(tx, empresaId, _usuarioId, p) {
+    const r = await tx.produto.updateMany({ where: { id: p.produtoId, empresaId }, data: { estoqueMinimo: p.estoqueMinimo } });
+    if (!r.count) throw new Error('Produto não encontrado nesta empresa.');
+    return { produtoId: p.produtoId, anterior: p.anterior, estoqueMinimo: p.estoqueMinimo };
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// Ação: bloquear um usuário (resposta a alerta de segurança). Inativa a conta e encerra todas as
+// sessões abertas na hora. Reversível pelo módulo Usuários (reativar).
+// ---------------------------------------------------------------------------------------------
+const bloquearUsuario: AcaoAprovavel<{ usuarioId: string; motivo?: string }> = {
+  id: 'bloquear_usuario',
+  nome: 'Bloquear usuário',
+  descricao: 'Inativa a conta do usuário e encerra as sessões abertas. Pode ser reativado no módulo Usuários.',
+  permissao: { modulo: 'usuarios', acao: 'editar' },
+  validar: z.object({ usuarioId: z.string().min(1).max(40), motivo: z.string().max(300).optional() }),
+  async preparar(empresaId, a) {
+    const u = await prisma.usuario.findFirst({ where: { id: a.usuarioId, empresaId }, select: { id: true, nome: true, status: true } });
+    if (!u) throw new ErroDeNegocio('Usuário não encontrado nesta empresa.', 404);
+    if (u.status !== 'ATIVO') throw new ErroDeNegocio(`${u.nome} já não está ativo.`, 422);
+    return {
+      titulo: `Bloquear o usuário ${u.nome}`,
+      impacto: `${u.nome} não consegue mais entrar e todas as sessões abertas são encerradas imediatamente. Para desfazer, reative o usuário no módulo Usuários.`,
+      valorCentavos: null,
+      proposta: { usuarioId: u.id, usuario: u.nome, motivo: a.motivo ?? null },
+    };
+  },
+  async executar(tx, empresaId, aprovadorId, p) {
+    if (p.usuarioId === aprovadorId) throw new Error('Você não pode bloquear a própria conta.');
+    const r = await tx.usuario.updateMany({ where: { id: p.usuarioId, empresaId, status: 'ATIVO' }, data: { status: 'INATIVO', sessoesValidasDesde: new Date() } });
+    if (!r.count) throw new Error('Usuário não encontrado ou já inativo.');
+    return { usuarioId: p.usuarioId, status: 'INATIVO', sessoesEncerradas: true };
+  },
+};
+
+const ACOES = new Map<string, AcaoAprovavel>([criarCompraRascunho, ajustarEstoqueMinimo, bloquearUsuario].map((a) => [a.id, a]));
 export const acaoAprovavel = (id: string) => ACOES.get(id);
+
+/**
+ * Usuário que um alerta de segurança aponta (para preparar o bloqueio): a conta atacada por
+ * logins falhos, a conta que recebeu permissões ou quem exportou em massa. null = não se aplica.
+ */
+export function usuarioAlvoDoInsight(tipo: string, evidencias: unknown): string | null {
+  const e = (evidencias ?? {}) as Record<string, unknown>;
+  const id = tipo === 'LOGIN_FALHO' ? e.usuarioId : tipo === 'PERMISSAO_ALTERADA' ? e.usuarioAlteradoId : tipo === 'EXPORTACAO_MASSA' ? e.usuarioId : null;
+  return typeof id === 'string' && id !== 'desconhecido' ? id : null;
+}
 export const acoesAprovaveis = () => [...ACOES.values()];
 
 const SELECAO = { id: true, acao: true, titulo: true, proposta: true, evidencias: true, impacto: true, valorCentavos: true, nivel: true, status: true, solicitadoPor: true, execucaoId: true, insightId: true, decididoPor: true, decididoEm: true, motivo: true, resultado: true, erro: true, expiraEm: true, createdAt: true } as const;
@@ -121,7 +192,7 @@ export async function criarProposta(p: { empresaId: string; usuarioId: string | 
 
   // Nível 3: política explícita da empresa, dentro do limite de valor, e o solicitante pode executar a ação.
   const politica = await prisma.aIAutomacao.findUnique({ where: { empresaId_acao: { empresaId: p.empresaId, acao: acao.id } } });
-  const cabe = politica?.ativa && (politica.valorMaxCentavos == null || (criada.valorCentavos ?? 0) <= politica.valorMaxCentavos);
+  const cabe = acao.automatizavel && politica?.ativa && (politica.valorMaxCentavos == null || (criada.valorCentavos ?? 0) <= politica.valorMaxCentavos);
   if (cabe && p.usuarioId && (await temPermissao(p.usuarioId, acao.permissao.modulo, acao.permissao.acao))) {
     return { ...(await executarDecisao(p.empresaId, p.usuarioId, criada.id, { automatica: true })), reaproveitada: false };
   }
@@ -173,11 +244,12 @@ export async function listarAprovacoes(empresaId: string, status?: string) {
 export async function listarAutomacoes(empresaId: string) {
   const politicas = await prisma.aIAutomacao.findMany({ where: { empresaId } });
   const por = new Map(politicas.map((p) => [p.acao, p]));
-  return acoesAprovaveis().map((a) => ({ acao: a.id, nome: a.nome, descricao: a.descricao, permissao: `${a.permissao.modulo}.${a.permissao.acao}`, ativa: por.get(a.id)?.ativa ?? false, valorMaxCentavos: por.get(a.id)?.valorMaxCentavos ?? null }));
+  return acoesAprovaveis().filter((a) => a.automatizavel).map((a) => ({ acao: a.id, nome: a.nome, descricao: a.descricao, permissao: `${a.permissao.modulo}.${a.permissao.acao}`, ativa: por.get(a.id)?.ativa ?? false, valorMaxCentavos: por.get(a.id)?.valorMaxCentavos ?? null }));
 }
 
 export async function salvarAutomacao(empresaId: string, usuarioId: string, acao: string, d: { ativa: boolean; valorMaxCentavos: number | null }) {
   if (!ACOES.has(acao)) throw new ErroDeNegocio(`Ação "${acao}" não existe.`, 400);
+  if (!ACOES.get(acao)!.automatizavel) throw new ErroDeNegocio('Esta ação sempre exige aprovação humana e não pode ser automatizada.', 422);
   if (d.ativa && d.valorMaxCentavos == null) throw new ErroDeNegocio('Para ligar a automação, defina o valor máximo por execução.', 422);
   const r = await prisma.aIAutomacao.upsert({ where: { empresaId_acao: { empresaId, acao } }, create: { empresaId, acao, ...d, atualizadoPor: usuarioId }, update: { ...d, atualizadoPor: usuarioId } });
   await registrarAuditoria({ empresaId, usuarioId, acao: 'ALTERAR_CONFIG', entidade: 'AIAutomacao', entidadeId: r.id, valorNovo: { acao, ...d }, origem: 'MANUAL' });

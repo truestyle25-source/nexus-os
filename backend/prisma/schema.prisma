@@ -34,6 +34,7 @@ enum AcaoAuditoria {
   SINCRONIZAR
   ALTERAR_PERMISSAO
   ALTERAR_CONFIG
+  EXPORTAR
 }
 
 enum TipoMovEstoque {
@@ -2484,6 +2485,7 @@ model IntegracaoEvento {
   createdAt  DateTime @default(now())
 
   @@index([empresaId, provedor, createdAt])
+  @@index([createdAt]) // varredura do monitor de segurança (falhas recentes de todas as empresas)
 }
 
 // --- Sincronização automática do Mercado Livre --------------------------------
@@ -3466,6 +3468,7 @@ model LoginAttempt {
 
   @@index([ip, createdAt])
   @@index([email, createdAt])
+  @@index([createdAt]) // varredura do monitor de segurança (logins falhos recentes)
 }
 
 // --- Rate limit distribuído (janela fixa) ---
@@ -3717,30 +3720,35 @@ model AIMensagem {
 // Uma investigação (pergunta do usuário ou evento). Guarda cada etapa para poder
 // RETOMAR depois de falha do provedor sem refazer o que já foi feito.
 model AIExecucao {
-  id             String                 @id @default(cuid())
-  empresaId      String
-  empresa        Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
-  usuarioId      String?
-  conversaId     String?
-  agente         String
+  id                  String                 @id @default(cuid())
+  empresaId           String
+  empresa             Empresa                @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  usuarioId           String?
+  conversaId          String?
+  agente              String
   // Investigação do NEXUS BRAIN que acionou esta (especialista consultado); nulo = investigação principal.
-  execucaoPaiId  String?
-  origem         String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO | SUBAGENTE
-  entrada        String                 @db.Text
-  status         String // EXECUTANDO | CONCLUIDA | FALHOU | AGUARDANDO_PROVEDOR | LIMITE | BLOQUEADA
-  etapas         Json? // histórico de passos (chamadas de ferramenta e resultados) para retomada
-  resposta       String?                @db.Text
-  verificacao    Json? // resultado do verificador de números
-  erro           String?
-  modelo         String?
-  tokensEntrada  Int                    @default(0)
-  tokensSaida    Int                    @default(0)
-  custoCentavos  Int                    @default(0)
-  duracaoMs      Int?
-  idempotencyKey String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  ferramentas    AIExecucaoFerramenta[]
+  execucaoPaiId       String?
+  origem              String                 @default("PERGUNTA") // PERGUNTA | EVENTO | AGENDADO | SUBAGENTE
+  entrada             String                 @db.Text
+  status              String // EXECUTANDO | CONCLUIDA | FALHOU | AGUARDANDO_PROVEDOR | LIMITE | BLOQUEADA
+  etapas              Json? // histórico de passos (chamadas de ferramenta e resultados) para retomada
+  resposta            String?                @db.Text
+  verificacao         Json? // resultado do verificador de números
+  erro                String?
+  modelo              String?
+  tokensEntrada       Int                    @default(0)
+  tokensSaida         Int                    @default(0)
+  custoCentavos       Int                    @default(0)
+  duracaoMs           Int?
+  idempotencyKey      String?
+  // Retorno do usuário sobre a resposta (plano 5A.4): CORRETA | INCORRETA, para revisão.
+  avaliacao           String?
+  avaliacaoComentario String?
+  avaliadoPor         String?
+  avaliadoEm          DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  ferramentas         AIExecucaoFerramenta[]
 
   @@unique([empresaId, idempotencyKey])
   @@index([empresaId, createdAt])

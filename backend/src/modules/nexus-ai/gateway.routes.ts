@@ -8,7 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { NaoEncontrado } from '../../lib/erros.js';
+import { ErroDeNegocio, NaoEncontrado } from '../../lib/erros.js';
 import { permissaoMiddleware } from '../../middlewares/auth.js';
 import { createRateLimiter } from '../../middlewares/rateLimiter.js';
 import { temPermissao } from '../../lib/permissoes.js';
@@ -18,7 +18,7 @@ import { contexto, iniciarInvestigacao, montarResultado, retomarInvestigacao } f
 import { situacaoConsumo } from './consumo.js';
 import { provedorAtual } from './provedores/roteador.js';
 import { estadoCircuito } from './provedores/gemini.js';
-import { acaoAprovavel, acoesAprovaveis, decidir, listarAprovacoes, listarAutomacoes, salvarAutomacao } from './aprovacoes.service.js';
+import { acaoAprovavel, acoesAprovaveis, criarProposta, usuarioAlvoDoInsight, decidir, listarAprovacoes, listarAutomacoes, salvarAutomacao } from './aprovacoes.service.js';
 import { DESCRICAO_REGRAS } from './eventos/regras.js';
 import { TIPOS_MEMORIA, adicionarDocumento, excluirDocumento, excluirMemoria, indexarDocumento, listarDocumentos, listarMemoria, salvarMemoria } from './conhecimento.service.js';
 
@@ -52,6 +52,15 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
     return montarResultado(ex.id);
   });
 
+  // Retorno do usuário sobre a resposta (correta / incorreta), registrado para revisão. Só quem perguntou avalia.
+  app.post(`${B}/execucoes/:id/avaliacao`, { preHandler: [auth, usar] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().max(40) }).parse(req.params);
+    const d = z.object({ avaliacao: z.enum(['CORRETA', 'INCORRETA']), comentario: z.string().trim().max(500).optional() }).parse(req.body ?? {});
+    const r = await prisma.aIExecucao.updateMany({ where: { id, empresaId: req.user.empresaId, usuarioId: req.user.id, execucaoPaiId: null }, data: { avaliacao: d.avaliacao, avaliacaoComentario: d.comentario || null, avaliadoPor: req.user.id, avaliadoEm: new Date() } });
+    if (!r.count) throw NaoEncontrado('Investigação não encontrada.');
+    return { ok: true, avaliacao: d.avaliacao };
+  });
+
   app.get(`${B}/conversas`, { preHandler: [auth, usar] }, async (req: any) => ({
     conversas: await prisma.aIConversa.findMany({ where: { empresaId: req.user.empresaId, usuarioId: req.user.id }, orderBy: { updatedAt: 'desc' }, take: 50, select: { id: true, titulo: true, updatedAt: true } }),
   }));
@@ -60,7 +69,9 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
     const { id } = z.object({ id: z.string().max(40) }).parse(req.params);
     const c = await prisma.aIConversa.findFirst({ where: { id, empresaId: req.user.empresaId, usuarioId: req.user.id }, include: { mensagens: { orderBy: { createdAt: 'asc' }, select: { id: true, papel: true, conteudo: true, detalhes: true, execucaoId: true, createdAt: true } } } });
     if (!c) throw NaoEncontrado('Conversa não encontrada.');
-    return c;
+    const ids = c.mensagens.map((m) => m.execucaoId).filter((x): x is string => !!x);
+    const av = new Map((await prisma.aIExecucao.findMany({ where: { id: { in: ids }, empresaId: req.user.empresaId }, select: { id: true, avaliacao: true, status: true } })).map((e) => [e.id, e]));
+    return { ...c, mensagens: c.mensagens.map((m) => (m.execucaoId && m.detalhes && typeof m.detalhes === 'object' ? { ...m, status: av.get(m.execucaoId)?.status ?? null, detalhes: { ...(m.detalhes as object), avaliacao: av.get(m.execucaoId)?.avaliacao ?? null } } : m)) };
   });
 
   app.get(`${B}/consumo`, { preHandler: [auth, usar] }, async (req: any) => situacaoConsumo(req.user.empresaId));
@@ -102,6 +113,15 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
     if (!i || !(await temPermissao(req.user.id, i.modulo as any, 'visualizar'))) throw NaoEncontrado('Insight não encontrado.');
     return prisma.aIInsight.update({ where: { id }, data: { status } });
   });
+  app.post(`${B}/insights/:id/propor-bloqueio`, { preHandler: [auth, usar] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().max(40) }).parse(req.params);
+    const i = await prisma.aIInsight.findFirst({ where: { id, empresaId: req.user.empresaId } });
+    if (!i || !(await temPermissao(req.user.id, i.modulo as any, 'visualizar'))) throw NaoEncontrado('Insight não encontrado.');
+    const alvo = usuarioAlvoDoInsight(i.tipo, i.evidencias);
+    if (!alvo) throw new ErroDeNegocio('Este alerta não aponta um usuário para bloquear.', 422);
+    if (alvo === req.user.id) throw new ErroDeNegocio('Este alerta é sobre a sua própria conta: você não pode bloqueá-la. Troque a senha ou peça a outro administrador.', 422);
+    return criarProposta({ empresaId: req.user.empresaId, usuarioId: req.user.id, acao: 'bloquear_usuario', args: { usuarioId: alvo, motivo: `Alerta: ${i.titulo}`.slice(0, 300) }, insightId: i.id });
+  });
   app.get(`${B}/aprovacoes`, { preHandler: [auth, usar] }, async (req: any) => {
     const { status } = z.object({ status: z.enum(['PENDENTE', 'EXECUTADA', 'REJEITADA', 'FALHOU', 'EXPIRADA']).optional() }).parse(req.query ?? {});
     const itens = await listarAprovacoes(req.user.empresaId, status);
@@ -115,6 +135,15 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
     const { motivo } = z.object({ motivo: z.string().max(300).optional() }).parse(req.body ?? {});
     return decidir(req.user.empresaId, req.user.id, p.id, p.decisao, motivo);
   });
+  // Qualidade das respostas (30 dias). As perguntas avaliadas como incorretas só aparecem para quem administra a IA.
+  const resumoAvaliacoes = async (empresaId: string, usuarioId: string) => {
+    const desde = new Date(Date.now() - 30 * 86_400_000);
+    const g = await prisma.aIExecucao.groupBy({ by: ['avaliacao'], where: { empresaId, avaliadoEm: { gte: desde }, avaliacao: { not: null } }, _count: { _all: true } });
+    const n = (v: string) => g.find((x) => x.avaliacao === v)?._count._all ?? 0;
+    const admin = await temPermissao(usuarioId, 'ia', 'administrar');
+    const incorretas = admin ? await prisma.aIExecucao.findMany({ where: { empresaId, avaliacao: 'INCORRETA', avaliadoEm: { gte: desde } }, orderBy: { avaliadoEm: 'desc' }, take: 10, select: { id: true, agente: true, entrada: true, avaliacaoComentario: true, avaliadoEm: true } }) : null;
+    return { corretas: n('CORRETA'), incorretas: n('INCORRETA'), ultimasIncorretas: incorretas?.map((e) => ({ id: e.id, agente: e.agente, pergunta: e.entrada.slice(0, 300), comentario: e.avaliacaoComentario, quando: e.avaliadoEm })) ?? null };
+  };
   app.get(`${B}/automacoes`, { preHandler: [auth, usar] }, async (req: any) => {
     const desde = new Date(Date.now() - 7 * 86_400_000);
     const porTipo = await prisma.aIEvento.groupBy({ by: ['tipo'], where: { empresaId: req.user.empresaId, createdAt: { gte: desde } }, _count: { _all: true } });
@@ -125,6 +154,7 @@ export async function nexusAiRoutes(app: FastifyInstance): Promise<void> {
       insightsDiarios: { eventos7dias: cont.get('ANOMALIA') ?? 0, regra: 'Uma vez por dia: vendas, cancelamentos, despesas e perdas dos últimos 7 dias comparados com as 8 semanas anteriores.' },
       filaPendente: pendentes,
       acoes: await listarAutomacoes(req.user.empresaId),
+      avaliacoes: await resumoAvaliacoes(req.user.empresaId, req.user.id),
     };
   });
   app.put(`${B}/automacoes/:acao`, { preHandler: [auth, administrar] }, async (req: any) => {
