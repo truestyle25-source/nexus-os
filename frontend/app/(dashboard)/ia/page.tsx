@@ -21,10 +21,35 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
+  History,
+  Brain,
+  BookOpen,
+  ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 import api, { getToken } from "@/lib/api";
+import { mensagemDeErroApi } from "@/lib/erros-api";
+import { formatDateTime } from "@/lib/format";
+import { nexusAi, NOME_FERRAMENTA, novaChaveIA, limparTextoIA, type ResultadoIA } from "@/lib/nexus-ai";
+import { DocumentosEmpresa, MemoriaEmpresa } from "@/components/nexus-ai/Conhecimento";
 
-type Message = { id: string; role: "user" | "assistant"; text: string; erro?: boolean };
+type Message = { id: string; role: "user" | "assistant"; text: string; erro?: boolean; detalhes?: ResultadoIA["detalhes"] };
+type Painel = null | "historico" | "memoria" | "documentos";
+
+/** Selo de verificação e fontes (NEXUS AI): números conferidos com os dados das ferramentas. */
+function Verificacao({ d }: { d: ResultadoIA["detalhes"] | undefined }) {
+  if (!d) return null;
+  const v = d.verificacao;
+  const fontes = [...new Set(d.fontes.map((f) => NOME_FERRAMENTA[f.ferramenta] ?? f.ferramenta))];
+  return (
+    <div style={{ marginTop: 8, fontSize: 11, color: "var(--nx-ink-3)", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+      {v && (v.aprovada
+        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--nx-success, #22c55e)" }}><ShieldCheck size={12} />{v.numeros.length} número(s) conferido(s) com os dados</span>
+        : <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--nx-warning, #f59e0b)" }}><AlertTriangle size={12} />Números não confirmados: {v.divergentes.join(", ")}</span>)}
+      {fontes.length > 0 && <span>Fontes: {fontes.join(" · ")}</span>}
+    </div>
+  );
+}
 type Origem = "texto" | "audio" | "modo_voz";
 
 const shortcuts = ["Quanto vendi hoje?", "Estoque baixo?", "Resumo financeiro"];
@@ -71,6 +96,10 @@ export default function Page() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  // Conversa no servidor (NEXUS AI): o histórico fica guardado e pode ser reaberto.
+  const [conversaId, setConversaId] = useState<string | null>(null);
+  const [painel, setPainel] = useState<Painel>(null);
+  const [conversas, setConversas] = useState<{ id: string; titulo: string; updatedAt: string }[] | null>(null);
 
   // Busca da lista "Recentes". Ela filtra as mensagens DESTA SESSÃO (as únicas
   // que existem na tela): o campo antes era decorativo — sem `value`, sem
@@ -345,12 +374,10 @@ export default function Page() {
     }
 
     try {
-      const { data } = await api.post<{ resposta?: string; text?: string; fallback?: boolean }>("/ia/perguntar", {
-        pergunta: text,
-        message: text,
-      });
-      const respostaText =
-        String(data?.resposta || data?.text || "").trim() || "A IA não retornou resposta para esta pergunta.";
+      // NEXUS BRAIN: consulta os especialistas com ferramentas tipadas e verifica os números.
+      const data = await nexusAi.perguntar({ pergunta: text, agente: "nexus", conversaId: conversaId ?? undefined, idempotencyKey: novaChaveIA() });
+      if (data.conversaId) setConversaId(data.conversaId);
+      const respostaText = limparTextoIA(String(data.resposta || "").trim()) || "A IA não retornou resposta para esta pergunta.";
 
       // `fallback: true` significa que o MODELO NÃO FOI CONSULTADO. O backend
       // devolve 200 com um texto de aviso quando `GEMINI_API_KEY` não está
@@ -358,12 +385,13 @@ export default function Page() {
       // da NEXUS OS" dentro de um balão normal e acreditava que a IA tinha
       // respondido. Outros módulos já respeitam o sinal (`RelatorioCard`
       // mostra "Estrutura local (Gemini indisponível)"); aqui ele era perdido.
-      const semModelo = data?.fallback === true;
+      const semModelo = data.status !== "CONCLUIDA";
       const aiMsg: Message = {
         id: `${Date.now()}-a`,
         role: "assistant",
         text: respostaText,
         erro: semModelo,
+        detalhes: data.detalhes,
       };
       setMessages((p) => [...p, aiMsg]);
 
@@ -381,8 +409,7 @@ export default function Page() {
       }
       // Se origem for 'texto' ou 'audio', NÃO FALA. Apenas mostra texto.
     } catch (err: any) {
-      const msg =
-        err?.message || "Não foi possível falar com a IA agora. Verifique a conexão com o backend.";
+      const msg = mensagemDeErroApi(err, "Não foi possível falar com a IA agora. Verifique a conexão com o backend.");
       setMessages((p) => [...p, { id: `${Date.now()}-e`, role: "assistant", text: msg, erro: true }]);
       if (isVoiceModeRef.current) {
         setVoiceAiTranscript(msg);
@@ -397,12 +424,28 @@ export default function Page() {
       window.speechSynthesis.cancel();
     }
     setMessages([]);
+    setConversaId(null);
+    setPainel(null);
     setInput("");
     setVoiceUserTranscript("");
     setVoiceAiTranscript("");
     if (isVoiceMode) {
       exitVoiceMode();
     }
+  };
+
+  const abrirPainel = (p: Painel) => {
+    if (isVoiceMode) exitVoiceMode();
+    setPainel(p);
+    if (p === "historico") nexusAi.conversas().then(setConversas).catch(() => setConversas([]));
+  };
+  const abrirConversa = async (id: string) => {
+    try {
+      const c = await nexusAi.conversa(id);
+      setConversaId(c.id);
+      setMessages(c.mensagens.map((m) => ({ id: m.id, role: m.papel === "USUARIO" ? "user" : "assistant", text: m.papel === "USUARIO" ? m.conteudo : limparTextoIA(m.conteudo), detalhes: m.detalhes })));
+      setPainel(null);
+    } catch { /* a lista continua aberta */ }
   };
 
   const handleNav = (route: string) => {
@@ -588,6 +631,12 @@ export default function Page() {
               {n.label}
             </button>
           ))}
+          <div style={{ fontSize: 11, letterSpacing: 1, color: "var(--nx-ink-3)", margin: "16px 0 8px", fontWeight: 600 }}>
+            NEXUS AI
+          </div>
+          <button className={`nav-btn${painel === "historico" ? " active" : ""}`} onClick={() => abrirPainel("historico")}><History size={16} />Histórico</button>
+          <button className={`nav-btn${painel === "memoria" ? " active" : ""}`} onClick={() => abrirPainel("memoria")}><Brain size={16} />Memória da empresa</button>
+          <button className={`nav-btn${painel === "documentos" ? " active" : ""}`} onClick={() => abrirPainel("documentos")}><BookOpen size={16} />Documentos</button>
           <button className="nav-btn active" style={{ marginTop: 8 }} onClick={handleSairIA}>
             <LogOut size={16} />
             Sair da IA
@@ -647,7 +696,7 @@ export default function Page() {
               }}
             >
               <MessageSquare size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>Nenhuma pergunta nesta sessão. As conversas ficam só nesta aba e são apagadas ao recarregar.</span>
+              <span>Nenhuma pergunta nesta conversa. As conversas ficam guardadas em Histórico.</span>
             </div>
           ) : recentes.length === 0 ? (
             <div
@@ -839,7 +888,21 @@ export default function Page() {
           </div>
         ) : (
           /* MODO TEXTO (Padrão) */
-          <>
+          painel ? (
+            <div className="chat-area"><div className="chat-inner">
+              <button className="pill" onClick={() => setPainel(null)} style={{ marginBottom: 8 }}><X size={14} />Voltar à conversa</button>
+              {painel === "memoria" ? <MemoriaEmpresa /> : painel === "documentos" ? <DocumentosEmpresa /> : (
+                <div style={{ marginTop: 16 }}>
+                  {conversas === null ? <p style={{ fontSize: 13, color: "var(--nx-ink-3)" }}>Carregando…</p> : conversas.length === 0 ? <p style={{ fontSize: 13, color: "var(--nx-ink-3)" }}>Nenhuma conversa ainda.</p> : conversas.map((c) => (
+                    <button key={c.id} className="nav-btn" onClick={() => void abrirConversa(c.id)} style={{ justifyContent: "space-between" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.titulo}</span>
+                      <span style={{ fontSize: 11, color: "var(--nx-ink-3)", flexShrink: 0 }}>{formatDateTime(c.updatedAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div></div>
+          ) : <>
             <div className="chat-area" ref={scrollRef}>
               <div className="chat-inner">
                 {messages.map((m) => (
@@ -852,13 +915,14 @@ export default function Page() {
                     }}
                   >
                     <div className={m.role === "user" ? "bubble-user" : `bubble-ai${m.erro ? " erro" : ""}`}>
-                      {m.text}
+                      <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+                      {m.role === "assistant" && <Verificacao d={m.detalhes} />}
                     </div>
                   </div>
                 ))}
                 {isTyping && (
                   <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                    <div className="bubble-ai">Pensando...</div>
+                    <div className="bubble-ai">Consultando os dados da empresa…</div>
                   </div>
                 )}
                 <div style={{ marginTop: 24, display: "flex", gap: 8, flexWrap: "wrap" }}>

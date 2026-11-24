@@ -42,4 +42,7 @@ export const NOME_FERRAMENTA: Record<string, string> = {
   resumo_compras: 'Resumo de compras', compras_pendentes: 'Pedidos pendentes', historico_custo_produto: 'Histórico de custo', comparar_fornecedores: 'Comparação de fornecedores',
 };
 
+/** Remove marcações de markdown que o modelo às vezes devolve (negrito, crases, títulos, marcadores). */
+export const limparTextoIA = (t: string) => t.replace(/\*\*/g, '').replace(/`/g, '').replace(/^#{1,6}\s*/gm, '').replace(/^(\s*)\* /gm, '$1• ');
+
 export const novaChaveIA = () => `ia-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
