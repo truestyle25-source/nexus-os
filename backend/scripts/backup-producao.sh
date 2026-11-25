@@ -51,6 +51,9 @@ if [[ "$OBJETOS" -lt 1 ]]; then echo "ERRO: dump sem objetos" >&2; exit 3; fi
 
 echo "[3/5] teste de restauração num banco descartável"
 psql "$VERIFICACAO_ADMIN_URL" -qAt -c "CREATE DATABASE \"$BANCO_VERIF\"" >/dev/null
+# A NEXUS AI usa o tipo `vector` (pgvector), criado como extensão fora do schema
+# public do dump: sem ela, AITrecho não é restaurada e a conferência falha.
+psql "$VERIF_URL" -qAt -c "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public" >/dev/null
 # pg_restore sai com 1 também para avisos (ex.: "schema public already exists"); a conferência decide.
 pg_restore --no-owner --no-acl -d "$VERIF_URL" "$DUMP" 2> "$SAIDA_DIR/pg_restore.log" || true
 ERROS_RESTORE=$(grep -c 'error:' "$SAIDA_DIR/pg_restore.log" || true)
