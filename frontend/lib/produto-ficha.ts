@@ -8,6 +8,8 @@ export type Id = string;
 export interface Unidade { id: Id; simbolo: string; nome: string; fatorCanonico: number; dimensao: { codigo: string; nome: string } }
 export interface TipoProduto { id: Id; codigo: string; nome: string; descricao?: string | null }
 export interface Categoria { id: Id; nome: string; categoriaPaiId: Id | null; nivel: number }
+/** Item da tela Gerenciar classificação: categoria com o que existe dentro dela. */
+export interface ItemClassificacao extends Categoria { produtos: number; subgrupos: number }
 export interface Catalogos {
   unidades: Unidade[]; tipos: TipoProduto[]; categorias: Categoria[];
   filiais: Array<{ id: Id; nome: string; status: string }>;
@@ -125,6 +127,9 @@ export const fichaApi = {
   status: (id: Id, status: 'ATIVO' | 'INATIVO') => api.patch(`/produtos/${id}/status`, { status }).then((r) => r.data),
   fiscal: (id: Id, dados: Record<string, unknown>) => api.put<{ avisos: Array<{ campo: string; mensagem: string }> }>(`/produtos/${id}/fiscal`, dados).then((r) => r.data),
   fator: (id: Id, dados: { unidadeOrigemId: Id; unidadeDestinoId: Id; fator: number }) => api.put(`/produtos/${id}/fator-conversao`, dados).then((r) => r.data),
+  arvoreClassificacao: () => api.get<ItemClassificacao[]>('/categorias/arvore').then((r) => r.data),
+  renomearCategoria: (id: Id, nome: string) => api.put<Categoria>(`/categorias/${id}`, { nome }).then((r) => r.data),
+  excluirCategoria: (id: Id) => api.delete(`/categorias/${id}`).then((r) => r.data),
   novaCategoria: (nome: string, categoriaPaiId?: Id) => api.post<Categoria>('/categorias', { nome, ...(categoriaPaiId ? { categoriaPaiId } : {}) }).then((r) => r.data),
   codigos: (id: Id) => api.get<CodigoBarras[]>(`/produtos/${id}/codigos-barras`).then((r) => r.data),
   addCodigo: (id: Id, dados: { codigo: string; tipo?: string; descricao?: string; principal?: boolean }) => api.post<CodigoBarras>(`/produtos/${id}/codigos-barras`, dados).then((r) => r.data),

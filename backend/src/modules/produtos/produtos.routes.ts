@@ -708,4 +708,59 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: [app.authenticate, await permissaoMiddleware('produtos', 'visualizar')] },
     async (req: FastifyRequest) => prisma.categoria.findMany({ where: { empresaId: req.user.empresaId }, orderBy: { nome: 'asc' } }),
   );
+
+  // Gerenciar classificação: árvore com contagens, renomear e excluir (só quando vazia).
+  app.get(
+    '/categorias/arvore',
+    { preHandler: [app.authenticate, await permissaoMiddleware('produtos', 'visualizar')] },
+    async (req: FastifyRequest) => {
+      const itens = await prisma.categoria.findMany({
+        where: { empresaId: req.user.empresaId },
+        select: { id: true, nome: true, nivel: true, categoriaPaiId: true, _count: { select: { produtos: true, subcategorias: true } } },
+        orderBy: [{ nivel: 'asc' }, { nome: 'asc' }],
+      });
+      return itens.map((c) => ({ id: c.id, nome: c.nome, nivel: c.nivel, categoriaPaiId: c.categoriaPaiId, produtos: c._count.produtos, subgrupos: c._count.subcategorias }));
+    },
+  );
+
+  app.put(
+    '/categorias/:id',
+    { preHandler: [app.authenticate, await permissaoMiddleware('produtos', 'editar')] },
+    async (req: FastifyRequest) => {
+      const { id } = z.object({ id: z.string().min(1).max(40) }).parse(req.params);
+      const { nome } = z.object({ nome: z.string().trim().min(2, 'O nome precisa de pelo menos 2 letras.').max(80) }).parse(req.body ?? {});
+      const atual = await prisma.categoria.findFirst({ where: { id, empresaId: req.user.empresaId } });
+      if (!atual) throw NaoEncontrado('Grupo/subgrupo não encontrado.');
+      // Não deixa dois itens com o mesmo nome no mesmo nível do mesmo grupo (ficariam indistinguíveis na lista).
+      const irmao = await prisma.categoria.findFirst({ where: { empresaId: req.user.empresaId, categoriaPaiId: atual.categoriaPaiId, nome: { equals: nome, mode: 'insensitive' }, id: { not: id } }, select: { id: true } });
+      if (irmao) throw Conflito(`Já existe "${nome}" neste mesmo nível.`);
+      const nova = await prisma.categoria.update({ where: { id }, data: { nome } });
+      await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Categoria', entidadeId: id, valorAnterior: { nome: atual.nome }, valorNovo: { nome }, origem: 'MANUAL', ip: req.ip });
+      return nova;
+    },
+  );
+
+  app.delete(
+    '/categorias/:id',
+    { preHandler: [app.authenticate, await permissaoMiddleware('produtos', 'editar')] },
+    async (req: FastifyRequest) => {
+      const { id } = z.object({ id: z.string().min(1).max(40) }).parse(req.params);
+      const atual = await prisma.categoria.findFirst({ where: { id, empresaId: req.user.empresaId }, include: { _count: { select: { produtos: true, subcategorias: true } } } });
+      if (!atual) throw NaoEncontrado('Grupo/subgrupo não encontrado.');
+      const { produtos, subcategorias } = atual._count;
+      if (produtos || subcategorias) {
+        const partes = [produtos ? `${produtos} produto(s)` : null, subcategorias ? `${subcategorias} subgrupo(s)` : null].filter(Boolean).join(' e ');
+        throw Conflito(`Não dá para excluir "${atual.nome}": tem ${partes}. Mova os produtos para outro grupo ou exclua os subgrupos primeiro.`);
+      }
+      try {
+        await prisma.categoria.delete({ where: { id } });
+      } catch (e: any) {
+        // Um produto ou subgrupo foi ligado a ela entre a conferência e a exclusão.
+        if (e?.code === 'P2003') throw Conflito(`"${atual.nome}" passou a ter produtos ou subgrupos; atualize a lista.`);
+        throw e;
+      }
+      await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EXCLUIR', entidade: 'Categoria', entidadeId: id, valorAnterior: { nome: atual.nome, nivel: atual.nivel, categoriaPaiId: atual.categoriaPaiId }, origem: 'MANUAL', ip: req.ip });
+      return { ok: true };
+    },
+  );
 }
