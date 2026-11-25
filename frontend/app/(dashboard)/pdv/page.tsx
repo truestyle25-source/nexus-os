@@ -170,7 +170,7 @@ export default function PDV() {
   const [mostrarMenu, setMostrarMenu] = useState(false);
   const [clientes, setClientes] = useState<any[]>([]);
   const [busca, setBusca] = useState('');
-  const [carrinho, setCarrinho] = useState<Array<{ produtoId: string; nome: string; preco: number; quantidade: number; estoque: number; desconto: number; imagem?: string }>>([]);
+  const [carrinho, setCarrinho] = useState<Array<{ produtoId: string; nome: string; preco: number; quantidade: number; estoque: number; desconto: number; imagem?: string; fracionado?: boolean }>>([]);
   const [clienteId, setClienteId] = useState('');
   const [descontoGeral, setDescontoGeral] = useState('0');
   const [forma, setForma] = useState<string>('DINHEIRO');
@@ -681,9 +681,11 @@ export default function PDV() {
 
   async function buscarPorCodigo(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
-    // "3*789..." adiciona 3 unidades do código bipado.
-    const mult = /^(\d{1,3})\*(.+)$/.exec(busca.trim());
-    const vezes = mult ? Math.max(1, Number(mult[1])) : 1;
+    // "3*789..." adiciona 3 unidades; "0,350*789..." lança 0,350 kg de um
+    // produto vendido por peso/medida.
+    const mult = /^(\d{1,3}(?:[.,]\d{1,3})?)\*(.+)$/.exec(busca.trim());
+    const fator = mult ? Number(mult[1].replace(',', '.')) : 1;
+    const vezes = Number.isInteger(fator) ? Math.max(1, fator) : 1;
     const termo = (mult ? mult[2] : busca).trim();
     if (!termo) return;
     let achado = contextoPdv && filialId ? await resolverBipagem(contextoPdv.empresaId, filialId, termo) : undefined;
@@ -696,7 +698,18 @@ export default function PDV() {
     achado ??= produtos.find((p) =>
       (p.codigoBarras ?? '').toString() === termo ||
       (p.sku ?? '').toString().toLowerCase() === termo.toLowerCase());
-    if (achado) {
+    if (achado && !Number.isInteger(fator)) {
+      // Quantidade fracionada: só para produto marcado como "vende fracionado".
+      if (!(achado as any).vendaFracionada) {
+        setError(`${achado.nome} só pode ser vendido em quantidade inteira.`);
+        return;
+      }
+      const base = carrinho.some((i) => i.produtoId === achado!.id) ? { itens: carrinho, erro: null } : adicionarProduto(carrinho, achado as any);
+      const r = base.erro ? base : alterarQuantidade(base.itens, achado.id, Math.round(fator * 1000) / 1000);
+      setCarrinho(r.itens); setError(r.erro);
+      setBusca(''); void carregarProdutos('');
+      buscaRef.current?.focus();
+    } else if (achado) {
       let itens = carrinho;
       let erro: string | null = null;
       for (let n = 0; n < vezes && !erro; n++) {
@@ -766,8 +779,8 @@ export default function PDV() {
         ...(total > 0 ? {
           pagamentos: forma === 'DINHEIRO' && misto
             // Pagamento misto: parte em dinheiro + restante no PIX confirmado.
-            ? [{ forma: 'DINHEIRO', valor: parteDinheiroNum }, { forma: 'PIX', valor: Math.round((total - parteDinheiroNum) * 100) / 100, referencia: referenciaPagamento }]
-            : [{ forma: forma.toUpperCase(), valor: total, ...(referenciaPagamento ? { referencia: referenciaPagamento } : {}) }],
+            ? [{ forma: 'DINHEIRO', valor: parteDinheiroNum, ...(recebidoNum >= parteDinheiroNum ? { valorRecebido: recebidoNum } : {}) }, { forma: 'PIX', valor: Math.round((total - parteDinheiroNum) * 100) / 100, referencia: referenciaPagamento }]
+            : [{ forma: forma.toUpperCase(), valor: total, ...(referenciaPagamento ? { referencia: referenciaPagamento } : {}), ...(forma === 'DINHEIRO' && recebidoNum >= total ? { valorRecebido: recebidoNum } : {}) }],
         } : {}),
       };
       const operacao = await enfileirarVendaComCarrinho({
@@ -1135,8 +1148,15 @@ export default function PDV() {
                         <span style={{ fontFamily: 'monospace', fontSize: 11.5, opacity: 0.75 }}>{brl(i.preco)} × {i.quantidade} = <strong style={{ color: 'var(--nexus-accent-2)' }}>{brl(i.preco * i.quantidade - i.desconto)}</strong></span>
                       </div>
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)}>•</button>
-                        <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{i.quantidade}</span>
+                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
+                        {i.fracionado ? (
+                          // Produto vendido por peso/medida: quantidade digitada (até 3 casas).
+                          <input type="number" min="0.001" step="0.001" aria-label={`Quantidade de ${i.nome}`} value={i.quantidade}
+                            onChange={(e) => { const r = alterarQuantidade(carrinho, i.produtoId, Math.round(Number(e.target.value) * 1000) / 1000); setCarrinho(r.itens); setError(r.erro); }}
+                            style={{ width: 72, padding: '3px 6px', fontSize: 12.5, textAlign: 'right' }} />
+                        ) : (
+                          <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{i.quantidade}</span>
+                        )}
                         <button type="button" className="admin-secondary pdv-btn-grad" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
                         <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
                       </div>

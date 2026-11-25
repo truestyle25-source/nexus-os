@@ -73,6 +73,8 @@ export interface ProdutoLocal {
   ativo: boolean;
   /** Estoque disponível na filial, no momento do último sync (informativo). */
   estoqueFilial?: number;
+  /** Vende em fração (kg, metro…): quantidade com até 3 casas decimais. */
+  vendaFracionada?: boolean;
   atualizadoEm: number;
 }
 

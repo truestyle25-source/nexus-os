@@ -232,7 +232,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
   );
 
   const itensSchema = z
-    .array(z.object({ produtoId: z.string(), quantidade: z.number().int().positive(), desconto: z.number().min(0).default(0) }))
+    .array(z.object({ produtoId: z.string(), quantidade: z.number().positive().refine((q) => Math.abs(q * 1000 - Math.round(q * 1000)) < 1e-6, { message: "Quantidade com no máximo 3 casas decimais." }), desconto: z.number().min(0).default(0) }))
     .min(1);
 
   app.post(
@@ -271,7 +271,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           // ausente, a venda segue com forma única (compatível com o PDV atual
           // e com a aba Vendas). A soma precisa bater EXATAMENTE com o total.
           pagamentos: z
-            .array(z.object({ forma: formaPagamentoSchema, valor: z.number().positive(), referencia: z.string().optional() }))
+            .array(z.object({ forma: formaPagamentoSchema, valor: z.number().positive(), referencia: z.string().optional(), valorRecebido: z.number().positive().optional() }))
             .min(1)
             .optional(),
         })
@@ -381,7 +381,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // segundos no banco remoto.
         const idsItens = [...new Set(data.itens.map((i) => i.produtoId))];
         const [produtosLote, configsLote, estoquesLote] = await Promise.all([
-          tx.produto.findMany({ where: { id: { in: idsItens }, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true, tipoProdutoId: true } }),
+          tx.produto.findMany({ where: { id: { in: idsItens }, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true, tipoProdutoId: true, vendaFracionada: true } }),
           tx.produtoFilial.findMany({ where: { produtoId: { in: idsItens }, filialId: data.filialId } }),
           tx.estoque.findMany({ where: { produtoId: { in: idsItens }, filialId: data.filialId } }),
         ]);
@@ -402,6 +402,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           const configFilial = configPorProduto.get(item.produtoId) ?? null;
           if (configFilial && (!configFilial.ativo || !configFilial.disponivelVenda)) {
             throw new ErroDeNegocio(`${produto.nome} não está disponível para venda nesta filial.`, 422);
+          }
+          // Venda fracionada (kg, metro…): só para produto marcado no cadastro.
+          // Kit sempre em unidades inteiras.
+          if (!Number.isInteger(item.quantidade) && (!produto.vendaFracionada || vendaDeKit)) {
+            throw new ErroDeNegocio(`${produto.nome} só pode ser vendido em quantidade inteira.`, 422);
           }
           if (vendaDeKit) {
             // KIT: o saldo que importa é o dos componentes na filial (o kit não tem estoque próprio).
@@ -500,6 +505,17 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           await tx.vendaPagamento.createMany({
             data: linhasPagamento.map((lp) => ({ vendaId: venda.id, empresaId: user.empresaId, forma: lp.forma, valor: lp.valor, ordem: lp.ordem, referencia: lp.referencia })),
           });
+          // Troco gravado (antes só existia na tela): valor recebido em
+          // dinheiro e troco devolvido, por linha de pagamento.
+          for (const [i, p] of (data.pagamentos ?? []).entries()) {
+            if (p.forma !== 'DINHEIRO' || p.valorRecebido == null) continue;
+            const recebido = arred2(p.valorRecebido);
+            if (recebido < arred2(p.valor)) throw new ErroDeNegocio('Valor recebido em dinheiro menor que a parte em dinheiro.', 422);
+            await tx.$executeRaw`
+              UPDATE "VendaPagamento" SET "valorRecebido" = ${recebido}, "troco" = ${arred2(recebido - p.valor)}
+              WHERE "vendaId" = ${venda.id} AND "ordem" = ${i + 1}
+            `;
+          }
         }
         // Baixa de estoque via service compartilhado (Fase 3): a mesma
         // lógica de concorrência segura já vive em estoque.service.ts e

@@ -3366,6 +3366,8 @@ model VendaPagamento {
   valor      Decimal        @db.Decimal(12, 2)
   ordem      Int            @default(1)
   referencia String?
+  valorRecebido Decimal? @db.Decimal(12, 2) // PDV: dinheiro entregue pelo cliente
+  troco         Decimal? @db.Decimal(12, 2) // PDV: troco devolvido
   status     String         @default("CONFIRMADO")
   createdAt  DateTime       @default(now())
 
