@@ -18,6 +18,7 @@ import { db } from '@/lib/pdv/db';
 import { atualizarCatalogoLocal, listarCatalogoLocal } from '@/lib/pdv/sincronizarCatalogo';
 import { precoVigente, resolverBipagem } from '@/lib/pdv/catalogo';
 import { cupomDaVenda, renderCupom } from '@/lib/pdv/cupom';
+import { conectarImpressora, impressaoDiretaSuportada, impressoraConectada, imprimirTextoTermico } from '@/lib/pdv/impressoraTermica';
 import { contextoLocalDoToken } from '@/lib/pdv/contextoLocal';
 import { enfileirarVendaComCarrinho, obterOperacao, processarFila, recuperarOperacoesInterrompidas, contarPorStatus, marcar } from '@/lib/pdv/syncQueue';
 import { enviarOperacaoPdv } from '@/lib/pdv/enviarOperacao';
@@ -544,17 +545,48 @@ export default function PDV() {
     if (!cupom || !imprimirCupomAoFinalizar || impressaoAutomaticaRef.current) return;
     const frame = window.requestAnimationFrame(() => {
       impressaoAutomaticaRef.current = true;
-      try {
-        window.print();
-      } catch {
-        setError('A venda foi concluída, mas não foi possível iniciar a impressão. Use Imprimir no cupom para tentar novamente.');
-      } finally {
+      void imprimirCupom(cupom).finally(() => {
         impressaoAutomaticaRef.current = false;
         setImprimirCupomAoFinalizar(false);
-      }
+      });
     });
     return () => window.cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cupom, imprimirCupomAoFinalizar]);
+
+  // Impressora térmica: conectada neste navegador? (Chrome/Edge, via USB/serial)
+  const [termicaConectada, setTermicaConectada] = useState(false);
+  useEffect(() => { void impressoraConectada().then(setTermicaConectada); }, []);
+
+  /**
+   * Imprime o cupom: direto na impressora térmica quando há uma conectada;
+   * se não houver (ou falhar), cai na janela de impressão do navegador.
+   */
+  async function imprimirCupom(c: any) {
+    if (termicaConectada) {
+      try {
+        await imprimirTextoTermico(renderCupom(c, brl, ROTULO_FORMA));
+        return;
+      } catch (e) {
+        setError(`Impressora térmica: ${e instanceof Error ? e.message : 'falha ao imprimir'}. Abrindo a impressão do navegador.`);
+      }
+    }
+    try { window.print(); } catch {
+      setError('A venda foi concluída, mas não foi possível iniciar a impressão. Use Imprimir no cupom para tentar novamente.');
+    }
+  }
+
+  async function conectarTermica() {
+    try {
+      await conectarImpressora();
+      setTermicaConectada(await impressoraConectada());
+      setNotice('Impressora térmica conectada. Os próximos cupons saem direto nela.');
+    } catch (e) {
+      // Fechar a janela de escolha sem selecionar não é erro.
+      if (e instanceof Error && /No port selected|NotFoundError/i.test(`${e.name} ${e.message}`)) return;
+      setError(e instanceof Error ? e.message : 'Não foi possível conectar a impressora.');
+    }
+  }
 
   // Atalhos de balcão: F2 busca, F4 finalizar, F7 sangria/suprimento
   //
@@ -1034,6 +1066,14 @@ export default function PDV() {
                 </div>
                 <h2 style={{ margin: '12px 0 8px' }}>EQUIPAMENTOS E INTEGRAÇÕES</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button type="button" className="admin-secondary" style={item} disabled={!impressaoDiretaSuportada()}
+                    title={impressaoDiretaSuportada() ? undefined : 'Impressão direta só no Chrome ou Edge do computador'}
+                    onClick={() => { setMostrarMenu(false); void conectarTermica(); }}>
+                    <span>🖨️ Impressora térmica</span>
+                    <span style={termicaConectada ? { ...naoConfig, background: 'rgba(16,185,129,.15)', color: '#059669' } : naoConfig}>
+                      {termicaConectada ? 'conectada' : impressaoDiretaSuportada() ? 'conectar' : 'não disponível'}
+                    </span>
+                  </button>
                   <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>⚖️ Balança</span><span style={naoConfig}>não configurado</span></button>
                   <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>💳 Maquininha (TEF)</span><span style={naoConfig}>não configurado</span></button>
                   <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>🏛️ SAT / NFC-e</span><span style={naoConfig}>não configurado</span></button>
@@ -1479,7 +1519,7 @@ export default function PDV() {
         <Modal titulo="Cupom da venda" onFechar={() => setCupom(null)} imprimir>
           <pre style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 8, padding: 14, fontSize: 12, lineHeight: 1.5, overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'inherit' }}>{renderCupom(cupom, brl, ROTULO_FORMA)}</pre>
           <div className="pdv-noprint" style={{ display: 'flex', gap: 8 }}>
-            <button className="admin-secondary" type="button" style={{ flex: 1 }} onClick={() => window.print()}>Imprimir</button>
+            <button className="admin-secondary" type="button" style={{ flex: 1 }} onClick={() => void imprimirCupom(cupom)}>{termicaConectada ? 'Imprimir na térmica' : 'Imprimir'}</button>
             <button className="admin-primary" type="button" style={{ flex: 1 }} onClick={() => setCupom(null)}>Concluir</button>
           </div>
         </Modal>
