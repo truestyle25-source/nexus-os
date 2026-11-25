@@ -43,6 +43,7 @@ export async function atualizarCatalogoLocal(contexto: ContextoLocal, filialId: 
       imagem: produto.imagem ?? null,
       ativo: Boolean(produto.ativo),
       estoqueFilial: Number(produto.estoqueFilial ?? 0),
+      vendaFracionada: Boolean(produto.vendaFracionada),
       atualizadoEm: Date.parse(produto.atualizadoEm),
     }));
     await sincronizarCatalogo(contexto, filialId, produtos);

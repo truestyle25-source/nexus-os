@@ -73,7 +73,7 @@ export async function pdvRoutes(app: FastifyInstance) {
           -- nesta filial (componente sem controle de estoque ou com negativo liberado não limita).
           CASE WHEN tp."codigo" = 'KIT'
             THEN CASE WHEN COALESCE(k."componentes", 0) = 0 THEN 0 ELSE COALESCE(k."disponivel", 999999) END
-            ELSE COALESCE(e."quantidade", 0)::int END AS "estoqueFilial",
+            ELSE COALESCE(e."quantidade", 0)::float8 END AS "estoqueFilial",
           GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(pf."updatedAt", p."updatedAt"), COALESCE(k."atualizado", p."updatedAt")) AS "atualizadoEm",
           p."disponivelPdv", p."posicaoPdv", p."vendaFracionada", p."controlaEstoque",
           pf."precoVenda" AS "precoFilial", pf."ativo" AS "ativoFilial", pf."disponivelVenda" AS "disponivelFilial",

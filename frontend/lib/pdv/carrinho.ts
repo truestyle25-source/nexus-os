@@ -18,6 +18,8 @@ export interface ItemCarrinho {
   estoque: number;
   desconto: number;
   imagem?: string;
+  /** Produto vendido em fração (kg, metro…). */
+  fracionado?: boolean;
 }
 
 /** Produto do catálogo local, como chega em `adicionarAoCarrinho`. */
@@ -30,6 +32,7 @@ export interface ProdutoEntrada {
   promocaoFim?: string | null;
   estoqueFilial: number;
   imagem?: string | null;
+  vendaFracionada?: boolean;
 }
 
 /**
@@ -69,7 +72,8 @@ export function adicionarProduto(itens: ItemCarrinho[], p: ProdutoEntrada): Resu
         produtoId: p.id,
         nome: p.nome,
         preco: precoVigente(p),
-        quantidade: 1,
+        quantidade: p.vendaFracionada ? Math.min(1, p.estoqueFilial) : 1,
+        fracionado: Boolean(p.vendaFracionada),
         estoque: p.estoqueFilial,
         desconto: 0,
         imagem: p.imagem ?? undefined,
