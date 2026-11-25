@@ -114,6 +114,8 @@ export interface CarrinhoLocal {
   forma: string;
   descontoGeral: number;
   valorRecebido?: string | null;
+  /** Pagamentos já registrados na venda em andamento (inclui PIX já pago: não pode se perder num recarregamento). */
+  pagamentos?: Array<{ id: string; forma: "DINHEIRO" | "PIX"; valor: number; recebido?: number; referencia?: string }>;
   parcelas?: number;
   itens: Array<{
     produtoId: string;
