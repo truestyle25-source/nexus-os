@@ -24,6 +24,9 @@ import { ROTA_EXPORTACAO, moduloDaExportacao } from '../src/modules/nexus-ai/eve
 const URL_TESTE = process.env.DATABASE_URL ?? '';
 const BANCO_DE_TESTE = /@(localhost|127\.0\.0\.1):5432\/nexus_os_test/.test(URL_TESTE);
 const SUF = Date.now().toString(36);
+/** Início da janela de 15 min da regra de logins falhos: as 6 tentativas ficam sempre na MESMA janela
+ *  (criá-las "há 1 minuto" pode cruzar a virada de janela e dividir o grupo, dependendo da hora do teste). */
+const inicioDaJanelaDeLogin = () => Math.floor(Date.now() / 900_000) * 900_000;
 
 test('Rotas de exportação reconhecidas pelo gancho', () => {
   for (const r of ['/relatorios/export', '/api/v1/fornecedores/export', '/api/v1/fornecedores/:id/produtos/exportar', '/lgpd/clientes/:id/exportar', '/produtos/:id/movimentacoes/exportar', '/api/v1/compras/:id/pdf', '/radar/relatorio']) assert.ok(ROTA_EXPORTACAO.test(r), r);
@@ -118,7 +121,7 @@ test('NEXUS AI — homologação: exportações, avaliação e novas ações', {
 
     await t.test('Bloquear usuário a partir de alerta: encerra as sessões na hora; nunca automático', async () => {
       const alvo = await novoUsuario('Vitima', [['ia', 'visualizar']]);
-      await prisma.loginAttempt.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ ip: '198.51.100.7', email: alvo.email, sucesso: false, createdAt: new Date(Date.now() - 60_000 + i * 1000) })) });
+      await prisma.loginAttempt.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ ip: '198.51.100.7', email: alvo.email, sucesso: false, createdAt: new Date(inicioDaJanelaDeLogin() + i * 1000) })) });
       await varrer(30); await processarFila(50);
       const ins = await prisma.aIInsight.findFirstOrThrow({ where: { empresaId: empresa.id, tipo: 'LOGIN_FALHO' } });
       const tokenAntigo = tok(alvo);
@@ -141,7 +144,7 @@ test('NEXUS AI — homologação: exportações, avaliação e novas ações', {
       assert.equal(f.status, 'FALHOU'); assert.match(f.erro!, /própria conta/);
       assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: admin.id } })).status, 'ATIVO');
       // Alerta sobre a própria conta: a proposta é recusada já na preparação.
-      await prisma.loginAttempt.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ ip: '198.51.100.9', email: admin.email, sucesso: false, createdAt: new Date(Date.now() - 30_000 + i * 1000) })) });
+      await prisma.loginAttempt.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ ip: '198.51.100.9', email: admin.email, sucesso: false, createdAt: new Date(inicioDaJanelaDeLogin() + i * 1000) })) });
       await varrer(30); await processarFila(50);
       const doAdmin = await prisma.aIInsight.findFirstOrThrow({ where: { empresaId: empresa.id, tipo: 'LOGIN_FALHO', titulo: { contains: 'Admin' } } });
       const r = await app.inject({ method: 'POST', url: `/api/v1/nexus-ai/insights/${doAdmin.id}/propor-bloqueio`, headers: tok(admin) });
