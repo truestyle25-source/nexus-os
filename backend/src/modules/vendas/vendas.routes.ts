@@ -9,6 +9,7 @@ import { aplicarMovimento } from '../estoque/estoque.service.js';
 import { converterParaUnidadeBaseVenda } from '../estoque/conversao.service.js';
 import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotencia.js';
+import { lerAutorizacaoSupervisor } from '../pdv/autorizacao-supervisor.js';
 import { dataNoFuso, dataOperacionalDate } from '../../lib/fuso.js';
 import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado } from '../payments/pixProvider.js';
 import { expandirKitParaVenda, produtoEhTipoKit } from '../produtos/kit.service.js';
@@ -62,8 +63,9 @@ async function validarAlcadaDesconto(
   desconto: number,
   subtotal: number,
   db: Prisma.TransactionClient | typeof prisma = prisma,
-): Promise<void> {
-  if (subtotal <= 0 || desconto <= 0) return;
+  supervisorId?: string | null,
+): Promise<string | null> {
+  if (subtotal <= 0 || desconto <= 0) return null;
   const pct = (desconto / subtotal) * 100;
   const faixa = ALCADAS_DESCONTO.find((f) => pct <= f.ate);
   const necessarias = faixa?.permissoes ?? ALCADAS_DESCONTO[ALCADAS_DESCONTO.length - 1].permissoes;
@@ -72,12 +74,21 @@ async function validarAlcadaDesconto(
     where: { usuarioId, permitido: true, OR: necessarias },
     select: { id: true },
   });
-  if (!concedida) {
-    throw new ErroDeNegocio(
-      `Desconto de ${pct.toFixed(1)}% exige autorização de ${rotulo}. Solicite a um responsável.`,
-      403,
-    );
+  if (concedida) return null;
+  // Autorização do supervisor no balcão: a alçada é conferida nas permissões
+  // DELE, agora (não no momento em que a autorização foi emitida).
+  if (supervisorId) {
+    const doSupervisor = await db.permissao.findFirst({
+      where: { usuarioId: supervisorId, permitido: true, OR: necessarias },
+      select: { id: true },
+    });
+    if (doSupervisor) return supervisorId;
+    throw new ErroDeNegocio(`O supervisor que autorizou não tem alçada de ${rotulo} para ${pct.toFixed(1)}% de desconto.`, 403);
   }
+  throw new ErroDeNegocio(
+    `Desconto de ${pct.toFixed(1)}% exige autorização de ${rotulo}. Solicite a um responsável.`,
+    403,
+  );
 }
 import {
   FORMAS_PAGAMENTO,
@@ -128,6 +139,25 @@ async function nomesDeVendedores(
 
 
 export async function vendasRoutes(app: FastifyInstance): Promise<void> {
+  // Consulta prévia da alçada: o PDV pergunta ANTES de registrar a venda se o
+  // desconto cabe na alçada do operador, e abre a janela do supervisor se não
+  // couber. Não decide nada: POST /vendas continua validando de novo.
+  app.get(
+    '/vendas/alcada-desconto',
+    { preHandler: [(app as any).authenticate, await permissaoQualquerDas([{ modulo: 'vendas', acao: 'criar' }, { modulo: 'pdv', acao: 'criar' }])] },
+    async (req: FastifyRequest) => {
+      const user = (req as any).user;
+      const { desconto, subtotal } = z.object({ desconto: z.coerce.number().min(0), subtotal: z.coerce.number().positive() }).parse(req.query);
+      try {
+        await validarAlcadaDesconto(user.id, desconto, subtotal);
+        return { permitido: true };
+      } catch (e) {
+        if (e instanceof ErroDeNegocio) return { permitido: false, mensagem: e.message };
+        throw e;
+      }
+    },
+  );
+
   app.get(
     '/vendas',
     { preHandler: [app.authenticate, await permissaoMiddleware('vendas', 'visualizar')] },
@@ -247,6 +277,11 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         })
         .parse(req.body);
 
+      // I1 — autorização do supervisor no balcão (opcional; só pesa quando o
+      // desconto passa da alçada do próprio operador).
+      const autorizacaoDesconto = lerAutorizacaoSupervisor(app, req, 'DESCONTO');
+      let descontoAutorizadoPor: string | null = null;
+
       const formasPagamentoSolicitadas = data.pagamentos?.map((pagamento) => pagamento.forma) ?? [data.formaPagamento];
       if (!pixProviderConfigurado && formasPagamentoSolicitadas.includes('PIX')) {
         throw new ErroDeNegocio(mensagemPixProviderIndisponivel, 503);
@@ -340,12 +375,31 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // o percentual da alçada era medido sobre base já líquida.
         let subtotalBruto = 0;
         let descontoTotal = 0;
+        // I9 — carrega produtos, configuração da filial e estoques de TODOS os
+        // itens em 3 consultas, em vez de 3+ consultas por item. Carrinho de
+        // 30 itens deixava a transação (e o bloqueio do caixa) aberta por
+        // segundos no banco remoto.
+        const idsItens = [...new Set(data.itens.map((i) => i.produtoId))];
+        const [produtosLote, configsLote, estoquesLote] = await Promise.all([
+          tx.produto.findMany({ where: { id: { in: idsItens }, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true, tipoProdutoId: true } }),
+          tx.produtoFilial.findMany({ where: { produtoId: { in: idsItens }, filialId: data.filialId } }),
+          tx.estoque.findMany({ where: { produtoId: { in: idsItens }, filialId: data.filialId } }),
+        ]);
+        const produtoPorId = new Map(produtosLote.map((p) => [p.id, p]));
+        const configPorProduto = new Map(configsLote.map((c) => [c.produtoId, c]));
+        const estoquePorProduto = new Map(estoquesLote.map((e) => [e.produtoId, e]));
+        const kitPorTipo = new Map<string | null, boolean>();
+        // Quantidade pedida somada por produto: o mesmo produto em duas linhas
+        // precisa caber no estoque somado (a checagem por linha deixava passar).
+        const pedidoPorProduto = new Map<string, number>();
+        for (const item of data.itens) pedidoPorProduto.set(item.produtoId, (pedidoPorProduto.get(item.produtoId) ?? 0) + item.quantidade);
         for (const item of data.itens) {
-          const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, unidade: true, custo: true, precoVenda: true, precoPromocional: true, promocaoInicio: true, promocaoFim: true, controlaEstoque: true, permiteEstoqueNegativo: true, tipoProdutoId: true } });
+          const produto = produtoPorId.get(item.produtoId);
           if (!produto) throw NaoEncontrado(`Produto ${item.produtoId} não encontrado.`);
-          const vendaDeKit = await produtoEhTipoKit(tx, user.empresaId, produto.tipoProdutoId);
+          if (!kitPorTipo.has(produto.tipoProdutoId)) kitPorTipo.set(produto.tipoProdutoId, await produtoEhTipoKit(tx, user.empresaId, produto.tipoProdutoId));
+          const vendaDeKit = kitPorTipo.get(produto.tipoProdutoId)!;
           // Configuração do produto NESTA filial (aba Filial do cadastro): vínculo, disponibilidade e preço próprio.
-          const configFilial = await tx.produtoFilial.findUnique({ where: { produtoId_filialId: { produtoId: item.produtoId, filialId: data.filialId } } });
+          const configFilial = configPorProduto.get(item.produtoId) ?? null;
           if (configFilial && (!configFilial.ativo || !configFilial.disponivelVenda)) {
             throw new ErroDeNegocio(`${produto.nome} não está disponível para venda nesta filial.`, 422);
           }
@@ -363,9 +417,9 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
             }
           } else if (produto.controlaEstoque && !produto.permiteEstoqueNegativo) {
             // Sem controle de estoque (ex.: serviço) ou com estoque negativo permitido: não bloqueia por saldo.
-            const estoque = await tx.estoque.findUnique({ where: { filialId_produtoId: { filialId: data.filialId, produtoId: item.produtoId } } });
-            const qtdAtual = Number(estoque?.quantidade ?? 0);
-            if (qtdAtual < item.quantidade) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${item.quantidade}.`, 422);
+            const qtdAtual = Number(estoquePorProduto.get(item.produtoId)?.quantidade ?? 0);
+            const pedido = pedidoPorProduto.get(item.produtoId) ?? item.quantidade;
+            if (qtdAtual < pedido) throw new ErroDeNegocio(`Estoque insuficiente para ${produto.nome}: tem ${qtdAtual}, precisa ${pedido}.`, 422);
           }
           const promocaoDentroDaJanela = produto.precoPromocional != null
             && (!produto.promocaoInicio || produto.promocaoInicio <= agoraUtc)
@@ -388,7 +442,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // FASA 2 — alçada de desconto validada NO BACKEND (não confia no front).
         // Avalia o desconto TOTAL (itens + venda) sobre a base BRUTA: impede que
         // um desconto por item contorne a alçada e mede o percentual correto.
-        await validarAlcadaDesconto(user.id, arred2(descontoTotal + data.desconto), subtotalBruto, tx);
+        descontoAutorizadoPor = await validarAlcadaDesconto(user.id, arred2(descontoTotal + data.desconto), subtotalBruto, tx, autorizacaoDesconto?.supervisorId);
 
         // FASA 2 — pagamento misto: a soma precisa bater EXATAMENTE com o total.
         if (data.pagamentos) {
@@ -620,7 +674,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       transacaoConfirmada = true;
       result = transacao.resultado;
 
-      await registrarAuditoria({ usuarioId: user.id, empresaId: user.empresaId, acao: 'CRIAR', entidade: 'Venda', entidadeId: result.venda.id, valorNovo: result.venda, origem: result.venda.origem, ip: req.ip });
+      await registrarAuditoria({ usuarioId: user.id, empresaId: user.empresaId, acao: 'CRIAR', entidade: 'Venda', entidadeId: result.venda.id, valorNovo: result.venda, origem: result.venda.origem, ip: req.ip, ...(descontoAutorizadoPor ? { contexto: `Desconto autorizado no balcão pelo supervisor ${autorizacaoDesconto?.supervisorNome} (${descontoAutorizadoPor}).` } : {}) });
       // FASE 1 PDV PRO — 201 Created na criação. O helper de envio do PDV
       // (enviarOperacaoPdv) valida o corpo e aceita 2xx, então 201 não quebra
       // o terminal nem a aba Vendas.
@@ -667,6 +721,15 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         where: { usuarioId: user.id, modulo: 'vendas', acao: 'editar', permitido: true },
         select: { id: true },
       });
+      // Autorização do supervisor no balcão libera cancelar venda fora do
+      // próprio turno (as permissões dele são reconferidas agora).
+      const autorizacaoCancel = lerAutorizacaoSupervisor(app, req, 'CANCELAMENTO');
+      const supervisorCancelValido = autorizacaoCancel
+        ? await prisma.permissao.findFirst({ where: { usuarioId: autorizacaoCancel.supervisorId, modulo: 'vendas', acao: 'editar', permitido: true }, select: { id: true } })
+        : null;
+      if (autorizacaoCancel && !supervisorCancelValido) {
+        throw new ErroDeNegocio('O supervisor que autorizou não pode mais cancelar vendas.', 403);
+      }
       const somenteOperadorPdv = !gestorVendas;
       if (somenteOperadorPdv) {
         if (!body.motivo || body.motivo.length < MOTIVO_MINIMO_CANCELAMENTO) {
@@ -687,7 +750,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         const venda = await tx.venda.findUnique({ where: { id }, include: { itens: true, pagamentos: true } });
         if (!venda) throw NaoEncontrado('Venda não encontrada nesta empresa.');
         if (venda.status !== 'FINALIZADA') throw Conflito(`Venda com status ${venda.status} não pode ser estornada novamente.`);
-        if (somenteOperadorPdv) {
+        if (somenteOperadorPdv && !supervisorCancelValido) {
           const turno = venda.caixaId
             ? await tx.caixa.findFirst({ where: { id: venda.caixaId, empresaId: user.empresaId, usuarioId: user.id, status: 'ABERTO' }, select: { id: true } })
             : null;
@@ -786,7 +849,7 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       await registrarAuditoria({
         usuarioId: user.id, empresaId: user.empresaId, acao: 'EDITAR', entidade: 'Venda', entidadeId: id,
         valorNovo: vendaCancelada, origem: 'MANUAL', ip: req.ip,
-        contexto: `Cancelamento transacional (${motivoCancelamento}). Estorno de estoque: ${body.estornarEstoque ? 'sim' : 'não'}; estorno financeiro (financeiro, indicadores, metas, cliente e caixa): ${body.estornarFinanceiro ? 'sim' : 'não'}.`,
+        contexto: `Cancelamento transacional (${motivoCancelamento}). Estorno de estoque: ${body.estornarEstoque ? 'sim' : 'não'}; estorno financeiro (financeiro, indicadores, metas, cliente e caixa): ${body.estornarFinanceiro ? 'sim' : 'não'}.${supervisorCancelValido ? ` Autorizado no balcão pelo supervisor ${autorizacaoCancel?.supervisorNome} (${autorizacaoCancel?.supervisorId}).` : ''}`,
       });
       return vendaCancelada;
     },
