@@ -304,10 +304,18 @@ export async function pdvRoutes(app: FastifyInstance) {
       const mov = await tx.movimentacaoCaixa.create({
         data: { caixaId: caixa.id, tipo: data.tipo, valor: data.valor, motivo: data.motivo, usuarioId: req.user.id, origem: 'MANUAL' },
       });
+      // Conclui a chave NA MESMA transação da movimentação: antes, se a
+      // auditoria falhasse depois do commit, a chave ficava "processando" e
+      // o retry recebia 409 até o prazo expirar.
+      if (idemId) {
+        await tx.idempotencyKey.update({
+          where: { id: idemId },
+          data: { status: 'CONFIRMADA', responseStatus: 200, responseBody: JSON.parse(JSON.stringify(mov)) },
+        });
+      }
       return mov;
     });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'MovimentacaoCaixa', entidadeId: movimentacao.id, valorNovo: movimentacao, origem: 'MANUAL', ip: req.ip });
-    if (idemId) await concluirIdempotencia(idemId, { status: 'CONFIRMADA', responseStatus: 200, responseBody: movimentacao });
     return movimentacao;
   });
 
