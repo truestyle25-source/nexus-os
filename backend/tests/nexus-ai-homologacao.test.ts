@@ -15,7 +15,7 @@ import { carregarCatalogo } from '../src/modules/nexus-ai/catalogo.js';
 import { executarFerramenta } from '../src/modules/nexus-ai/ferramentas/registro.js';
 import { contexto } from '../src/modules/nexus-ai/motor.js';
 import { agente } from '../src/modules/nexus-ai/agentes/registro.js';
-import { varrer } from '../src/modules/nexus-ai/eventos/regras.js';
+import { foraDoHorario, varrer } from '../src/modules/nexus-ai/eventos/regras.js';
 import { processarFila } from '../src/modules/nexus-ai/eventos/worker.js';
 import { empresasComMovimento } from '../src/modules/nexus-ai/eventos/agendador.js';
 import { decidir, salvarAutomacao, listarAutomacoes } from '../src/modules/nexus-ai/aprovacoes.service.js';
@@ -74,13 +74,18 @@ test('NEXUS AI — homologação: exportações, avaliação e novas ações', {
       const hora = ev.filter((e) => (e.dados as any).motivo === 'fora do horário');
       assert.equal(volume.length, 1, JSON.stringify(ev.map((e) => e.dados)));
       assert.equal((volume[0].dados as any).exportacoes, 10); assert.equal(volume[0].severidade, 'ALTA'); assert.equal((volume[0].dados as any).usuarioId, analista.id);
-      assert.equal(hora.length, 1); assert.equal((hora[0].dados as any).usuario, 'Admin');
+      // A exportação do Admin foi às 23h30: sempre fora do horário. As 10 do Analista foram feitas
+      // "agora": também viram alerta de horário se o teste rodar entre 22h e 6h (ex.: CI de madrugada).
+      const doAdmin = hora.filter((e) => (e.dados as any).usuario === 'Admin');
+      const doAnalista = hora.filter((e) => (e.dados as any).usuario === 'Analista');
+      assert.equal(doAdmin.length, 1);
+      assert.equal(doAnalista.length, foraDoHorario(new Date()) ? 10 : 0, 'exportações de agora só alertam por horário se for madrugada');
       await processarFila(50);
       const ins = await prisma.aIInsight.findMany({ where: { empresaId: empresa.id, tipo: 'EXPORTACAO_MASSA' } });
-      assert.equal(ins.length, 2); assert.ok(ins.every((i) => i.modulo === 'auditoria'));
+      assert.equal(ins.length, ev.length); assert.ok(ins.every((i) => i.modulo === 'auditoria'));
       assert.match(ins.find((i) => i.severidade === 'ALTA')!.titulo, /10 exportações em 60 min — Analista/);
       await varrer(26 * 60);
-      assert.equal(await prisma.aIEvento.count({ where: { empresaId: empresa.id, tipo: 'EXPORTACAO_MASSA' } }), 2, 'não duplica');
+      assert.equal(await prisma.aIEvento.count({ where: { empresaId: empresa.id, tipo: 'EXPORTACAO_MASSA' } }), ev.length, 'não duplica');
     });
 
     await t.test('Avaliação correta/incorreta: só quem perguntou; resumo só para admin', async () => {
