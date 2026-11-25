@@ -826,7 +826,7 @@ export default function PDV() {
           aria-label="Horário atual"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontVariantNumeric: 'tabular-nums' }}
         >
-          <span aria-hidden>x"</span>
+          <span aria-hidden>🕒</span>
           {agora ? formatClock(agora) : '--:--:--'}
         </span>
         <span style={{ flex: 1 }} />
@@ -859,22 +859,42 @@ export default function PDV() {
                   <button className="admin-primary pdv-btn-grad" type="button" onClick={() => setMostrarAbrir(true)} disabled={!filialId || filiais.length === 0 || Boolean(erroCaixa)} style={{ padding: '9px 18px' }}>Abrir caixa</button>
             </>
           )}
-          <button type="button" aria-label="Integrações" onClick={() => setMostrarMenu((v) => !v)}
-            style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', color: 'var(--nexus-text)', fontSize: 16, cursor: 'pointer' }}>a"</button>
-          {mostrarMenu && (
-              <div className="admin-panel" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 30, minWidth: 280, padding: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)' }}>
-                <h2 style={{ marginBottom: 8 }}>MÓDULOS DO SISTEMA</h2>
+          <button type="button" aria-label="Menu do caixa" aria-expanded={mostrarMenu} onClick={() => setMostrarMenu((v) => !v)}
+            style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', color: 'var(--nexus-text)', fontSize: 18, cursor: 'pointer' }}>☰</button>
+          {mostrarMenu && (() => {
+              // Cada opção diz exatamente o que faz. Antes, "Abrir PDV" com o
+              // caixa aberto abria o FECHAMENTO, e "Impressora"/"Leitor"/"Webhooks"
+              // prometiam integrações que não existem.
+              const item: React.CSSProperties = { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 };
+              const atalho: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: 'rgba(139,92,246,.15)', color: 'var(--nexus-accent-2)' };
+              const naoConfig: React.CSSProperties = { fontSize: 10.5, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,.15)', color: '#d97706' };
+              const irIntegracoes = () => { setMostrarMenu(false); document.getElementById('pdv-integracoes')?.scrollIntoView({ behavior: 'smooth' }); };
+              return (
+              <div className="admin-panel" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 30, minWidth: 300, padding: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)' }}>
+                <h2 style={{ marginBottom: 8 }}>AÇÕES DO CAIXA</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <button type="button" className="admin-secondary" style={{ textAlign: 'left' }} disabled={!caixa && Boolean(erroCaixa)} onClick={() => { setMostrarMenu(false); if (caixa) setMostrarFechar(true); else if (!erroCaixa) setMostrarAbrir(true); }}>xa Abrir PDV</button>
-                  <button type="button" className="admin-secondary" style={{ textAlign: 'left' }} onClick={abrirCupomMaisRecente}>🖨️ Impressora Térmica (cupom)</button>
-                  <button type="button" className="admin-secondary" style={{ textAlign: 'left' }} onClick={() => { setMostrarMenu(false); buscaRef.current?.focus(); }}>📷` Leitor Código de Barras</button>
-                  <button type="button" className="admin-secondary" style={{ textAlign: 'left' }} onClick={() => { setMostrarMenu(false); document.getElementById('pdv-integracoes')?.scrollIntoView({ behavior: 'smooth' }); }}>{'</>'} API Integração</button>
-                  <button type="button" className="admin-secondary" style={{ textAlign: 'left' }} onClick={() => { setMostrarMenu(false); document.getElementById('pdv-integracoes')?.scrollIntoView({ behavior: 'smooth' }); }}>🛒 R Webhooks</button>
-                  <p style={{ fontSize: 11, opacity: 0.6, margin: '4px 0 0' }}>💰 Balança · 🖨️ Maquininha (TEF) · 🏦 SAT Fiscal: integração somente via API/SDK oficial do fabricante — configurável na seção Integrações & PDVs abaixo.</p>
-                  <p style={{ fontSize: 10.5, opacity: 0.8, margin: '8px 0 0', fontFamily: 'monospace', color: modoOffline ? '#fbbf24' : apiOk ? '#34d399' : '#f87171' }}>API: /pdv/caixa/atual — {modoOffline ? `OFFLINE · ${pendentesSync} pendente(s)/revisão` : apiOk === false ? 'INDISPONÍVEL' : '200 OK'}</p>
+                  {caixa ? (
+                    <button type="button" className="admin-secondary" style={{ ...item, color: '#dc2626' }} onClick={() => { setMostrarMenu(false); setMostrarFechar(true); }}><span>🔒 Fechar caixa</span></button>
+                  ) : (
+                    <button type="button" className="admin-secondary" style={item} disabled={Boolean(erroCaixa)} onClick={() => { setMostrarMenu(false); setMostrarAbrir(true); }}><span>🔓 Abrir caixa</span></button>
+                  )}
+                  <button type="button" className="admin-secondary" style={item} onClick={abrirCupomMaisRecente}><span>🧾 Reimprimir último cupom</span></button>
+                  <button type="button" className="admin-secondary" style={item} onClick={() => { setMostrarMenu(false); buscaRef.current?.focus(); }}><span>🔍 Ir para o leitor / busca</span><span style={atalho}>F2</span></button>
+                  <button type="button" className="admin-secondary" style={item} disabled={!caixa} onClick={() => { setMostrarMenu(false); setTipoMov('SANGRIA'); setMostrarSangria(true); }}><span>💸 Sangria · Suprimento</span><span style={atalho}>F7 · F8</span></button>
                 </div>
+                <h2 style={{ margin: '12px 0 8px' }}>EQUIPAMENTOS E INTEGRAÇÕES</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>⚖️ Balança</span><span style={naoConfig}>não configurado</span></button>
+                  <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>💳 Maquininha (TEF)</span><span style={naoConfig}>não configurado</span></button>
+                  <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>🏛️ SAT / NFC-e</span><span style={naoConfig}>não configurado</span></button>
+                  <button type="button" className="admin-secondary" style={item} onClick={irIntegracoes}><span>🔌 Integrações e webhooks</span><span>›</span></button>
+                </div>
+                <p role="status" style={{ fontSize: 12, margin: '10px 0 0', color: modoOffline ? '#d97706' : apiOk === false ? '#dc2626' : '#059669' }}>
+                  ● {modoOffline ? `Offline · ${pendentesSync} venda(s) pendente(s)` : apiOk === false ? 'Servidor indisponível' : `Online · ${pendentesSync} venda(s) pendente(s)`}
+                </p>
               </div>
-            )}
+              );
+            })()}
         </div>
       </header>
 
