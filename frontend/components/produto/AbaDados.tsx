@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Alternador, Aviso, Botao, CampoArea, CampoSelecao, CampoTexto, Celula, Grade, Secao } from './ui';
 import type { FormProduto } from './formulario';
 import { fichaApi, lerNumero, mensagemDeErro, type Catalogos, type Ficha } from '@/lib/produto-ficha';
+import GerenciarClassificacao from './GerenciarClassificacao';
 
 type Props = {
   form: FormProduto; set: <K extends keyof FormProduto>(k: K, v: FormProduto[K]) => void;
@@ -36,6 +37,12 @@ export default function AbaDados({ form, set, catalogos, ficha, podeEditar, aoAt
   };
 
   const [novaCategoria, setNovaCategoria] = useState('');
+  const [gerenciando, setGerenciando] = useState(false);
+  // Depois de renomear/excluir: recarrega a lista; se o item excluído estava escolhido neste formulário, limpa a escolha.
+  async function aposGerenciar(excluidoId?: string) {
+    await aoAtualizarCatalogos();
+    if (excluidoId && caminho.includes(excluidoId)) set('categoriaId', caminho[caminho.indexOf(excluidoId) - 1] ?? '');
+  }
   async function criarCategoria() {
     const nome = novaCategoria.trim();
     if (nome.length < 2) return;
@@ -96,6 +103,10 @@ export default function AbaDados({ form, set, catalogos, ficha, podeEditar, aoAt
               <Celula l={3} alinharCampo>
                 <Botao onClick={criarCategoria} desabilitado={novaCategoria.trim().length < 2 || caminho.length > 3}>Adicionar à classificação</Botao>
               </Celula>
+              <Celula l={3} alinharCampo>
+                <Botao onClick={() => setGerenciando(true)} titulo="Renomear ou excluir grupos e subgrupos">Gerenciar classificação</Botao>
+              </Celula>
+              {gerenciando && <GerenciarClassificacao aoFechar={() => setGerenciando(false)} aoAlterar={aposGerenciar} avisar={avisar} />}
             </>
           )}
         </Grade>
