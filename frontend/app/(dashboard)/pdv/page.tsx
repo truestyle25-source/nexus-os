@@ -26,6 +26,10 @@ import { recuperarCarrinho, salvarCarrinho, limparCarrinho as limparCarrinhoPers
 import { adicionarProduto, alterarQuantidade, removerProduto, subtotalDoCarrinho, totalComDesconto } from '@/lib/pdv/carrinho';
 import type { ContextoLocal } from '@/lib/pdv/tipos';
 
+/** Motivo mínimo para cancelar no PDV — o mesmo exigido pelo servidor. */
+const MOTIVO_MINIMO = 10;
+const MOTIVOS_RAPIDOS = ['Cliente desistiu', 'Item errado', 'Preço errado', 'Pagamento não aprovado', 'Outro'] as const;
+
 const FORMAS = ['DINHEIRO', 'PIX', 'CARTAO_DEBITO', 'CARTAO_CREDITO', 'BOLETO'] as const;
 const ROTULO_FORMA: Record<string, string> = {
   DINHEIRO: 'Dinheiro', PIX: 'PIX', CARTAO_DEBITO: 'Cartão de Débito',
@@ -185,6 +189,10 @@ export default function PDV() {
   const finalizandoRef = useRef(false);
   const [cancelando, setCancelando] = useState<string | null>(null);
   const cancelandoRef = useRef(false);
+  const [vendaACancelar, setVendaACancelar] = useState<any>(null);
+  const [motivoRapido, setMotivoRapido] = useState('');
+  const [motivoTexto, setMotivoTexto] = useState('');
+  const [erroCancelamento, setErroCancelamento] = useState<string | null>(null);
   // Erros que antes sumiam em `catch { /* silencioso */ }`. Sem isto, grid
   // vazio por falta de permissão e grid vazio por não haver produtos eram
   // a mesma tela, e o operador não tinha como saber o que fazer.
@@ -564,16 +572,18 @@ export default function PDV() {
     setFechando(true);
     try {
       const { data } = await api.post('/pdv/caixa/fechar', {
-        valorContado: valorContado === '' ? undefined : Number(valorContado),
-        observacao: obsFechamento || undefined,
+        valorContado: Number(valorContado),
+        observacao: obsFechamento.trim() || undefined,
       });
-      const d = data.diferenca;
+      // A diferença vem dentro de `caixa` (antes era lida no topo da resposta,
+      // onde nunca existiu, e a mensagem de diferença nunca aparecia).
+      const d = data.caixa?.diferenca;
       setMostrarFechar(false); setValorContado(''); setObsFechamento('');
       setNotice(d === null || d === undefined
         ? `Caixa fechado. Vendas do turno: ${brl(data.resumo?.totalVendas ?? 0)}.`
-        : `Caixa fechado. Diferença em gaveta: ${brl(Number(d))} (contado ${brl(data.valorContado ? Number(data.valorContado) : 0)} vs esperado ${brl(data.resumo?.dinheiroEsperado ?? 0)}).`);
+        : `Caixa fechado. Diferença em gaveta: ${brl(Number(d))} (contado ${brl(Number(data.caixa?.valorContado ?? 0))} vs esperado ${brl(data.resumo?.dinheiroEsperado ?? 0)}).${data.divergencia ? ' A diferença foi registrada para revisão do gerente.' : ''}`);
       setCarrinho([]); await carregarCaixa();
-    } catch (err: any) { setError(err.response?.data?.error || 'Não foi possível fechar o caixa.'); }
+    } catch (err: any) { setError(err.response?.data?.message || err.response?.data?.error || 'Não foi possível fechar o caixa.'); }
     finally { fechandoRef.current = false; setFechando(false); }
   }
 
@@ -742,29 +752,33 @@ export default function PDV() {
    * A aba Vendas já tinha um modal com motivo obrigatório e escolha de
    * estorno; aqui a proteção é uma confirmação nativa, que não altera o layout.
    */
-  async function cancelarVenda(vendaId: string) {
+  // Abre a janela de cancelamento (substitui o window.confirm, que gravava um
+  // motivo automático). O motivo agora é escolhido/digitado pelo operador.
+  function cancelarVenda(venda: any) {
     setError(null); setNotice(null);
     if (cancelandoRef.current) return;
-    const ok = window.confirm(
-      'Cancelar esta venda?\n\n' +
-      'O que será desfeito, em uma única operação:\n' +
-      '  ⬢ o estoque volta ao depósito;\n' +
-      '  ⬢ a receita é marcada como cancelada;\n' +
-      '  ⬢ faturamento, ticket médio e meta do dia são reduzidos;\n' +
-      '  ⬢ se foi paga em dinheiro, o valor sai da gaveta do turno.\n\n' +
-      'Esta ação não pode ser desfeita.'
-    );
-    if (!ok) return;
+    setMotivoRapido(''); setMotivoTexto(''); setErroCancelamento(null);
+    setVendaACancelar(venda);
+  }
+
+  async function confirmarCancelamento() {
+    const venda = vendaACancelar;
+    if (!venda || cancelandoRef.current) return;
+    const texto = motivoTexto.trim();
+    const motivo = (texto || motivoRapido).trim();
+    if (motivo.length < MOTIVO_MINIMO) {
+      setErroCancelamento(`Escreva o motivo com pelo menos ${MOTIVO_MINIMO} caracteres.`);
+      return;
+    }
     cancelandoRef.current = true;
-    setCancelando(vendaId);
+    setCancelando(venda.id);
+    setErroCancelamento(null);
     try {
-      // `motivo` é opcional no backend, mas fica na movimentação de estoque e
-      // na auditoria: sem ele, o estorno aparece como "Cancelamento venda <id>"
-      // e não dá para saber depois quem/por que cancelou no balcão.
-      await api.post(`/vendas/${vendaId}/cancelar`, { motivo: `Cancelado no balcão (PDV) por ${caixa?.usuario?.nome ?? 'operador'}` });
+      await api.post(`/vendas/${venda.id}/cancelar`, { motivo });
+      setVendaACancelar(null);
       setNotice('Venda cancelada: estoque devolvido e gaveta ajustada.');
       await Promise.all([carregarCaixa(), carregarProdutos(busca)]);
-    } catch (err: any) { setError(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
+    } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
   function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); }
@@ -1148,8 +1162,8 @@ export default function PDV() {
                         // dois toques não disparem duas requisições (o
                         // `cancelando` já trava a função, mas o operador
                         // precisa VER que o clique foi aceito).
-                        <button type="button" className="admin-secondary" disabled={cancelando === v.id} style={{ padding: '4px 10px', flexShrink: 0, opacity: cancelando === v.id ? 0.5 : 1 }} onClick={() => cancelarVenda(v.id)}>
-                          {cancelando === v.id ? 'Cancelando⬦' : traduzir('cancelar', "Cancelar")}
+                        <button type="button" className="admin-secondary" disabled={cancelando === v.id} style={{ padding: '4px 10px', flexShrink: 0, opacity: cancelando === v.id ? 0.5 : 1 }} onClick={() => cancelarVenda(v)}>
+                          {cancelando === v.id ? 'Cancelando…' : traduzir('cancelar', "Cancelar")}
                         </button>
                       )}
                     </div>
@@ -1203,15 +1217,61 @@ export default function PDV() {
       {mostrarFechar && (
         <Modal titulo="Fechar caixa" onFechar={() => setMostrarFechar(false)}>
           {resumo && <p style={{ fontSize: 12.5, opacity: 0.8, marginBottom: 12 }}>Dinheiro esperado em gaveta: <strong>{brl(resumo.dinheiroEsperado)}</strong></p>}
-          <label style={estiloLabel}>Valor contado na gaveta (R$) — opcional
-            <input type="number" min="0" step="0.01" value={valorContado} onChange={(e) => setValorContado(e.target.value)} autoFocus />
+          <label style={estiloLabel}>Valor contado na gaveta (R$) — obrigatório
+            <input type="number" min="0" step="0.01" required value={valorContado} onChange={(e) => setValorContado(e.target.value)} autoFocus />
           </label>
-          <label style={estiloLabel}>Observação (opcional)
+          <label style={estiloLabel}>Observação (obrigatória se a diferença passar de R$ 5,00)
             <input value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} maxLength={300} />
           </label>
-          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={fechando} onClick={fecharCaixa}>{fechando ? 'Fechando⬦' : 'Fechar caixa'}</button>
+          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={fechando || valorContado === ''} onClick={fecharCaixa}>{fechando ? 'Fechando…' : 'Fechar caixa'}</button>
         </Modal>
       )}
+      {vendaACancelar && (() => {
+        const v = vendaACancelar;
+        const pagamentos: Array<{ forma: string; valor: unknown }> = v.pagamentos?.length ? v.pagamentos : [{ forma: v.formaPagamento, valor: v.total }];
+        const dinheiro = pagamentos.filter((p) => p.forma === 'DINHEIRO').reduce((s, p) => s + Number(p.valor), 0);
+        const formas = [...new Set(pagamentos.map((p) => ROTULO_FORMA[p.forma] ?? p.forma))].join(' + ');
+        const qtdItens = v.itens?.length ?? 0;
+        const motivoFinal = (motivoTexto.trim() || motivoRapido).trim();
+        return (
+          <Modal titulo="Cancelar venda" onFechar={() => { if (!cancelando) setVendaACancelar(null); }}>
+            <p style={{ fontSize: 12.5, opacity: 0.7, margin: '-6px 0 12px' }}>Só vendas do seu turno aberto podem ser canceladas aqui.</p>
+            <div style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 12, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Venda #{String(v.id).slice(-5)} · {new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span><strong>{brl(Number(v.total))}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.8 }}><span>{qtdItens} {qtdItens === 1 ? 'item' : 'itens'} · {formas}</span>{caixa?.numero != null && <span>Caixa {String(caixa.numero).padStart(2, '0')}</span>}</div>
+            </div>
+            <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 6px' }}>Motivo do cancelamento *</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {MOTIVOS_RAPIDOS.map((m) => (
+                <button key={m} type="button" className={motivoRapido === m ? 'admin-primary pdv-btn-grad' : 'admin-secondary'} aria-pressed={motivoRapido === m}
+                  style={{ borderRadius: 999, padding: '6px 12px', fontSize: 12.5 }}
+                  onClick={() => { setMotivoRapido(m); if (!motivoTexto.trim() && m !== 'Outro') setMotivoTexto(m); }}>{m}</button>
+              ))}
+            </div>
+            <textarea aria-label="Motivo do cancelamento" value={motivoTexto} onChange={(e) => setMotivoTexto(e.target.value)} maxLength={300} rows={3}
+              placeholder="Descreva o que aconteceu"
+              style={{ width: '100%', borderRadius: 10, padding: 10, fontFamily: 'inherit', fontSize: 13, background: 'var(--nexus-panel-2)', color: 'var(--nexus-text)', border: '1px solid rgba(139,92,246,.6)' }} />
+            <div style={{ fontSize: 11, opacity: 0.65, textAlign: 'right', marginBottom: 10 }}>mínimo {MOTIVO_MINIMO} caracteres · {motivoFinal.length}/300</div>
+            <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px' }}>O que será desfeito</p>
+            <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, opacity: 0.85 }}>
+              <li>os produtos voltam para o estoque;</li>
+              <li>a venda sai do faturamento, do ticket médio e da meta do dia;</li>
+              {dinheiro > 0 && <li>{brl(dinheiro)} em dinheiro saem da gaveta deste turno.</li>}
+            </ul>
+            <div role="note" style={{ background: 'rgba(239,68,68,.10)', border: '1px solid rgba(239,68,68,.35)', color: '#dc2626', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginBottom: 12 }}>
+              ⚠ Esta ação não pode ser desfeita e fica registrada com seu nome e o motivo.
+            </div>
+            {erroCancelamento && <p role="alert" className="admin-message admin-error" style={{ margin: '0 0 12px' }}>{erroCancelamento}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="admin-secondary" style={{ flex: 1, padding: 12 }} disabled={Boolean(cancelando)} onClick={() => setVendaACancelar(null)}>Voltar</button>
+              <button type="button" style={{ flex: 1, padding: 12, borderRadius: 10, border: 0, background: '#dc2626', color: '#fff', fontWeight: 700, opacity: cancelando || motivoFinal.length < MOTIVO_MINIMO ? 0.5 : 1 }}
+                disabled={Boolean(cancelando) || motivoFinal.length < MOTIVO_MINIMO} onClick={() => void confirmarCancelamento()}>
+                {cancelando ? 'Cancelando…' : 'Confirmar cancelamento'}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
       {cupom && (
         <Modal titulo="Cupom da venda" onFechar={() => setCupom(null)} imprimir>
           <pre style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 8, padding: 14, fontSize: 12, lineHeight: 1.5, overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'inherit' }}>{renderCupom(cupom, brl, ROTULO_FORMA)}</pre>
