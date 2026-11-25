@@ -75,7 +75,11 @@ const pdvCss = `
 .pdv-scroll::-webkit-scrollbar-track { background: transparent; }
 .pdv-grid { display: grid; grid-template-columns: minmax(0,1fr) 400px; gap: 16px; align-items: start; }
 .pdv-side { position: sticky; top: 84px; }
-@media (max-width: 1120px) { .pdv-grid { grid-template-columns: 1fr; } .pdv-side { position: static; } }
+@media (max-width: 1120px) { .pdv-grid { grid-template-columns: 1fr; } .pdv-side { position: static; } .pdv-mobile-bar { display: flex !important; } .pdv-root { padding-bottom: 84px; } .pdv-root .admin-secondary, .pdv-root .admin-primary { min-height: 44px; } }
+.pdv-mobile-bar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; gap: 12px; align-items: center; padding: 10px 16px; background: var(--nexus-panel); border-top: 1px solid var(--nexus-border); box-shadow: 0 -8px 24px rgba(0,0,0,.15); }
+.pdv-atalhos { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: .85; }
+.pdv-atalhos kbd { display: inline-block; padding: 1px 6px; margin-right: 4px; border-radius: 5px; background: var(--nexus-panel-2); border: 1px solid var(--nexus-border); font-weight: 700; font-size: 11px; font-family: inherit; }
+@media (max-width: 1120px) { .pdv-atalhos { display: none; } }
 .pdv-cart-scroll { max-height: 300px; overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .pdv-thumb { width: 44px; height: 44px; border-radius: 9px; object-fit: cover; flex-shrink: 0; }
 .pdv-thumb-empty { width: 44px; height: 44px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 19px; background: linear-gradient(135deg, rgba(124,58,237,.2), rgba(124,58,237,.06)); }
@@ -199,12 +203,35 @@ export default function PDV() {
   const [erroCaixa, setErroCaixa] = useState<string | null>(null);
   const [erroProdutos, setErroProdutos] = useState<string | null>(null);
   const buscaRef = useRef<HTMLInputElement>(null);
+  const clienteRef = useRef<HTMLSelectElement>(null);
+  const descontoRef = useRef<HTMLInputElement>(null);
+  // Busca digitada: espera 200 ms sem digitar antes de consultar o catálogo.
+  const [buscaAdiada, setBuscaAdiada] = useState('');
+  useEffect(() => { const t = setTimeout(() => setBuscaAdiada(busca), 200); return () => clearTimeout(t); }, [busca]);
 
   const { descontoAplicado: descontoNum, total, descontoInvalido } = totalComDesconto(carrinho, Number(descontoGeral) || 0);
   const subtotal = useMemo(() => subtotalDoCarrinho(carrinho), [carrinho]);
   const descontoInformado = Number(descontoGeral) || 0;
   const recebidoNum = Number(valorRecebido) || 0;
-  const troco = forma === 'DINHEIRO' ? Math.max(0, recebidoNum - total) : 0;
+  // Pagamento misto (dinheiro + PIX): `parteDinheiro` é quanto do total fica
+  // em dinheiro; o restante é cobrado no PIX. O troco é sobre a parte em dinheiro.
+  const [misto, setMisto] = useState(false);
+  const [parteDinheiro, setParteDinheiro] = useState('');
+  const parteDinheiroNum = Math.round((Number(parteDinheiro) || 0) * 100) / 100;
+  const devidoEmDinheiro = forma === 'DINHEIRO' && misto ? parteDinheiroNum : total;
+  const partePix = Math.max(0, Math.round((total - parteDinheiroNum) * 100) / 100);
+  const troco = forma === 'DINHEIRO' ? Math.max(0, recebidoNum - devidoEmDinheiro) : 0;
+  const podeCobrar = !finalizando && !operacaoCarrinhoPendente && carrinho.length > 0 && !descontoInvalido
+    && !(forma === 'DINHEIRO' && recebidoNum < devidoEmDinheiro)
+    && !(forma === 'DINHEIRO' && misto && !(parteDinheiroNum > 0 && parteDinheiroNum < total));
+  /** Botão "Cobrar", F4 e a barra do celular passam todos por aqui. */
+  function cobrar() {
+    if (finalizandoRef.current || !caixa || carrinho.length === 0) return;
+    if (forma === 'PIX' || (forma === 'DINHEIRO' && misto)) setMostrarPix(true);
+    else void finalizarVenda();
+  }
+  const cobrarRef = useRef(cobrar);
+  cobrarRef.current = cobrar;
 
   const carregarCaixa = useCallback(async (contextoInformado?: ContextoLocal | null) => {
     // O erro do `/pdv/caixa/atual` é o ÚNICO que significa "não há caixa" —
@@ -299,7 +326,7 @@ export default function PDV() {
     setErroVendasTurno(v.status === 'rejected'
       ? (v.reason?.response?.data?.error || 'Não foi possível carregar as vendas do turno.')
       : null);
-    // O selo "API /pdv/caixa/resumo ⬢ LIVE/OFF" passa a refletir o resumo
+    // O selo "API /pdv/caixa/resumo • LIVE/OFF" passa a refletir o resumo
     // de verdade, e não o sucesso da chamada do caixa.
     if (r.status === 'rejected') {
       setApiOk(false);
@@ -423,7 +450,7 @@ export default function PDV() {
     }).finally(() => setLoading(false));
   }, [router, carregarCaixa]);
 
-  useEffect(() => { if (caixa) void carregarProdutos(busca, categoriaId); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [caixa, filialId, busca, categoriaId]);
+  useEffect(() => { if (caixa) void carregarProdutos(buscaAdiada, categoriaId); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [caixa, filialId, buscaAdiada, categoriaId]);
 
   useEffect(() => {
     if (!contextoPdv) return;
@@ -515,16 +542,44 @@ export default function PDV() {
       if (e.key === 'F2') { e.preventDefault(); buscaRef.current?.focus(); buscaRef.current?.select(); }
       else if (e.key === 'F4') {
         e.preventDefault();
-        if (caixa && carrinho.length > 0 && !finalizandoRef.current) {
-          if (forma === 'PIX') setMostrarPix(true);
-          else void finalizarVenda();
-        }
+        cobrarRef.current();
       }
       else if (e.key === 'F7') { e.preventDefault(); if (caixa) { setTipoMov('SANGRIA'); setMostrarSangria(true); } }
-       else if (e.key === 'F8') { e.preventDefault(); if (caixa) { setTipoMov('SUPRIMENTO'); setMostrarSangria(true); } }
+      else if (e.key === 'F8') { e.preventDefault(); if (caixa) { setTipoMov('SUPRIMENTO'); setMostrarSangria(true); } }
+      else if (e.key === 'F3') { e.preventDefault(); clienteRef.current?.focus(); }
+      else if (e.key === 'F5') {
+        // F5 alterna a forma de pagamento (e não recarrega a página no meio da venda).
+        e.preventDefault();
+        setForma((atual) => FORMAS[(FORMAS.indexOf(atual as typeof FORMAS[number]) + 1) % FORMAS.length]);
+      }
+      else if (e.key === 'F6') { e.preventDefault(); descontoRef.current?.focus(); descontoRef.current?.select(); }
+      else if (e.key === 'F9') { e.preventDefault(); abrirCupomMaisRecente(); }
+      else if (e.key === 'Escape') {
+        setMostrarMenu(false);
+        buscaRef.current?.focus();
+      }
+      else {
+        const alvo = e.target as HTMLElement | null;
+        const editavel = !!alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.tagName === 'SELECT' || alvo.isContentEditable);
+        const modalAberto = !!document.querySelector('[role="dialog"]');
+        if (editavel || modalAberto || e.ctrlKey || e.altKey || e.metaKey) return;
+        if (e.key === 'Delete') {
+          // Del fora de campos remove o último item do carrinho.
+          e.preventDefault();
+          setCarrinho((a) => a.slice(0, -1));
+        } else if (e.key.length === 1) {
+          // Leitor de código de barras "sempre pronto": tecla digitada fora de
+          // um campo vai para a busca, então a bipagem não se perde quando o
+          // foco ficou num botão.
+          e.preventDefault();
+          setBusca((b) => b + e.key);
+          buscaRef.current?.focus();
+        }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caixa, carrinho.length, forma]);
 
   // ===== Ações de caixa =====
@@ -602,7 +657,10 @@ export default function PDV() {
 
   async function buscarPorCodigo(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
-    const termo = busca.trim();
+    // "3*789..." adiciona 3 unidades do código bipado.
+    const mult = /^(\d{1,3})\*(.+)$/.exec(busca.trim());
+    const vezes = mult ? Math.max(1, Number(mult[1])) : 1;
+    const termo = (mult ? mult[2] : busca).trim();
     if (!termo) return;
     let achado = contextoPdv && filialId ? await resolverBipagem(contextoPdv.empresaId, filialId, termo) : undefined;
     if (!achado && contextoPdv && filialId && estaOnline()) {
@@ -614,8 +672,21 @@ export default function PDV() {
     achado ??= produtos.find((p) =>
       (p.codigoBarras ?? '').toString() === termo ||
       (p.sku ?? '').toString().toLowerCase() === termo.toLowerCase());
-    if (achado) { adicionarAoCarrinho(achado); setBusca(''); void carregarProdutos(''); }
-    else void carregarProdutos(termo);
+    if (achado) {
+      let itens = carrinho;
+      let erro: string | null = null;
+      for (let n = 0; n < vezes && !erro; n++) {
+        const r = adicionarProduto(itens, achado as any);
+        erro = r.erro;
+        if (!r.erro) itens = r.itens;
+      }
+      setCarrinho(itens); setError(erro);
+      setBusca(''); void carregarProdutos('');
+      buscaRef.current?.focus();
+    } else {
+      setError(`Nenhum produto com o código "${termo}".`);
+      void carregarProdutos(termo);
+    }
   }
 
   async function finalizarVenda(referenciaPagamento?: string) {
@@ -628,7 +699,12 @@ export default function PDV() {
     }
     if (descontoInformado < 0) { setError('O desconto da venda não pode ser negativo.'); return false; }
     if (descontoInformado > subtotal) { setError('O desconto não pode superar o subtotal.'); return false; }
-    if (forma === 'DINHEIRO' && recebidoNum < total) { setError('Valor recebido menor que o total.'); return false; }
+    if (forma === 'DINHEIRO' && misto) {
+      if (!(parteDinheiroNum > 0 && parteDinheiroNum < total)) { setError('A parte em dinheiro deve ser maior que zero e menor que o total.'); return false; }
+      if (recebidoNum < parteDinheiroNum) { setError('Valor recebido menor que a parte em dinheiro.'); return false; }
+      if (!referenciaPagamento) { setError('Confirme a parte em PIX antes de registrar a venda.'); return false; }
+    }
+    else if (forma === 'DINHEIRO' && recebidoNum < total) { setError('Valor recebido menor que o total.'); return false; }
     if (forma === 'PIX' && !referenciaPagamento) { setError('Confirme o pagamento PIX no provider antes de registrar a venda.'); return false; }
     if (!['DINHEIRO', 'PIX'].includes(forma)) {
       setError('A integração de cartão/TEF ainda não está configurada. A venda não foi registrada.');
@@ -638,7 +714,7 @@ export default function PDV() {
     // alcançável, só DINHEIRO entra na fila. PIX/cartão offline nunca viram
     // "venda pendente" — o operador é informado na hora, sem mudar o layout.
     if (!estaOnline() || !(await backendAlcancavel(getApiBaseUrl()))) {
-      const avaliacao = avaliarFormaOffline(forma);
+      const avaliacao = avaliarFormaOffline(forma === 'DINHEIRO' && misto ? 'PIX' : forma);
       if (!avaliacao.permitida) {
         setError(`Sem conexão com o servidor: ${avaliacao.motivo}`);
         return false;
@@ -662,7 +738,12 @@ export default function PDV() {
         caixaId: caixa.id,
         origem: 'PDV',
         itens: carrinho.map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade, desconto: i.desconto })),
-        ...(total > 0 ? { pagamentos: [{ forma: forma.toUpperCase(), valor: total, ...(referenciaPagamento ? { referencia: referenciaPagamento } : {}) }] } : {}),
+        ...(total > 0 ? {
+          pagamentos: forma === 'DINHEIRO' && misto
+            // Pagamento misto: parte em dinheiro + restante no PIX confirmado.
+            ? [{ forma: 'DINHEIRO', valor: parteDinheiroNum }, { forma: 'PIX', valor: Math.round((total - parteDinheiroNum) * 100) / 100, referencia: referenciaPagamento }]
+            : [{ forma: forma.toUpperCase(), valor: total, ...(referenciaPagamento ? { referencia: referenciaPagamento } : {}) }],
+        } : {}),
       };
       const operacao = await enfileirarVendaComCarrinho({
         id,
@@ -699,7 +780,7 @@ export default function PDV() {
         // cannot be resubmitted under a new key while this request is unknown.
         setOperacaoCarrinhoPendente(null);
         setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca('');
-        setNotice(`VENDA PENDENTE DE SINCRONIZAÇÃO. Ainda não está confirmada no servidor. Chave ${operacao.idempotencyKey.slice(0, 18)}⬦`);
+        setNotice(`VENDA PENDENTE DE SINCRONIZAÇÃO. Ainda não está confirmada no servidor. Chave ${operacao.idempotencyKey.slice(0, 18)}…`);
         return false;
       }
 
@@ -781,7 +862,7 @@ export default function PDV() {
     } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
-  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); }
+  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setMisto(false); setParteDinheiro(''); }
 
   function abrirCupomMaisRecente() {
     setMostrarMenu(false);
@@ -832,7 +913,7 @@ export default function PDV() {
           </span>
         )}
         {/* Relógio do balcão.
-            Antes ficava DENTRO de `{caixa && ⬦}`, então só aparecia com o caixa
+            Antes ficava DENTRO de `{caixa && …}`, então só aparecia com o caixa
             aberto — era por isso que o PDV "não mostra horário". Agora é
             independente do caixa e usa o formato 12h/24h escolhido em
             Configurações. */}
@@ -848,7 +929,7 @@ export default function PDV() {
           {!caixa && (
             <>
               {/* O seletor sozinho não contava a história: quando a lista vinha
-                  vazia, aparecia só "Filial⬦" com o botão "Abrir caixa" cinza e
+                  vazia, aparecia só "Filial…" com o botão "Abrir caixa" cinza e
                   nenhuma explicação. Agora o próprio campo diz o que houve. */}
               {filiais.length === 0 ? (
                 <span
@@ -866,7 +947,7 @@ export default function PDV() {
                 </span>
               ) : (
                 <select value={filialId} onChange={(e) => setFilialId(e.target.value)} style={{ padding: '9px 12px', borderRadius: 10, background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', color: 'var(--nexus-text)', fontSize: 13 }}>
-                  <option value="">Filial⬦</option>
+                  <option value="">Filial…</option>
                   {filiais.map((f) => <option key={f.id} value={f.id}>{f.nome}</option>)}
                 </select>
               )}
@@ -912,7 +993,7 @@ export default function PDV() {
         </div>
       </header>
 
-      {error && <p className="admin-message admin-error pdv-noprint" style={{ margin: '14px 24px 0' }}>{error}</p>}
+      {error && !caixa && <p className="admin-message admin-error pdv-noprint" style={{ margin: '14px 24px 0' }}>{error}</p>}
       {notice && <p className="admin-message admin-success pdv-noprint" style={{ margin: '14px 24px 0' }}>{notice}</p>}
       {/* Erro de caixa: antes ele não existia — uma falha de permissão virava
           "CAIXA FECHADO" sem explicação. Usa a mesma faixa das outras
@@ -927,10 +1008,10 @@ export default function PDV() {
             <h2>{traduzir('produtos', "Produtos")}</h2>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <div style={{ position: 'relative', flex: 1 }}>
-                <input ref={buscaRef} value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={buscarPorCodigo} placeholder="Nome, SKU ou código de barras⬦ (Enter adiciona)" style={{ width: '100%', height: 44, borderRadius: 12, paddingRight: 52 }} />
+                <input ref={buscaRef} value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={buscarPorCodigo} placeholder="Nome, SKU ou código de barras… (Enter adiciona)" style={{ width: '100%', height: 44, borderRadius: 12, paddingRight: 52 }} />
                 <span aria-hidden style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 800, padding: '3px 7px', borderRadius: 6, background: 'rgba(139,92,246,.18)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)' }}>F2</span>
               </div>
-              <button type="button" aria-label="Focar busca por código" className="admin-primary pdv-btn-grad" style={{ width: 28, height: 28, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0, padding: 0 }} onClick={() => buscaRef.current?.focus()}>R"</button>
+              <button type="button" aria-label="Focar busca por código" className="admin-primary pdv-btn-grad" style={{ width: 28, height: 28, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0, padding: 0 }} onClick={() => buscaRef.current?.focus()}>🔍</button>
             </div>
             {categorias.length > 0 && (
               <div className="pdv-scroll" style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 4, marginBottom: 12 }}>
@@ -946,7 +1027,7 @@ export default function PDV() {
                também foram separadas: sem busca ativa, "nenhum produto
                cadastrado" é a informação certa. */}
             {carregandoProdutos ? (
-              <p className="empty-state">Carregando produtos⬦</p>
+              <p className="empty-state">Carregando produtos…</p>
             ) : erroProdutos ? (
               <p className="empty-state" style={{ color: '#f87171' }}>{erroProdutos}</p>
             ) : produtos.length === 0 ? (
@@ -985,7 +1066,7 @@ export default function PDV() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                 <h2 style={{ margin: 0 }}>Carrinho {carrinho.length > 0 && (
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '3px 9px', borderRadius: 999, background: 'rgba(139,92,246,.16)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)', marginLeft: 6 }}>
-                    {carrinho.length} itens ⬢ {carrinho.reduce((s, i) => s + i.quantidade, 0)} un
+                    {carrinho.length} itens • {carrinho.reduce((s, i) => s + i.quantidade, 0)} un
                   </span>
                 )}</h2>
                 {carrinho.length > 0 && (
@@ -994,7 +1075,7 @@ export default function PDV() {
               </div>
               {carrinho.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 10px', textAlign: 'center' }}>
-                  <span aria-hidden style={{ width: 64, height: 64, borderRadius: 14, border: '1.5px dashed var(--nexus-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, opacity: 0.6 }}>x:•</span>
+                  <span aria-hidden style={{ width: 64, height: 64, borderRadius: 14, border: '1.5px dashed var(--nexus-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, opacity: 0.6 }}>🛒</span>
                   <span style={{ fontSize: 12.5, opacity: 0.6 }}>Busque e adicione produtos (F2)</span>
                 </div>
               ) : (
@@ -1015,7 +1096,7 @@ export default function PDV() {
                         <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)}>•</button>
                         <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{i.quantidade}</span>
                         <button type="button" className="admin-secondary pdv-btn-grad" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
-                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×"</button>
+                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
                       </div>
                     </div>
                   ))}
@@ -1023,7 +1104,7 @@ export default function PDV() {
               )}
               <label style={{ fontSize: 11, opacity: 0.65, display: 'block', marginTop: 10 }}>
                 CLIENTE (OPCIONAL)
-                <select value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ width: '100%', marginTop: 4, fontSize: 13 }}>
+                <select ref={clienteRef} aria-label="Cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ width: '100%', marginTop: 4, fontSize: 13 }}>
                   <option value="">Consumidor final</option>
                   {clientes.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
@@ -1036,7 +1117,7 @@ export default function PDV() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <span style={{ opacity: 0.75 }}>Desconto (R$)</span>
-                  <input type="number" min="0" step="0.01" value={descontoGeral} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 96, padding: '6px 10px', fontSize: 13, textAlign: 'right' }} />
+                  <input ref={descontoRef} aria-label="Desconto da venda em reais" type="number" min="0" step="0.01" value={descontoGeral} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 96, padding: '6px 10px', fontSize: 13, textAlign: 'right' }} />
                 </div>
                 {descontoInvalido && <p role="alert" style={{ margin: '-6px 0 0', color: '#fbbf24', fontSize: 11.5 }}>{descontoInformado < 0 ? 'O desconto não pode ser negativo.' : 'O desconto não pode superar o subtotal.'}</p>}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -1049,7 +1130,7 @@ export default function PDV() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                     {FORMAS.map((f) => (
                       <button key={f} type="button" className={forma === f ? 'admin-primary pdv-btn-grad' : 'admin-secondary'} style={{ padding: '8px 4px', fontSize: 12, borderRadius: 10 }} onClick={() => setForma(f)}>
-                        <span aria-hidden style={{ display: 'block', fontSize: 15, marginBottom: 2 }}>{f === 'DINHEIRO' ? 'x•' : f === 'PIX' ? 'a' : f === 'CARTAO_CREDITO' ? 'x•' : f === 'CARTAO_DEBITO' ? 'x' : 'x'}</span>
+                        <span aria-hidden style={{ display: 'block', fontSize: 15, marginBottom: 2 }}>{f === 'DINHEIRO' ? '💵' : f === 'PIX' ? '⚡' : f === 'CARTAO_CREDITO' ? '💳' : f === 'CARTAO_DEBITO' ? '🏧' : '🧾'}</span>
                         {f === 'DINHEIRO' ? 'Dinheiro' : f === 'PIX' ? 'PIX' : f === 'CARTAO_CREDITO' ? 'Crédito' : f === 'CARTAO_DEBITO' ? 'Débito' : 'Boleto'}
                       </button>
                     ))}
@@ -1067,12 +1148,23 @@ export default function PDV() {
 
                 {forma === 'DINHEIRO' && (
                   <>
+                    <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input type="checkbox" checked={misto} onChange={(e) => { setMisto(e.target.checked); if (!e.target.checked) setParteDinheiro(''); }} />
+                      Dividir: parte em dinheiro + restante no PIX
+                    </label>
+                    {misto && (
+                      <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        Parte em dinheiro (R$)
+                        <input type="number" min="0" step="0.01" value={parteDinheiro} onChange={(e) => setParteDinheiro(e.target.value)} placeholder="0,00" style={{ fontSize: 15, fontWeight: 700 }} />
+                        <span style={{ opacity: 0.75 }}>⚡ PIX: <strong>{brl(partePix)}</strong></span>
+                      </label>
+                    )}
                     <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      Valor recebido (R$)
+                      Valor recebido em dinheiro (R$)
                       <input type="number" min="0" step="0.01" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" style={{ fontSize: 15, fontWeight: 700 }} />
                     </label>
-                    <div style={{ padding: '10px 12px', borderRadius: 12, background: recebidoNum >= total ? 'rgba(16,185,129,.10)' : 'rgba(245,158,11,.10)', border: `1px solid ${recebidoNum >= total ? 'rgba(16,185,129,.4)' : 'rgba(245,158,11,.4)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {recebidoNum >= total ? (
+                    <div style={{ padding: '10px 12px', borderRadius: 12, background: recebidoNum >= devidoEmDinheiro ? 'rgba(16,185,129,.10)' : 'rgba(245,158,11,.10)', border: `1px solid ${recebidoNum >= devidoEmDinheiro ? 'rgba(16,185,129,.4)' : 'rgba(245,158,11,.4)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {recebidoNum >= devidoEmDinheiro ? (
                         <>
                           <span style={{ color: '#34d399', fontWeight: 700, fontSize: 13 }}>Troco</span>
                           <strong style={{ color: '#34d399', fontFamily: 'monospace', fontSize: 17 }}>{brl(troco)}</strong>
@@ -1080,26 +1172,28 @@ export default function PDV() {
                       ) : (
                         <>
                           <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: 13 }}>Faltam</span>
-                          <strong style={{ color: '#fbbf24', fontFamily: 'monospace', fontSize: 17 }}>{brl(Math.max(0, total - recebidoNum))}</strong>
+                          <strong style={{ color: '#fbbf24', fontFamily: 'monospace', fontSize: 17 }}>{brl(Math.max(0, devidoEmDinheiro - recebidoNum))}</strong>
                         </>
                       )}
                     </div>
                   </>
                 )}
 
-                <button className="admin-primary pdv-btn-grad" type="button" style={{ width: '100%', height: 48, fontSize: 14.5, letterSpacing: 0.6, borderRadius: 12 }}
-                  disabled={finalizando || !!operacaoCarrinhoPendente || carrinho.length === 0 || descontoInvalido || (forma === 'DINHEIRO' && recebidoNum < total)}
-                  onClick={() => { if (finalizando) return; if (forma === 'PIX') setMostrarPix(true); else void finalizarVenda(); }}>
+                {/* Aviso perto do botão de cobrar: o operador olha aqui, não no topo. */}
+                {error && <p role="alert" className="admin-message admin-error" style={{ margin: 0, fontSize: 12.5 }}>{error}</p>}
+                <button id="pdv-cobrar" className="admin-primary pdv-btn-grad" type="button" style={{ width: '100%', height: 48, fontSize: 14.5, letterSpacing: 0.6, borderRadius: 12 }}
+                  disabled={!podeCobrar}
+                  onClick={cobrar}>
                   {finalizando
-                    ? 'Registrando⬦'
-                    : forma === 'PIX' ? `PIX QR CODE ⬢ ${brl(total)}` : `FINALIZAR VENDA ⬢ ${brl(total)}`}
+                    ? 'Registrando…'
+                    : forma === 'PIX' ? `PIX QR CODE • ${brl(total)}` : misto && forma === 'DINHEIRO' ? `COBRAR • ${brl(parteDinheiroNum)} + PIX ${brl(partePix)}` : `FINALIZAR VENDA • ${brl(total)} (F4)`}
                 </button>
                 {mostrarPix && (
                   <PixQrCodeModal
-                    valor={total}
+                    valor={forma === 'DINHEIRO' && misto ? partePix : total}
                     onClose={() => setMostrarPix(false)}
                     onPago={async (txid) => {
-                      setForma('PIX');
+                      if (!(forma === 'DINHEIRO' && misto)) setForma('PIX');
                       const vendaGravada = await finalizarVenda(txid);
                       if (!vendaGravada) throw new Error('Pagamento confirmado, mas a venda não foi gravada. Tente novamente ou confira as vendas do turno antes de fechar esta janela.');
                       setMostrarPix(false);
@@ -1182,13 +1276,39 @@ export default function PDV() {
 
       {/* Rodapé do balcão — apenas dados reais do turno */}
       <footer className="admin-panel admin-wide pdv-noprint" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-        <span style={{ letterSpacing: 0.4 }}><span style={{ opacity: 0.55, textTransform: 'uppercase', fontSize: 10.5 }}>Vendas do turno:</span> <strong style={{ fontFamily: 'monospace' }}>{resumo?.qtdVendas ?? 0} ⬢ {brl(Number(resumo?.totalVendas ?? 0))}</strong></span>
+        <span style={{ letterSpacing: 0.4 }}><span style={{ opacity: 0.55, textTransform: 'uppercase', fontSize: 10.5 }}>Vendas do turno:</span> <strong style={{ fontFamily: 'monospace' }}>{resumo?.qtdVendas ?? 0} • {brl(Number(resumo?.totalVendas ?? 0))}</strong></span>
         <span style={{ letterSpacing: 0.4 }}><span style={{ opacity: 0.55, textTransform: 'uppercase', fontSize: 10.5 }}>Ticket médio:</span> <strong style={{ fontFamily: 'monospace' }}>{brl(resumo && Number(resumo.qtdVendas) > 0 ? Number(resumo.totalVendas) / Number(resumo.qtdVendas) : 0)}</strong></span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: modoOffline ? '#fbbf24' : apiOk ? '#34d399' : '#f87171', fontFamily: 'monospace', fontSize: 11 }}>
           <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: modoOffline ? '#fbbf24' : apiOk ? '#34d399' : '#f87171' }} />
-          API /pdv/caixa/resumo ⬢ {modoOffline ? `OFFLINE · ${pendentesSync} pendente(s)/revisão` : apiOk ? 'LIVE' : 'INDISPONÍVEL'}
+          {modoOffline ? `Offline · ${pendentesSync} venda(s) pendente(s)` : apiOk ? `Online · ${pendentesSync} pendente(s)` : 'Servidor indisponível'}
         </span>
+        <div className="pdv-atalhos" aria-label="Atalhos de teclado" style={{ flexBasis: '100%' }}>
+          {[['F2', 'Buscar'], ['F3', 'Cliente'], ['F4', 'Cobrar'], ['F5', 'Pagamento'], ['F6', 'Desconto'], ['F7', 'Sangria'], ['F8', 'Suprimento'], ['F9', 'Reimprimir'], ['Del', 'Remover último item'], ['Esc', 'Fechar menu'], ['3*', 'Multiplicar quantidade']].map(([k, r]) => (
+            <span key={k}><kbd>{k}</kbd>{r}</span>
+          ))}
+        </div>
       </footer>
+
+      {/* Barra fixa de cobrança em tela pequena (celular/tablet). */}
+      {caixa && (
+        <div className="pdv-mobile-bar pdv-noprint">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, opacity: 0.65 }}>{carrinho.length} {carrinho.length === 1 ? 'item' : 'itens'}</div>
+            <strong className="pdv-total">{brl(total)}</strong>
+          </div>
+          <button type="button" className="admin-primary pdv-btn-grad" style={{ padding: '14px 22px', fontSize: 15, borderRadius: 12 }}
+            disabled={!podeCobrar}
+            onClick={() => {
+              // Sem valor recebido ainda: leva o operador ao painel de pagamento.
+              if (!podeCobrar) return;
+              cobrar();
+            }}>
+            Cobrar
+          </button>
+          <button type="button" className="admin-secondary" aria-label="Ir para o pagamento" style={{ padding: '14px 12px', borderRadius: 12 }}
+            onClick={() => document.getElementById('pdv-cobrar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>▲</button>
+        </div>
+      )}
 
       {/* Modais */}
       {mostrarAbrir && (
@@ -1196,7 +1316,7 @@ export default function PDV() {
           <label style={estiloLabel}>Fundo de troco (R$)
             <input type="number" min="0" step="0.01" value={fundoTroco} onChange={(e) => setFundoTroco(e.target.value)} autoFocus />
           </label>
-          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={abrindo} onClick={abrirCaixa}>{abrindo ? 'Abrindo⬦' : 'Abrir caixa'}</button>
+          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={abrindo} onClick={abrirCaixa}>{abrindo ? 'Abrindo…' : 'Abrir caixa'}</button>
         </Modal>
       )}
       {mostrarSangria && (
@@ -1211,7 +1331,7 @@ export default function PDV() {
           <label style={estiloLabel}>Motivo (opcional)
             <input value={motivoMov} onChange={(e) => setMotivoMov(e.target.value)} maxLength={200} placeholder="ex.: retirada para depósito" />
           </label>
-          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={movimentando} onClick={movimentar}>{movimentando ? 'Registrando⬦' : 'Confirmar'}</button>
+          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={movimentando} onClick={movimentar}>{movimentando ? 'Registrando…' : 'Confirmar'}</button>
         </Modal>
       )}
       {mostrarFechar && (
@@ -1345,7 +1465,7 @@ function IntegracoesPDV() {
           </select>
         </label>
         <label style={estiloLabel}>URL oficial<input type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." style={{ minWidth: 200 }} /></label>
-        <button className="admin-primary" type="button" disabled={salvando} onClick={criar}>{salvando ? 'Salvando⬦' : '+ Nova integração PDV'}</button>
+        <button className="admin-primary" type="button" disabled={salvando} onClick={criar}>{salvando ? 'Salvando…' : '+ Nova integração PDV'}</button>
       </div>
       {erro && <p className="admin-message admin-error">{erro}</p>}
       {ok && <p className="admin-message admin-success">{ok}</p>}
@@ -1388,7 +1508,7 @@ function Modal({ titulo, onFechar, children, imprimir }: { titulo: string; onFec
       <div onClick={(e) => e.stopPropagation()} className={`admin-panel pdv-modal-card pdv-scroll${imprimir ? ' pdv-print-area' : ''}`} style={{ width: '100%', maxWidth: 440, maxHeight: '85vh', overflowY: 'auto' }}>
         <div className={imprimir ? 'pdv-noprint' : undefined} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>{titulo}</h2>
-          <button type="button" className="admin-secondary" style={{ padding: '4px 10px' }} onClick={onFechar}>×"</button>
+          <button type="button" className="admin-secondary" style={{ padding: '4px 10px' }} onClick={onFechar}>×</button>
         </div>
         {children}
       </div>
