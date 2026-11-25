@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation';
 import api, { getApiBaseUrl, getToken } from '@/lib/api';
 import ModuleHeader from '@/components/ModuleHeader';
 import PixQrCodeModal from '@/components/PixQrCodeModal';
+import Modal, { estiloLabel } from '@/components/pdv/Modal';
+import IntegracoesPDV from '@/components/pdv/IntegracoesPDV';
 // Respeita as preferências de Moeda / Formato de hora / Idioma da aba
 // Configurações. Sem este import, o PDV fixa BRL e 24h no próprio código.
 import { formatBRL, formatClock } from '@/lib/format';
@@ -197,6 +199,13 @@ export default function PDV() {
   const [motivoRapido, setMotivoRapido] = useState('');
   const [motivoTexto, setMotivoTexto] = useState('');
   const [erroCancelamento, setErroCancelamento] = useState<string | null>(null);
+  // Autorização do supervisor no balcão (desconto acima da alçada do operador).
+  const [pedidoSupervisor, setPedidoSupervisor] = useState<{ mensagem: string } | null>(null);
+  const [autorizacaoDesconto, setAutorizacaoDesconto] = useState<{ token: string; nome: string; expiraEm: number } | null>(null);
+  const [supEmail, setSupEmail] = useState('');
+  const [supSenha, setSupSenha] = useState('');
+  const [autorizando, setAutorizando] = useState(false);
+  const [erroSupervisor, setErroSupervisor] = useState<string | null>(null);
   // Erros que antes sumiam em `catch { /* silencioso */ }`. Sem isto, grid
   // vazio por falta de permissão e grid vazio por não haver produtos eram
   // a mesma tela, e o operador não tinha como saber o que fazer.
@@ -225,11 +234,26 @@ export default function PDV() {
     && !(forma === 'DINHEIRO' && recebidoNum < devidoEmDinheiro)
     && !(forma === 'DINHEIRO' && misto && !(parteDinheiroNum > 0 && parteDinheiroNum < total));
   /** Botão "Cobrar", F4 e a barra do celular passam todos por aqui. */
-  function cobrar() {
+  async function cobrar() {
     if (finalizandoRef.current || !caixa || carrinho.length === 0) return;
+    // Desconto acima da alçada do operador: pede o supervisor ANTES de cobrar
+    // (antes do PIX e antes de a venda entrar na fila).
+    const descontoTotalVenda = descontoNum + carrinho.reduce((s, i) => s + (Number(i.desconto) || 0), 0);
+    const autorizacaoValida = autorizacaoDesconto && autorizacaoDesconto.expiraEm > Date.now() + 5000;
+    if (descontoTotalVenda > 0 && !autorizacaoValida && subtotalBruto > 0) {
+      try {
+        const { data } = await api.get('/vendas/alcada-desconto', { params: { desconto: descontoTotalVenda, subtotal: subtotalBruto } });
+        if (!data?.permitido) {
+          setErroSupervisor(null);
+          setPedidoSupervisor({ mensagem: data?.mensagem ?? 'Este desconto precisa de autorização.' });
+          return;
+        }
+      } catch { /* sem conexão: o servidor decide quando a venda sincronizar */ }
+    }
     if (forma === 'PIX' || (forma === 'DINHEIRO' && misto)) setMostrarPix(true);
     else void finalizarVenda();
   }
+  const subtotalBruto = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0);
   const cobrarRef = useRef(cobrar);
   cobrarRef.current = cobrar;
 
@@ -542,7 +566,7 @@ export default function PDV() {
       if (e.key === 'F2') { e.preventDefault(); buscaRef.current?.focus(); buscaRef.current?.select(); }
       else if (e.key === 'F4') {
         e.preventDefault();
-        cobrarRef.current();
+        void cobrarRef.current();
       }
       else if (e.key === 'F7') { e.preventDefault(); if (caixa) { setTipoMov('SANGRIA'); setMostrarSangria(true); } }
       else if (e.key === 'F8') { e.preventDefault(); if (caixa) { setTipoMov('SUPRIMENTO'); setMostrarSangria(true); } }
@@ -737,6 +761,7 @@ export default function PDV() {
         parcelas: Number(parcelas) || 1,
         caixaId: caixa.id,
         origem: 'PDV',
+        ...(autorizacaoDesconto && autorizacaoDesconto.expiraEm > Date.now() ? { autorizacaoSupervisor: autorizacaoDesconto.token } : {}),
         itens: carrinho.map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade, desconto: i.desconto })),
         ...(total > 0 ? {
           pagamentos: forma === 'DINHEIRO' && misto
@@ -779,7 +804,7 @@ export default function PDV() {
         // The durable queue now owns the sale. Clear the working cart so it
         // cannot be resubmitted under a new key while this request is unknown.
         setOperacaoCarrinhoPendente(null);
-        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca('');
+        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca(''); setAutorizacaoDesconto(null);
         setNotice(`VENDA PENDENTE DE SINCRONIZAÇÃO. Ainda não está confirmada no servidor. Chave ${operacao.idempotencyKey.slice(0, 18)}…`);
         return false;
       }
@@ -788,7 +813,7 @@ export default function PDV() {
       if (!data?.venda?.id) {
         setError(`Venda ${estadoFinal.vendaIdRemota ?? ''} confirmada no servidor. O comprovante será recuperável pelo histórico após atualizar a conexão.`);
         setOperacaoCarrinhoPendente(null);
-        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca('');
+        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca(''); setAutorizacaoDesconto(null);
         return true;
       }
       const itensCupom = carrinho.map((i) => ({ nome: i.nome, quantidade: i.quantidade, total: i.preco * i.quantidade - i.desconto }));
@@ -803,7 +828,7 @@ export default function PDV() {
         itens: itensCupom,
         subtotal, desconto: descontoNum, total: Number(data.venda.total), forma, parcelas, troco,
       });
-      setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1');
+      setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setAutorizacaoDesconto(null);
       setOperacaoCarrinhoPendente(null);
       setBusca('');
       setNotice(`Venda confirmada no servidor: ${brl(Number(data.venda.total))}.`);
@@ -862,7 +887,24 @@ export default function PDV() {
     } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
-  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setMisto(false); setParteDinheiro(''); }
+  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setMisto(false); setParteDinheiro(''); setAutorizacaoDesconto(null); }
+
+  /** Pede ao servidor a autorização do supervisor (e-mail + senha dele). */
+  async function autorizarComSupervisor() {
+    if (autorizando) return;
+    setErroSupervisor(null);
+    if (!supEmail.trim() || !supSenha) { setErroSupervisor('Informe o e-mail e a senha do supervisor.'); return; }
+    setAutorizando(true);
+    try {
+      const { data } = await api.post('/pdv/autorizacoes', { email: supEmail.trim(), senha: supSenha, acao: 'DESCONTO' });
+      setAutorizacaoDesconto({ token: data.autorizacao, nome: data.supervisor?.nome ?? 'supervisor', expiraEm: Date.now() + (Number(data.expiraEmSegundos) || 120) * 1000 });
+      setPedidoSupervisor(null); setSupSenha('');
+      setError(null);
+      setNotice(`Desconto autorizado por ${data.supervisor?.nome ?? 'supervisor'}. Pressione Cobrar (F4) em até 2 minutos.`);
+      buscaRef.current?.focus();
+    } catch (err: any) { setErroSupervisor(err.response?.data?.error || 'Não foi possível autorizar.'); }
+    finally { setAutorizando(false); setSupSenha(''); }
+  }
 
   function abrirCupomMaisRecente() {
     setMostrarMenu(false);
@@ -1183,7 +1225,7 @@ export default function PDV() {
                 {error && <p role="alert" className="admin-message admin-error" style={{ margin: 0, fontSize: 12.5 }}>{error}</p>}
                 <button id="pdv-cobrar" className="admin-primary pdv-btn-grad" type="button" style={{ width: '100%', height: 48, fontSize: 14.5, letterSpacing: 0.6, borderRadius: 12 }}
                   disabled={!podeCobrar}
-                  onClick={cobrar}>
+                  onClick={() => void cobrar()}>
                   {finalizando
                     ? 'Registrando…'
                     : forma === 'PIX' ? `PIX QR CODE • ${brl(total)}` : misto && forma === 'DINHEIRO' ? `COBRAR • ${brl(parteDinheiroNum)} + PIX ${brl(partePix)}` : `FINALIZAR VENDA • ${brl(total)} (F4)`}
@@ -1301,7 +1343,7 @@ export default function PDV() {
             onClick={() => {
               // Sem valor recebido ainda: leva o operador ao painel de pagamento.
               if (!podeCobrar) return;
-              cobrar();
+              void cobrar();
             }}>
             Cobrar
           </button>
@@ -1344,6 +1386,27 @@ export default function PDV() {
             <input value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} maxLength={300} />
           </label>
           <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={fechando || valorContado === ''} onClick={fecharCaixa}>{fechando ? 'Fechando…' : 'Fechar caixa'}</button>
+        </Modal>
+      )}
+      {pedidoSupervisor && (
+        <Modal titulo="Autorização do supervisor" onFechar={() => { if (!autorizando) { setPedidoSupervisor(null); setSupSenha(''); } }}>
+          <p role="note" style={{ background: 'rgba(245,158,11,.12)', border: '1px solid rgba(245,158,11,.4)', color: '#d97706', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, margin: '0 0 12px' }}>
+            ⚠ {pedidoSupervisor.mensagem}
+          </p>
+          <p style={{ fontSize: 12.5, opacity: 0.8, margin: '0 0 12px' }}>Chame um supervisor ou gerente para digitar o e-mail e a senha dele. A autorização vale só para esta venda, por 2 minutos, e fica registrada.</p>
+          <form onSubmit={(e) => { e.preventDefault(); void autorizarComSupervisor(); }}>
+            <label style={estiloLabel}>E-mail do supervisor
+              <input type="email" autoComplete="off" value={supEmail} onChange={(e) => setSupEmail(e.target.value)} autoFocus />
+            </label>
+            <label style={estiloLabel}>Senha do supervisor
+              <input type="password" autoComplete="off" value={supSenha} onChange={(e) => setSupSenha(e.target.value)} />
+            </label>
+            {erroSupervisor && <p role="alert" className="admin-message admin-error" style={{ margin: '0 0 12px' }}>{erroSupervisor}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="admin-secondary" style={{ flex: 1 }} disabled={autorizando} onClick={() => { setPedidoSupervisor(null); setSupSenha(''); }}>Voltar</button>
+              <button type="submit" className="admin-primary pdv-btn-grad" style={{ flex: 1 }} disabled={autorizando}>{autorizando ? 'Conferindo…' : 'Autorizar'}</button>
+            </div>
+          </form>
         </Modal>
       )}
       {vendaACancelar && (() => {
@@ -1405,116 +1468,6 @@ export default function PDV() {
   );
 }
 
-/** Integrações PDV (seção 14) — funcionalidade original da página, mantida:
- * listar, criar (só tipos oficiais) e sincronizar (recusa honestamente). */
-function IntegracoesPDV() {
-  const [integracoes, setIntegracoes] = useState<any[]>([]);
-  const [nome, setNome] = useState('');
-  const [tipo, setTipo] = useState('API_OFICIAL');
-  const [url, setUrl] = useState('');
-  const [salvando, setSalvando] = useState(false);
-  const salvandoRef = useRef(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
-
-  const carregar = useCallback(async () => {
-    try {
-      const { data } = await api.get('/pdv/integracoes');
-      setIntegracoes(data ?? []);
-      setErroCarregamento(null);
-    } catch (err: any) {
-      setIntegracoes([]);
-      setErroCarregamento(err.response?.data?.error || 'Não foi possível carregar as integrações PDV.');
-    }
-  }, []);
-
-  useEffect(() => { void carregar(); }, [carregar]);
-
-  async function criar() {
-    setErro(null); setOk(null);
-    if (salvandoRef.current) return;
-    if (!nome || nome.trim().length < 2) { setErro('Informe o nome da integração.'); return; }
-    if (!url.trim()) { setErro('Informe a URL oficial da integração.'); return; }
-    try {
-      new URL(url.trim());
-    } catch {
-      setErro('Informe uma URL válida para a integração.');
-      return;
-    }
-    salvandoRef.current = true;
-    setSalvando(true);
-    try {
-      await api.post('/pdv/integracoes', { nome: nome.trim(), tipo, url: url.trim() || undefined });
-      setNome(''); setUrl('');
-      setOk('Integração registrada. Configure as credenciais com o fornecedor oficial antes de sincronizar.');
-      await carregar();
-    } catch (err: any) { setErro(err.response?.data?.error || 'Não foi possível criar a integração.'); }
-    finally { salvandoRef.current = false; setSalvando(false); }
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-        <label style={estiloLabel}>{traduzir('nome', "Nome")}<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="ex.: PDV Principal" style={{ minWidth: 180 }} /></label>
-        <label style={estiloLabel}>{traduzir('tipo', "Tipo")}<select value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ minWidth: 190 }}>
-            <option value="API_OFICIAL">API oficial do fabricante</option>
-            <option value="SDK_OFICIAL">SDK oficial do fabricante</option>
-            <option value="WEBHOOK_OFICIAL">Webhook oficial do fabricante</option>
-            <option value="BANCO_AUTORIZADO">Banco autorizado oficial</option>
-          </select>
-        </label>
-        <label style={estiloLabel}>URL oficial<input type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." style={{ minWidth: 200 }} /></label>
-        <button className="admin-primary" type="button" disabled={salvando} onClick={criar}>{salvando ? 'Salvando…' : '+ Nova integração PDV'}</button>
-      </div>
-      {erro && <p className="admin-message admin-error">{erro}</p>}
-      {ok && <p className="admin-message admin-success">{ok}</p>}
-      {erroCarregamento && <p className="admin-message admin-error">{erroCarregamento}</p>}
-      {!erroCarregamento && integracoes.length === 0 ? <p className="empty-state">Nenhuma integração configurada ainda.</p> : null}
-      {integracoes.length > 0 && (
-        <div className="admin-table">
-          {integracoes.map((i: any) => (
-            <div key={i.id} className="admin-list-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <div style={{ minWidth: 0 }}>
-                <strong>{i.nome}</strong>
-                <span>{i.tipo} · Status: {i.status} · última sync: {i.ultimaSincronizacao ? new Date(i.ultimaSincronizacao).toLocaleString('pt-BR') : 'nunca'}</span>
-              </div>
-              <button type="button" className="admin-secondary" style={{ flexShrink: 0, opacity: 0.5, cursor: 'not-allowed' }} disabled title="Disponível quando uma integração oficial com credenciais for implementada">Sincronização indisponível</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const estiloLabel: React.CSSProperties = { fontSize: 12, opacity: 0.85, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 };
-
-/**
- * Modal do balcão.
- *
- * `imprimir` existe por causa do cupom: o `window.print()` do botão saía com a
- * tela inteira, porque nada além do `<header>` tinha `.pdv-noprint`. Agora o
- * fundo do overlay recebe `pdv-print-backdrop` (some na impressão) e a caixa
- * recebe `pdv-print-area` (fica, em preto e branco). Para os outros modais o
- * comportamento é o de sempre: somem na impressão, como todo controle de tela.
- *
- * Não altera o layout: as classes só têm efeito dentro de `@media print`.
- */
-function Modal({ titulo, onFechar, children, imprimir }: { titulo: string; onFechar: () => void; children: React.ReactNode; imprimir?: boolean }) {
-  return (
-    <div role="dialog" aria-modal="true" onClick={onFechar} className={`pdv-modal-bg${imprimir ? ' pdv-print-backdrop' : ' pdv-noprint'}`}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} className={`admin-panel pdv-modal-card pdv-scroll${imprimir ? ' pdv-print-area' : ''}`} style={{ width: '100%', maxWidth: 440, maxHeight: '85vh', overflowY: 'auto' }}>
-        <div className={imprimir ? 'pdv-noprint' : undefined} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>{titulo}</h2>
-          <button type="button" className="admin-secondary" style={{ padding: '4px 10px' }} onClick={onFechar}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 // Nota: a formatação do cupom (`renderCupom`) vive em `lib/pdv/cupom.ts`
 // (fonte única, testável) e é importada no topo deste arquivo.

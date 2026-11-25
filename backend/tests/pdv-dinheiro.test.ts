@@ -9,6 +9,7 @@ import { pdvRoutes } from '../src/modules/pdv/pdv.routes.js';
 import { vendasRoutes } from '../src/modules/vendas/vendas.routes.js';
 import { registerAuthentication } from '../src/middlewares/auth.js';
 import { resumoDoCaixa } from '../src/modules/pdv/pdv.service.js';
+import { hashSenha } from '../src/lib/auth.js';
 
 /**
  * C1, C2 e C3 da análise do PDV: alçada de desconto, cancelamento restrito ao
@@ -43,6 +44,8 @@ test('PDV: desconto, cancelamento e fechamento com divergência', {
   const produtoId = randomUUID();
   const vendaAlheiaId = randomUUID();
   const caixas: string[] = [];
+  const supervisorId = `pdv-sup-${runId}`;
+  const supervisorEmail = `pdv-sup-${runId}@nexus.test`;
 
   const app = Fastify();
   await app.register(jwt, { secret: process.env.JWT_SECRET || 'secret' });
@@ -72,6 +75,38 @@ test('PDV: desconto, cancelamento e fechamento com divergência', {
     assert.equal(comDesconto.statusCode, 403, comDesconto.body);
     assert.match(comDesconto.body, /supervisor/);
     assert.equal(await prisma.venda.count({ where: { caixaId: caixas[0] } }), 0);
+
+    // I1 — autorização do supervisor no balcão.
+    await prisma.usuario.create({
+      data: { id: supervisorId, empresaId, filialId: filial.id, nome: 'Supervisor teste PDV', email: supervisorEmail, senhaHash: await hashSenha('senha-teste-supervisor'), status: 'ATIVO' } as any,
+    });
+    await prisma.permissao.create({ data: { usuarioId: supervisorId, modulo: 'vendas', acao: 'desconto_supervisor', permitido: true } as any });
+    const senhaErrada = await request('POST', '/pdv/autorizacoes', { email: supervisorEmail, senha: 'errada', acao: 'DESCONTO' });
+    assert.equal(senhaErrada.statusCode, 401, senhaErrada.body);
+    const semPermissaoCancel = await request('POST', '/pdv/autorizacoes', { email: supervisorEmail, senha: 'senha-teste-supervisor', acao: 'CANCELAMENTO' });
+    assert.equal(semPermissaoCancel.statusCode, 403, semPermissaoCancel.body);
+    const autorizacao = await request('POST', '/pdv/autorizacoes', { email: supervisorEmail, senha: 'senha-teste-supervisor', acao: 'DESCONTO' });
+    assert.equal(autorizacao.statusCode, 200, autorizacao.body);
+    const tokenSupervisor = autorizacao.json().autorizacao as string;
+    // O token de autorização NÃO serve como sessão.
+    const comoSessao = await app.inject({ method: 'GET', url: '/pdv/caixa/atual', headers: { authorization: `Bearer ${tokenSupervisor}` } });
+    assert.equal(comoSessao.statusCode, 401, comoSessao.body);
+    // Com a autorização a alçada passa; a venda para depois, na soma dos
+    // pagamentos (de propósito, para não gravar venda no teste).
+    const autorizada = await app.inject({
+      method: 'POST', url: '/vendas',
+      headers: { authorization: `Bearer ${token}`, 'x-autorizacao-supervisor': tokenSupervisor },
+      payload: { filialId: filial.id, caixaId: caixas[0], formaPagamento: 'DINHEIRO', desconto: 15, itens: [{ produtoId, quantidade: 1, desconto: 0 }], pagamentos: [{ forma: 'DINHEIRO', valor: 1 }] },
+    });
+    assert.equal(autorizada.statusCode, 422, autorizada.body);
+    assert.match(autorizada.body, /Soma dos pagamentos/);
+    // 40% passa da alçada de supervisor: a autorização dele não basta.
+    const acimaDaAlcada = await app.inject({
+      method: 'POST', url: '/vendas',
+      headers: { authorization: `Bearer ${token}`, 'x-autorizacao-supervisor': tokenSupervisor },
+      payload: { filialId: filial.id, caixaId: caixas[0], formaPagamento: 'DINHEIRO', desconto: 40, itens: [{ produtoId, quantidade: 1, desconto: 0 }] },
+    });
+    assert.equal(acimaDaAlcada.statusCode, 403, acimaDaAlcada.body);
 
     // C2 — venda de fora do turno do operador: recusada.
     await prisma.venda.create({
@@ -115,6 +150,9 @@ test('PDV: desconto, cancelamento e fechamento com divergência', {
     assert.equal(await prisma.divergenciaCaixa.count({ where: { caixaId: caixas[1] } }), 0);
   } finally {
     await prisma.venda.deleteMany({ where: { id: vendaAlheiaId } });
+    await prisma.auditoria.deleteMany({ where: { entidade: 'AutorizacaoSupervisor', entidadeId: supervisorId } });
+    await prisma.permissao.deleteMany({ where: { usuarioId: supervisorId } });
+    await prisma.usuario.deleteMany({ where: { id: supervisorId } });
     for (const caixaId of caixas) {
       await prisma.auditoria.deleteMany({ where: { entidade: 'Caixa', entidadeId: caixaId } });
       await prisma.divergenciaCaixa.deleteMany({ where: { caixaId } });

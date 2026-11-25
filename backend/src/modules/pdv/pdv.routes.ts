@@ -9,6 +9,7 @@ import { resumoDoCaixa, centavos, reais } from '../../modules/pdv/pdv.service.js
 export const LIMITE_DIVERGENCIA_CENTAVOS = 500;
 /** Tamanho mínimo da justificativa quando a diferença passa do limite. */
 export const JUSTIFICATIVA_MINIMA = 10;
+import { autorizacaoSupervisorRoutes } from './autorizacao-supervisor.js';
 
 import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
@@ -34,6 +35,8 @@ import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotenc
 
 
 export async function pdvRoutes(app: FastifyInstance) {
+  // I1 — autorização do supervisor no balcão (desconto acima da alçada / cancelamento).
+  await app.register(autorizacaoSupervisorRoutes);
   // Catálogo mínimo de uma filial para pesquisa local e operação controlada
   // quando a conexão cair. Não retorna custo, margem, fornecedor ou dados pessoais.
   app.get('/pdv/catalogo', { preHandler: [app.authenticate, await permissaoMiddleware('pdv', 'visualizar')] }, async (req:any) => {
