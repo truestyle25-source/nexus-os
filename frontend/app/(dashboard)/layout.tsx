@@ -119,6 +119,8 @@ export default function DashboardLayout({
   void idiomaRev;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // PDV ocupa a tela inteira: o menu lateral entra recolhido (só ícones) ao abrir o PDV.
+  useEffect(() => { if (pathname?.startsWith("/pdv")) setSidebarCollapsed(true); }, [pathname]);
   const [user, setUser] = useState<{ nome?: string; email?: string } | null>(null);
   const [notificacoes, setNotificacoes] = useState<Array<{ id: string; lida?: boolean; titulo?: string }>>([]);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -318,7 +320,7 @@ export default function DashboardLayout({
       <aside
         className={`fixed inset-y-0 left-0 z-50 bg-[var(--nx-surface)] border-r border-[var(--nx-border)] transform ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 transition-transform duration-200 ease-in-out lg:static lg:inset-auto flex flex-col ${sidebarCollapsed ? 'w-16' : 'w-64'}`}
+        } lg:translate-x-0 transition-transform duration-200 ease-in-out ${pathname?.startsWith("/pdv") ? "lg:sticky lg:top-0 lg:h-screen" : "lg:static lg:inset-auto"} flex flex-col ${sidebarCollapsed ? 'w-16' : 'w-64'}`}
       >
         {/* Brand com badge V2.1 + botão recolher (<) */}
         <div className="flex items-center justify-between gap-3 px-4 py-5 border-b border-[var(--nx-border)]">

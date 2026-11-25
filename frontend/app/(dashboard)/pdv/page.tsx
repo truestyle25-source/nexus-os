@@ -29,6 +29,14 @@ import { recuperarCarrinho, salvarCarrinho, limparCarrinho as limparCarrinhoPers
 import { adicionarProduto, alterarQuantidade, removerProduto, subtotalDoCarrinho, totalComDesconto } from '@/lib/pdv/carrinho';
 import type { ContextoLocal } from '@/lib/pdv/tipos';
 
+/** Uma parcela do pagamento múltiplo da venda. `recebido` = dinheiro entregue (troco = recebido − valor). */
+type PagamentoVenda = { id: string; forma: 'DINHEIRO' | 'PIX'; valor: number; recebido?: number; referencia?: string };
+const reaisParaCentavos = (v: number) => Math.round(v * 100);
+const centavosParaReais = (c: number) => c / 100;
+/** Formas exibidas no painel de pagamento; cartão aparece desativado (sem TEF). */
+const FORMAS_PAINEL = ['DINHEIRO', 'PIX', 'CARTAO_CREDITO', 'CARTAO_DEBITO'] as const;
+const FORMAS_ATIVAS = new Set(['DINHEIRO', 'PIX']);
+
 /** Motivo mínimo para cancelar no PDV — o mesmo exigido pelo servidor. */
 const MOTIVO_MINIMO = 10;
 const MOTIVOS_RAPIDOS = ['Cliente desistiu', 'Item errado', 'Preço errado', 'Pagamento não aprovado', 'Outro'] as const;
@@ -36,7 +44,7 @@ const MOTIVOS_RAPIDOS = ['Cliente desistiu', 'Item errado', 'Preço errado', 'Pa
 const FORMAS = ['DINHEIRO', 'PIX', 'CARTAO_DEBITO', 'CARTAO_CREDITO', 'BOLETO'] as const;
 const ROTULO_FORMA: Record<string, string> = {
   DINHEIRO: 'Dinheiro', PIX: 'PIX', CARTAO_DEBITO: 'Cartão de Débito',
-  CARTAO_CREDITO: 'Cartão de Crédito', BOLETO: 'Boleto',
+  CARTAO_CREDITO: 'Cartão de Crédito', BOLETO: 'Boleto', MISTO: 'Dinheiro + PIX',
 };
 /**
  * Formata moeda respeitando a preferencia "Moeda" de Configuracoes.
@@ -76,9 +84,27 @@ const pdvCss = `
 .pdv-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .pdv-scroll::-webkit-scrollbar-thumb { background: rgba(139,92,246,.4); border-radius: 99px; }
 .pdv-scroll::-webkit-scrollbar-track { background: transparent; }
-.pdv-grid { display: grid; grid-template-columns: minmax(0,1fr) 400px; gap: 16px; align-items: start; }
-.pdv-side { position: sticky; top: 84px; }
-@media (max-width: 1120px) { .pdv-grid { grid-template-columns: 1fr; } .pdv-side { position: static; } .pdv-mobile-bar { display: flex !important; } .pdv-root { padding-bottom: 84px; } .pdv-root .admin-secondary, .pdv-root .admin-primary { min-height: 44px; } }
+/* Tela única: produtos e carrinho em cima, pagamento embaixo. Cada área rola por dentro; a página não rola. */
+.pdv-tela { display: grid; grid-template-columns: minmax(0,1fr) minmax(320px, 380px); grid-template-rows: minmax(0,1fr) auto; gap: 12px; padding: 12px 16px 0; height: calc(100dvh - var(--pdv-desconto-altura, 196px)); min-height: 520px; }
+.pdv-tela > .admin-panel { padding: 12px 14px; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.pdv-area-pagamento { grid-column: 1 / -1; }
+.pdv-area-rolavel { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -4px; padding: 2px 4px; }
+.pdv-total-box { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-radius: 12px; background: rgba(139,92,246,.10); border: 1px solid rgba(139,92,246,.3); font-weight: 700; }
+.pdv-total-box .pdv-total { font-size: 24px; }
+.pdv-mini { width: 26px; height: 26px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
+.pdv-kbd { display: inline-block; padding: 0 5px; border-radius: 4px; border: 1px solid var(--nexus-border); font-size: 10px; font-weight: 700; font-family: inherit; opacity: .8; }
+.pdv-pag-cabecalho { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: -12px -14px 0; padding: 8px 14px; border-radius: 16px 16px 0 0; background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; font-size: 13px; }
+.pdv-pag-cabecalho small { opacity: .85; } .pdv-pag-cabecalho .pdv-kbd { color: #fff; border-color: rgba(255,255,255,.5); }
+.pdv-pag-corpo { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,1fr) minmax(0,.9fr) minmax(180px,.8fr); gap: 12px; align-items: stretch; }
+.pdv-pag-lista { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--nexus-border); border-radius: 12px; max-height: 110px; overflow-y: auto; }
+.pdv-pag-resumo { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--nexus-border); border-radius: 12px; font-size: 13px; }
+.pdv-pag-resumo > div { display: flex; justify-content: space-between; gap: 8px; }
+.pdv-pag-ok, .pdv-pag-falta { justify-content: center !important; margin-top: 2px; padding: 5px 8px; border-radius: 9px; font-weight: 700; font-size: 12.5px; }
+.pdv-pag-ok { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.45); color: #10b981; }
+.pdv-pag-falta { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.45); color: #d97706; }
+.pdv-rodape { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; }
+@media (max-width: 1280px) { .pdv-pag-corpo { grid-template-columns: minmax(0,1.4fr) minmax(0,1fr) minmax(170px,.9fr); } .pdv-pag-corpo > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 1120px) { .pdv-tela { grid-template-columns: 1fr; grid-template-rows: none; height: auto; min-height: 0; } .pdv-area-rolavel { max-height: 50vh; } .pdv-pag-corpo { grid-template-columns: 1fr; } .pdv-mobile-bar { display: flex !important; } .pdv-root { padding-bottom: 84px; } .pdv-root .admin-secondary, .pdv-root .admin-primary { min-height: 44px; } }
 .pdv-mobile-bar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; gap: 12px; align-items: center; padding: 10px 16px; background: var(--nexus-panel); border-top: 1px solid var(--nexus-border); box-shadow: 0 -8px 24px rgba(0,0,0,.15); }
 .pdv-atalhos { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: .85; }
 .pdv-atalhos kbd { display: inline-block; padding: 1px 6px; margin-right: 4px; border-radius: 5px; background: var(--nexus-panel-2); border: 1px solid var(--nexus-border); font-weight: 700; font-size: 11px; font-family: inherit; }
@@ -93,7 +119,6 @@ const pdvCss = `
 .pdv-troco-ok { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.4); color: #34d399; }
 .pdv-troco-falta { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); color: #fbbf24; }
 .pdv-finalizar { height: 48px; font-size: 14.5px !important; letter-spacing: .5px; border-radius: 12px !important; }
-.pdv-atalhos { display: flex; gap: 6px; align-items: center; justify-content: center; margin-top: 10px; font-size: 11px; opacity: 0.55; flex-wrap: wrap; }
 .pdv-kbd { padding: 2px 6px; border-radius: 5px; background: rgba(139,92,246,.14); border: 1px solid rgba(139,92,246,.35); color: var(--nexus-accent-2); font-family: monospace; font-size: 10px; }
 /* IMPRESSÒO DO CUPOM (P4)
    ------------------------
@@ -200,6 +225,8 @@ export default function PDV() {
   const [motivoRapido, setMotivoRapido] = useState('');
   const [motivoTexto, setMotivoTexto] = useState('');
   const [erroCancelamento, setErroCancelamento] = useState<string | null>(null);
+  const [mostrarTurno, setMostrarTurno] = useState(false);
+  const [mostrarIntegracoes, setMostrarIntegracoes] = useState(false);
   // Autorização do supervisor no balcão (desconto acima da alçada do operador).
   const [pedidoSupervisor, setPedidoSupervisor] = useState<{ mensagem: string } | null>(null);
   const [autorizacaoDesconto, setAutorizacaoDesconto] = useState<{ token: string; nome: string; expiraEm: number } | null>(null);
@@ -222,39 +249,80 @@ export default function PDV() {
   const { descontoAplicado: descontoNum, total, descontoInvalido } = totalComDesconto(carrinho, Number(descontoGeral) || 0);
   const subtotal = useMemo(() => subtotalDoCarrinho(carrinho), [carrinho]);
   const descontoInformado = Number(descontoGeral) || 0;
-  const recebidoNum = Number(valorRecebido) || 0;
-  // Pagamento misto (dinheiro + PIX): `parteDinheiro` é quanto do total fica
-  // em dinheiro; o restante é cobrado no PIX. O troco é sobre a parte em dinheiro.
-  const [misto, setMisto] = useState(false);
-  const [parteDinheiro, setParteDinheiro] = useState('');
-  const parteDinheiroNum = Math.round((Number(parteDinheiro) || 0) * 100) / 100;
-  const devidoEmDinheiro = forma === 'DINHEIRO' && misto ? parteDinheiroNum : total;
-  const partePix = Math.max(0, Math.round((total - parteDinheiroNum) * 100) / 100);
-  const troco = forma === 'DINHEIRO' ? Math.max(0, recebidoNum - devidoEmDinheiro) : 0;
-  const podeCobrar = !finalizando && !operacaoCarrinhoPendente && carrinho.length > 0 && !descontoInvalido
-    && !(forma === 'DINHEIRO' && recebidoNum < devidoEmDinheiro)
-    && !(forma === 'DINHEIRO' && misto && !(parteDinheiroNum > 0 && parteDinheiroNum < total));
-  /** Botão "Cobrar", F4 e a barra do celular passam todos por aqui. */
-  async function cobrar() {
-    if (finalizandoRef.current || !caixa || carrinho.length === 0) return;
-    // Desconto acima da alçada do operador: pede o supervisor ANTES de cobrar
-    // (antes do PIX e antes de a venda entrar na fila).
+  // ===== Pagamento múltiplo =====
+  // O operador adiciona quantas parcelas quiser (dinheiro e PIX; cartão fica
+  // desativado enquanto não houver maquininha integrada). A venda só pode ser
+  // finalizada quando o total pago fecha exatamente o total da venda.
+  // `forma` é a forma selecionada no painel; `valorRecebido` é o campo
+  // "Valor do pagamento".
+  const [pagamentosVenda, setPagamentosVenda] = useState<PagamentoVenda[]>([]);
+  const [pixPendente, setPixPendente] = useState<number | null>(null);
+  const totalPago = centavosParaReais(pagamentosVenda.reduce((s, p) => s + reaisParaCentavos(p.valor), 0));
+  const restante = centavosParaReais(Math.max(0, reaisParaCentavos(total) - reaisParaCentavos(totalPago)));
+  const excedente = reaisParaCentavos(totalPago) > reaisParaCentavos(total);
+  const troco = centavosParaReais(pagamentosVenda.reduce((s, p) => s + (p.recebido != null ? reaisParaCentavos(p.recebido) - reaisParaCentavos(p.valor) : 0), 0));
+  const pagamentoFechado = carrinho.length > 0 && total > 0 && restante === 0 && !excedente;
+  const podeCobrar = !finalizando && !operacaoCarrinhoPendente && !descontoInvalido && pagamentoFechado;
+  const subtotalBruto = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0);
+
+  /** Confere a alçada de desconto; abre a janela do supervisor se precisar. */
+  async function alcadaOk(): Promise<boolean> {
     const descontoTotalVenda = descontoNum + carrinho.reduce((s, i) => s + (Number(i.desconto) || 0), 0);
     const autorizacaoValida = autorizacaoDesconto && autorizacaoDesconto.expiraEm > Date.now() + 5000;
-    if (descontoTotalVenda > 0 && !autorizacaoValida && subtotalBruto > 0) {
-      try {
-        const { data } = await api.get('/vendas/alcada-desconto', { params: { desconto: descontoTotalVenda, subtotal: subtotalBruto } });
-        if (!data?.permitido) {
-          setErroSupervisor(null);
-          setPedidoSupervisor({ mensagem: data?.mensagem ?? 'Este desconto precisa de autorização.' });
-          return;
-        }
-      } catch { /* sem conexão: o servidor decide quando a venda sincronizar */ }
-    }
-    if (forma === 'PIX' || (forma === 'DINHEIRO' && misto)) setMostrarPix(true);
-    else void finalizarVenda();
+    if (descontoTotalVenda <= 0 || autorizacaoValida || subtotalBruto <= 0) return true;
+    try {
+      const { data } = await api.get('/vendas/alcada-desconto', { params: { desconto: descontoTotalVenda, subtotal: subtotalBruto } });
+      if (!data?.permitido) {
+        setErroSupervisor(null);
+        setPedidoSupervisor({ mensagem: data?.mensagem ?? 'Este desconto precisa de autorização.' });
+        return false;
+      }
+    } catch { /* sem conexão: o servidor decide quando a venda sincronizar */ }
+    return true;
   }
-  const subtotalBruto = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0);
+
+  /** "Adicionar pagamento": dinheiro entra na hora; PIX abre o QR Code do valor. */
+  async function adicionarPagamento() {
+    setError(null);
+    if (!caixa || carrinho.length === 0) { setError('Adicione produtos antes de registrar pagamentos.'); return; }
+    const valor = Math.round((Number(String(valorRecebido).replace(',', '.')) || 0) * 100) / 100;
+    if (!(valor > 0)) { setError('Informe o valor do pagamento.'); return; }
+    if (restante <= 0) { setError('O total da venda já está pago.'); return; }
+    if (forma === 'DINHEIRO') {
+      // Dinheiro acima do que falta vira troco.
+      const aplicado = Math.min(valor, restante);
+      setPagamentosVenda((ps) => [...ps, { id: novoId(), forma: 'DINHEIRO', valor: aplicado, ...(valor > aplicado ? { recebido: valor } : { recebido: valor }) }]);
+    } else if (forma === 'PIX') {
+      if (valor > restante) { setError(`O PIX não pode passar do que falta (${brl(restante)}).`); return; }
+      if (!(await alcadaOk())) return;
+      setPixPendente(valor);
+      setMostrarPix(true);
+      return;
+    } else {
+      setError('Cartão indisponível: a maquininha (TEF) ainda não está integrada ao sistema.');
+      return;
+    }
+    setValorRecebido('');
+  }
+
+  function removerPagamento(id: string) {
+    setPagamentosVenda((ps) => ps.filter((p) => p.id !== id || p.forma === 'PIX'));
+  }
+
+  /** Botão "Finalizar venda", F4 e a barra do celular passam todos por aqui. */
+  async function cobrar() {
+    if (finalizandoRef.current || !caixa || carrinho.length === 0) return;
+    if (!pagamentoFechado) {
+      setError(excedente ? 'Os pagamentos passam do total da venda. Remova um pagamento.' : `Falta pagar ${brl(restante)}. Adicione um pagamento.`);
+      return;
+    }
+    // Desconto acima da alçada do operador: pede o supervisor ANTES de a venda entrar na fila.
+    if (!(await alcadaOk())) return;
+    const ok = await finalizarVenda();
+    if (ok) setImprimirCupomAoFinalizar(true);
+  }
+  // Valor sugerido = o que falta pagar (atualiza quando o total ou os pagamentos mudam).
+  useEffect(() => { setValorRecebido(restante > 0 ? restante.toFixed(2) : ''); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [restante]);
   const cobrarRef = useRef(cobrar);
   cobrarRef.current = cobrar;
 
@@ -606,7 +674,7 @@ export default function PDV() {
       else if (e.key === 'F5') {
         // F5 alterna a forma de pagamento (e não recarrega a página no meio da venda).
         e.preventDefault();
-        setForma((atual) => FORMAS[(FORMAS.indexOf(atual as typeof FORMAS[number]) + 1) % FORMAS.length]);
+        setForma((atual) => (atual === 'DINHEIRO' ? 'PIX' : 'DINHEIRO'));
       }
       else if (e.key === 'F6') { e.preventDefault(); descontoRef.current?.focus(); descontoRef.current?.select(); }
       else if (e.key === 'F9') { e.preventDefault(); abrirCupomMaisRecente(); }
@@ -758,7 +826,7 @@ export default function PDV() {
     }
   }
 
-  async function finalizarVenda(referenciaPagamento?: string) {
+  async function finalizarVenda() {
     setError(null); setNotice(null);
     if (!caixa) { setError('Abra o caixa antes de vender.'); return false; }
     if (carrinho.length === 0) { setError('Adicione ao menos um item.'); return false; }
@@ -768,27 +836,23 @@ export default function PDV() {
     }
     if (descontoInformado < 0) { setError('O desconto da venda não pode ser negativo.'); return false; }
     if (descontoInformado > subtotal) { setError('O desconto não pode superar o subtotal.'); return false; }
-    if (forma === 'DINHEIRO' && misto) {
-      if (!(parteDinheiroNum > 0 && parteDinheiroNum < total)) { setError('A parte em dinheiro deve ser maior que zero e menor que o total.'); return false; }
-      if (recebidoNum < parteDinheiroNum) { setError('Valor recebido menor que a parte em dinheiro.'); return false; }
-      if (!referenciaPagamento) { setError('Confirme a parte em PIX antes de registrar a venda.'); return false; }
-    }
-    else if (forma === 'DINHEIRO' && recebidoNum < total) { setError('Valor recebido menor que o total.'); return false; }
-    if (forma === 'PIX' && !referenciaPagamento) { setError('Confirme o pagamento PIX no provider antes de registrar a venda.'); return false; }
-    if (!['DINHEIRO', 'PIX'].includes(forma)) {
-      setError('A integração de cartão/TEF ainda não está configurada. A venda não foi registrada.');
-      return false;
-    }
+    // Pagamento múltiplo: só finaliza com o total fechado e PIX confirmados.
+    if (!pagamentoFechado) { setError(`Falta pagar ${brl(restante)}.`); return false; }
+    if (pagamentosVenda.some((p) => p.forma === 'PIX' && !p.referencia)) { setError('Há um PIX sem confirmação do provedor.'); return false; }
     // FASE 2 PDV PRO — barreira offline ANTES de enfileirar: sem backend
     // alcançável, só DINHEIRO entra na fila. PIX/cartão offline nunca viram
-    // "venda pendente" — o operador é informado na hora, sem mudar o layout.
+    // "venda pendente" — o operador é informado na hora.
     if (!estaOnline() || !(await backendAlcancavel(getApiBaseUrl()))) {
-      const avaliacao = avaliarFormaOffline(forma === 'DINHEIRO' && misto ? 'PIX' : forma);
-      if (!avaliacao.permitida) {
-        setError(`Sem conexão com o servidor: ${avaliacao.motivo}`);
-        return false;
+      for (const formaPaga of new Set(pagamentosVenda.map((p) => p.forma))) {
+        const avaliacao = avaliarFormaOffline(formaPaga);
+        if (!avaliacao.permitida) {
+          setError(`Sem conexão com o servidor: ${avaliacao.motivo}`);
+          return false;
+        }
       }
     }
+    // Forma principal (compatibilidade com relatórios): a de maior valor.
+    const formaPrincipal = [...pagamentosVenda].sort((a, b) => b.valor - a.valor)[0]?.forma ?? 'DINHEIRO';
     const contexto = contextoPdv ?? contextoLocalDoToken(getToken());
     if (!contexto) { setError('Sessão do operador indisponível. Entre novamente antes de vender.'); return false; }
     // Trava de reentrância. Sem isto, dois toques no F4 (ou no botão) criavam
@@ -801,19 +865,18 @@ export default function PDV() {
       const id = novoId();
       const payload = {
         filialId, clienteId: clienteId || undefined,
-        formaPagamento: forma.toUpperCase(),
+        formaPagamento: formaPrincipal,
         desconto: descontoNum,
         parcelas: Number(parcelas) || 1,
         caixaId: caixa.id,
         origem: 'PDV',
         ...(autorizacaoDesconto && autorizacaoDesconto.expiraEm > Date.now() ? { autorizacaoSupervisor: autorizacaoDesconto.token } : {}),
         itens: carrinho.map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade, desconto: i.desconto })),
-        ...(total > 0 ? {
-          pagamentos: forma === 'DINHEIRO' && misto
-            // Pagamento misto: parte em dinheiro + restante no PIX confirmado.
-            ? [{ forma: 'DINHEIRO', valor: parteDinheiroNum, ...(recebidoNum >= parteDinheiroNum ? { valorRecebido: recebidoNum } : {}) }, { forma: 'PIX', valor: Math.round((total - parteDinheiroNum) * 100) / 100, referencia: referenciaPagamento }]
-            : [{ forma: forma.toUpperCase(), valor: total, ...(referenciaPagamento ? { referencia: referenciaPagamento } : {}), ...(forma === 'DINHEIRO' && recebidoNum >= total ? { valorRecebido: recebidoNum } : {}) }],
-        } : {}),
+        pagamentos: pagamentosVenda.map((p) => ({
+          forma: p.forma, valor: p.valor,
+          ...(p.referencia ? { referencia: p.referencia } : {}),
+          ...(p.forma === 'DINHEIRO' && p.recebido != null ? { valorRecebido: p.recebido } : {}),
+        })),
       };
       const operacao = await enfileirarVendaComCarrinho({
         id,
@@ -849,7 +912,7 @@ export default function PDV() {
         // The durable queue now owns the sale. Clear the working cart so it
         // cannot be resubmitted under a new key while this request is unknown.
         setOperacaoCarrinhoPendente(null);
-        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca(''); setAutorizacaoDesconto(null);
+        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setPagamentosVenda([]); setBusca(''); setAutorizacaoDesconto(null);
         setNotice(`VENDA PENDENTE DE SINCRONIZAÇÃO. Ainda não está confirmada no servidor. Chave ${operacao.idempotencyKey.slice(0, 18)}…`);
         return false;
       }
@@ -858,7 +921,7 @@ export default function PDV() {
       if (!data?.venda?.id) {
         setError(`Venda ${estadoFinal.vendaIdRemota ?? ''} confirmada no servidor. O comprovante será recuperável pelo histórico após atualizar a conexão.`);
         setOperacaoCarrinhoPendente(null);
-        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setBusca(''); setAutorizacaoDesconto(null);
+        setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setPagamentosVenda([]); setBusca(''); setAutorizacaoDesconto(null);
         return true;
       }
       const itensCupom = carrinho.map((i) => ({ nome: i.nome, quantidade: i.quantidade, total: i.preco * i.quantidade - i.desconto }));
@@ -871,9 +934,9 @@ export default function PDV() {
         // estava sendo ignorado. O cupom é o documento que fica com o cliente.
         operador: caixa.usuario?.nome ?? caixa.usuarioId ?? 'Operador',
         itens: itensCupom,
-        subtotal, desconto: descontoNum, total: Number(data.venda.total), forma, parcelas, troco,
+        subtotal, desconto: descontoNum, total: Number(data.venda.total), forma: pagamentosVenda.length > 1 ? 'MISTO' : formaPrincipal, parcelas, troco,
       });
-      setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setAutorizacaoDesconto(null);
+      setCarrinho([]); setDescontoGeral('0'); setClienteId(''); setValorRecebido(''); setParcelas('1'); setPagamentosVenda([]); setAutorizacaoDesconto(null);
       setOperacaoCarrinhoPendente(null);
       setBusca('');
       setNotice(`Venda confirmada no servidor: ${brl(Number(data.venda.total))}.`);
@@ -932,7 +995,7 @@ export default function PDV() {
     } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
-  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setMisto(false); setParteDinheiro(''); setAutorizacaoDesconto(null); }
+  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setPagamentosVenda([]); setAutorizacaoDesconto(null); }
 
   /** Pede ao servidor a autorização do supervisor (e-mail + senha dele). */
   async function autorizarComSupervisor() {
@@ -974,7 +1037,7 @@ export default function PDV() {
   }
 
   return (
-    <main className="pdv-root" style={{ minHeight: '100vh', background: 'radial-gradient(720px 340px at 88% -8%, rgba(124,58,237,.16), transparent 62%), radial-gradient(560px 300px at -6% 108%, rgba(99,102,241,.10), transparent 60%), var(--nexus-bg)', color: 'var(--nexus-text)', paddingBottom: 24 }}>
+    <main className="pdv-root" style={{ background: 'radial-gradient(720px 340px at 88% -8%, rgba(124,58,237,.16), transparent 62%), radial-gradient(560px 300px at -6% 108%, rgba(99,102,241,.10), transparent 60%), var(--nexus-bg)', color: 'var(--nexus-text)', paddingBottom: 0 }}>
       <style>{pdvCss}</style>
       {/* ===== Header balcão (fiel à base) ===== */}
       <header className="pdv-glass pdv-noprint" style={{ position: 'sticky', top: 0, zIndex: 40, display: 'flex', alignItems: 'center', gap: 16, padding: '14px 24px', background: 'var(--nexus-panel)', borderBottom: '1px solid var(--nexus-border)' }}>
@@ -1050,7 +1113,7 @@ export default function PDV() {
               const item: React.CSSProperties = { textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 };
               const atalho: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: 'rgba(139,92,246,.15)', color: 'var(--nexus-accent-2)' };
               const naoConfig: React.CSSProperties = { fontSize: 10.5, padding: '2px 8px', borderRadius: 999, background: 'rgba(245,158,11,.15)', color: '#d97706' };
-              const irIntegracoes = () => { setMostrarMenu(false); document.getElementById('pdv-integracoes')?.scrollIntoView({ behavior: 'smooth' }); };
+              const irIntegracoes = () => { setMostrarMenu(false); setMostrarIntegracoes(true); };
               return (
               <div className="admin-panel" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 30, minWidth: 300, padding: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)' }}>
                 <h2 style={{ marginBottom: 8 }}>AÇÕES DO CAIXA</h2>
@@ -1063,6 +1126,7 @@ export default function PDV() {
                   <button type="button" className="admin-secondary" style={item} onClick={abrirCupomMaisRecente}><span>🧾 Reimprimir último cupom</span></button>
                   <button type="button" className="admin-secondary" style={item} onClick={() => { setMostrarMenu(false); buscaRef.current?.focus(); }}><span>🔍 Ir para o leitor / busca</span><span style={atalho}>F2</span></button>
                   <button type="button" className="admin-secondary" style={item} disabled={!caixa} onClick={() => { setMostrarMenu(false); setTipoMov('SANGRIA'); setMostrarSangria(true); }}><span>💸 Sangria · Suprimento</span><span style={atalho}>F7 · F8</span></button>
+                  <button type="button" className="admin-secondary" style={item} disabled={!caixa} onClick={() => { setMostrarMenu(false); setMostrarTurno(true); }}><span>📊 Turno e vendas do turno</span></button>
                 </div>
                 <h2 style={{ margin: '12px 0 8px' }}>EQUIPAMENTOS E INTEGRAÇÕES</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1098,318 +1162,283 @@ export default function PDV() {
         <p className="admin-message pdv-noprint" style={{ margin: '14px 24px 0', opacity: 0.8 }}>📦 Caixa fechado — selecione a filial no topo e clique em <strong>Abrir caixa</strong> para começar a vender.</p>
       )}
 
-      <div className="pdv-grid pdv-noprint">
-          <section className="admin-panel">
-            <h2>{traduzir('produtos', "Produtos")}</h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+      {/* ===== Tela única: produtos + carrinho em cima, pagamento embaixo, sem rolar a página ===== */}
+      <div className="pdv-tela pdv-noprint">
+          <section className="admin-panel pdv-area-produtos">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ position: 'relative', flex: 1 }}>
-                <input ref={buscaRef} value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={buscarPorCodigo} placeholder="Nome, SKU ou código de barras… (Enter adiciona)" style={{ width: '100%', height: 44, borderRadius: 12, paddingRight: 52 }} />
+                <input ref={buscaRef} value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={buscarPorCodigo} placeholder="🔍 Buscar produto por nome, código ou código de barras… (Enter adiciona)" style={{ width: '100%', height: 40, borderRadius: 12, paddingRight: 52 }} />
                 <span aria-hidden style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 800, padding: '3px 7px', borderRadius: 6, background: 'rgba(139,92,246,.18)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)' }}>F2</span>
               </div>
-              <button type="button" aria-label="Focar busca por código" className="admin-primary pdv-btn-grad" style={{ width: 28, height: 28, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0, padding: 0 }} onClick={() => buscaRef.current?.focus()}>🔍</button>
             </div>
             {categorias.length > 0 && (
-              <div className="pdv-scroll" style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 4, marginBottom: 12 }}>
-                <button type="button" className={categoriaId === '' ? 'admin-primary pdv-btn-grad' : 'admin-secondary pdv-chip'} style={{ padding: '5px 14px', flexShrink: 0 }} onClick={() => setCategoriaId('')}>{traduzir('todos', "Todos")}</button>
+              <div className="pdv-scroll" style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: 2, flexShrink: 0 }}>
+                <button type="button" className={categoriaId === '' ? 'admin-primary pdv-btn-grad' : 'admin-secondary pdv-chip'} style={{ padding: '4px 14px', flexShrink: 0 }} onClick={() => setCategoriaId('')}>{traduzir('todos', "Todos")}</button>
                 {categorias.map((c: any) => (
-                  <button key={c.id} type="button" className={categoriaId === c.id ? 'admin-primary pdv-btn-grad' : 'admin-secondary pdv-chip'} style={{ padding: '5px 14px', flexShrink: 0 }} onClick={() => setCategoriaId(c.id)}>{c.nome}</button>
+                  <button key={c.id} type="button" className={categoriaId === c.id ? 'admin-primary pdv-btn-grad' : 'admin-secondary pdv-chip'} style={{ padding: '4px 14px', flexShrink: 0 }} onClick={() => setCategoriaId(c.id)}>{c.nome}</button>
                 ))}
               </div>
             )}
-            {/* P11: o motivo da falha aparece no lugar do grid. Antes o `catch`
-               era mudo e a falta de permissão (`produtos:visualizar`) era
-               indistinguível de "não há produtos". As duas mensagens de vazio
-               também foram separadas: sem busca ativa, "nenhum produto
-               cadastrado" é a informação certa. */}
-            {carregandoProdutos ? (
-              <p className="empty-state">Carregando produtos…</p>
-            ) : erroProdutos ? (
-              <p className="empty-state" style={{ color: '#f87171' }}>{erroProdutos}</p>
-            ) : produtos.length === 0 ? (
-              <p className="empty-state">
-                {(busca || categoriaId) ? 'Nenhum produto encontrado.' : 'Nenhum produto cadastrado nesta filial.'}
-              </p>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(172px,1fr))', gap: 12 }}>
-                {produtos.map((p: any) => (
-                  <button key={p.id} type="button" className="admin-secondary pdv-card" style={{ textAlign: 'left', padding: 10 }} onClick={() => adicionarAoCarrinho(p)}>
-                    <span style={{ position: 'relative', display: 'block', aspectRatio: '4 / 3', borderRadius: 10, marginBottom: 8, overflow: 'hidden', background: 'linear-gradient(135deg, rgba(124,58,237,.18), rgba(124,58,237,.06))' }}>
-                      {p.imagem ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.imagem} alt={p.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <span aria-hidden style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>📷</span>
-                      )}
-                      {String(p.codigoBarras ?? '') !== '' && (
-                        <span aria-hidden style={{ position: 'absolute', left: 6, top: 6, fontSize: 9.5, fontWeight: 700, padding: '3px 6px', borderRadius: 6, background: 'rgba(10,9,15,.78)', border: '1px solid rgba(255,255,255,.14)', color: '#e5e7eb', fontFamily: 'monospace' }}> {String(p.codigoBarras).slice(-4)}</span>
-                      )}
-                      <span aria-hidden style={{ position: 'absolute', right: 6, top: 6, fontSize: 9.5, fontWeight: 800, padding: '3px 7px', borderRadius: 999, background: p.estoqueFilial > 10 ? 'rgba(16,185,129,.16)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.16)' : 'rgba(239,68,68,.16)', border: `1px solid ${p.estoqueFilial > 10 ? 'rgba(16,185,129,.45)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.45)' : 'rgba(239,68,68,.45)'}`, color: p.estoqueFilial > 10 ? '#34d399' : p.estoqueFilial > 0 ? '#fbbf24' : '#f87171' }}>{p.estoqueFilial} {p.vendaFracionada ? 'em estoque' : `unidade${p.estoqueFilial !== 1 ? 's' : ''}`}</span>
-                    </span>
-                    <strong style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 13, lineHeight: 1.25, minHeight: 33 }}>{p.nome}</strong>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-                      <span className="pdv-price" style={{ fontSize: 14 }}>{brl(precoVigente(p))}</span>
-                      <span aria-hidden className="pdv-plus" style={{ display: 'inline-flex', width: 32, height: 32, borderRadius: 9, color: '#fff', fontWeight: 800, fontSize: 18, alignItems: 'center', justifyContent: 'center' }}>+</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="pdv-scroll pdv-area-rolavel">
+              {carregandoProdutos ? (
+                <p className="empty-state">Carregando produtos…</p>
+              ) : erroProdutos ? (
+                <p className="empty-state" style={{ color: '#f87171' }}>{erroProdutos}</p>
+              ) : produtos.length === 0 ? (
+                <p className="empty-state">
+                  {(busca || categoriaId) ? 'Nenhum produto encontrado.' : 'Nenhum produto cadastrado nesta filial.'}
+                </p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(150px,1fr))', gap: 10 }}>
+                  {produtos.map((p: any) => (
+                    <button key={p.id} type="button" className="admin-secondary pdv-card" style={{ textAlign: 'left', padding: 8 }} onClick={() => adicionarAoCarrinho(p)}>
+                      <span style={{ position: 'relative', display: 'block', height: 74, borderRadius: 9, marginBottom: 6, overflow: 'hidden', background: 'linear-gradient(135deg, rgba(124,58,237,.18), rgba(124,58,237,.06))' }}>
+                        {p.imagem ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.imagem} alt={p.nome} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          <span aria-hidden style={{ display: 'flex', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>📷</span>
+                        )}
+                        <span style={{ position: 'absolute', right: 5, top: 5, fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 999, background: p.estoqueFilial > 10 ? 'rgba(16,185,129,.16)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.16)' : 'rgba(239,68,68,.16)', border: `1px solid ${p.estoqueFilial > 10 ? 'rgba(16,185,129,.45)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.45)' : 'rgba(239,68,68,.45)'}`, color: p.estoqueFilial > 10 ? '#34d399' : p.estoqueFilial > 0 ? '#fbbf24' : '#f87171' }}>{p.estoqueFilial} {p.vendaFracionada ? 'em estoque' : `unidade${p.estoqueFilial !== 1 ? 's' : ''}`}</span>
+                      </span>
+                      <strong style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12.5, lineHeight: 1.25, minHeight: 31 }}>{p.nome}</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                        <span className="pdv-price" style={{ fontSize: 14 }}>{brl(precoVigente(p))}</span>
+                        <span aria-hidden className="pdv-plus" style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, color: '#fff', fontWeight: 800, fontSize: 16, alignItems: 'center', justifyContent: 'center' }}>+</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <section className="admin-panel">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                <h2 style={{ margin: 0 }}>Carrinho {carrinho.length > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '3px 9px', borderRadius: 999, background: 'rgba(139,92,246,.16)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)', marginLeft: 6 }}>
-                    {carrinho.length} itens • {Math.round(carrinho.reduce((s, i) => s + i.quantidade, 0) * 1000) / 1000} un
-                  </span>
-                )}</h2>
-                {carrinho.length > 0 && (
-                  <button type="button" className="admin-secondary" style={{ padding: '5px 12px', fontSize: 12, flexShrink: 0 }} onClick={() => { setCarrinho([]); setDescontoGeral('0'); }}>{traduzir('limpar', "Limpar")}</button>
-                )}
-              </div>
+          <section className="admin-panel pdv-area-carrinho">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h2 style={{ margin: 0 }}>🛒 Carrinho {carrinho.length > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '3px 9px', borderRadius: 999, background: 'rgba(139,92,246,.16)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)', marginLeft: 6 }}>
+                  {carrinho.length} {carrinho.length === 1 ? 'item' : 'itens'}
+                </span>
+              )}</h2>
+              {carrinho.length > 0 && (
+                <button type="button" className="admin-secondary" style={{ padding: '4px 12px', fontSize: 12, flexShrink: 0, color: '#f87171' }} onClick={() => { setCarrinho([]); setDescontoGeral('0'); }}>🗑 {traduzir('limpar', "Limpar")}</button>
+              )}
+            </div>
+            <div className="pdv-scroll pdv-area-rolavel">
               {carrinho.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '20px 10px', textAlign: 'center' }}>
-                  <span aria-hidden style={{ width: 64, height: 64, borderRadius: 14, border: '1.5px dashed var(--nexus-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, opacity: 0.6 }}>🛒</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '18px 10px', textAlign: 'center' }}>
+                  <span aria-hidden style={{ width: 52, height: 52, borderRadius: 14, border: '1.5px dashed var(--nexus-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, opacity: 0.6 }}>🛒</span>
                   <span style={{ fontSize: 12.5, opacity: 0.6 }}>Busque e adicione produtos (F2)</span>
                 </div>
               ) : (
-                <div className="admin-table" style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {carrinho.map((i) => (
-                    <div key={i.produtoId} className="admin-list-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span aria-hidden style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(124,58,237,.18), rgba(124,58,237,.06))', fontSize: 18 }}>
+                    <div key={i.produtoId} className="admin-list-row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px' }}>
+                      <span aria-hidden style={{ width: 36, height: 36, borderRadius: 8, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(124,58,237,.18), rgba(124,58,237,.06))', fontSize: 16 }}>
                         {i.imagem ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={i.imagem} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : '📷'}
                       </span>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <strong style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.nome}</strong>
-                        <span style={{ fontFamily: 'monospace', fontSize: 11.5, opacity: 0.75 }}>{brl(i.preco)} × {i.quantidade} = <strong style={{ color: 'var(--nexus-accent-2)' }}>{brl(i.preco * i.quantidade - i.desconto)}</strong></span>
+                        <strong style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13 }}>{i.nome}</strong>
+                        <span style={{ fontSize: 11.5, opacity: 0.75 }}>{brl(i.preco)} × {i.quantidade} = <strong style={{ color: 'var(--nexus-accent-2)' }}>{brl(i.preco * i.quantidade - i.desconto)}</strong></span>
                       </div>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
+                      <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
+                        <button type="button" className="admin-secondary pdv-mini" onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
                         {i.fracionado ? (
-                          // Produto vendido por peso/medida: quantidade digitada (até 3 casas).
                           <input type="number" min="0.001" step="0.001" aria-label={`Quantidade de ${i.nome}`} value={i.quantidade}
                             onChange={(e) => { const r = alterarQuantidade(carrinho, i.produtoId, Math.round(Number(e.target.value) * 1000) / 1000); setCarrinho(r.itens); setError(r.erro); }}
-                            style={{ width: 72, padding: '3px 6px', fontSize: 12.5, textAlign: 'right' }} />
+                            style={{ width: 64, padding: '2px 6px', fontSize: 12.5, textAlign: 'right' }} />
                         ) : (
-                          <span style={{ minWidth: 20, textAlign: 'center', fontWeight: 700 }}>{i.quantidade}</span>
+                          <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700, fontSize: 13 }}>{i.quantidade}</span>
                         )}
-                        <button type="button" className="admin-secondary pdv-btn-grad" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
-                        <button type="button" className="admin-secondary" style={{ width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
+                        <button type="button" className="admin-secondary pdv-btn-grad pdv-mini" aria-label={`Aumentar ${i.nome}`} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
+                        <button type="button" className="admin-secondary pdv-mini" aria-label={`Remover ${i.nome}`} style={{ color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-              <label style={{ fontSize: 11, opacity: 0.65, display: 'block', marginTop: 10 }}>
-                CLIENTE (OPCIONAL)
-                <select ref={clienteRef} aria-label="Cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ width: '100%', marginTop: 4, fontSize: 13 }}>
-                  <option value="">Consumidor final</option>
-                  {clientes.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
-              </label>
+            </div>
+            <div style={{ borderTop: '1px dashed var(--nexus-border)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+              <select ref={clienteRef} aria-label="Cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} style={{ width: '100%', fontSize: 12.5, padding: '5px 8px' }}>
+                <option value="">👤 Consumidor final (F3)</option>
+                {clientes.map((c: any) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                <span style={{ opacity: 0.75 }}>{traduzir('subtotal', "Subtotal")}</span>
+                <span>{brl(subtotal)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <span style={{ opacity: 0.75 }}>Desconto (R$) <kbd className="pdv-kbd">F6</kbd></span>
+                <input ref={descontoRef} aria-label="Desconto da venda em reais" type="number" min="0" step="0.01" value={descontoGeral} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 90, padding: '4px 8px', fontSize: 13, textAlign: 'right' }} />
+              </div>
+              {descontoInvalido && <p role="alert" style={{ margin: 0, color: '#fbbf24', fontSize: 11.5 }}>{descontoInformado < 0 ? 'O desconto não pode ser negativo.' : 'O desconto não pode superar o subtotal.'}</p>}
+              <div className="pdv-total-box">
+                <span>Total da venda</span>
+                <strong className="pdv-total">{brl(total)}</strong>
+              </div>
+            </div>
+          </section>
 
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--nexus-border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                  <span style={{ opacity: 0.75 }}>{traduzir('subtotal', "Subtotal")}</span>
-                  <span style={{ fontFamily: 'monospace' }}>{brl(subtotal)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span style={{ opacity: 0.75 }}>Desconto (R$)</span>
-                  <input ref={descontoRef} aria-label="Desconto da venda em reais" type="number" min="0" step="0.01" value={descontoGeral} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 96, padding: '6px 10px', fontSize: 13, textAlign: 'right' }} />
-                </div>
-                {descontoInvalido && <p role="alert" style={{ margin: '-6px 0 0', color: '#fbbf24', fontSize: 11.5 }}>{descontoInformado < 0 ? 'O desconto não pode ser negativo.' : 'O desconto não pode superar o subtotal.'}</p>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                  <span style={{ fontSize: 10.5, letterSpacing: 1.6, textTransform: 'uppercase', opacity: 0.6 }}>{traduzir('total', "Total")}</span>
-                  <strong className="pdv-total">{brl(total)}</strong>
-                </div>
-
-                <div>
-                  <p style={{ margin: '0 0 6px', fontSize: 10.5, letterSpacing: 1.6, textTransform: 'uppercase', opacity: 0.6 }}>Forma de pagamento</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                    {FORMAS.map((f) => (
-                      <button key={f} type="button" className={forma === f ? 'admin-primary pdv-btn-grad' : 'admin-secondary'} style={{ padding: '8px 4px', fontSize: 12, borderRadius: 10 }} onClick={() => setForma(f)}>
-                        <span aria-hidden style={{ display: 'block', fontSize: 15, marginBottom: 2 }}>{f === 'DINHEIRO' ? '💵' : f === 'PIX' ? '⚡' : f === 'CARTAO_CREDITO' ? '💳' : f === 'CARTAO_DEBITO' ? '🏧' : '🧾'}</span>
-                        {f === 'DINHEIRO' ? 'Dinheiro' : f === 'PIX' ? 'PIX' : f === 'CARTAO_CREDITO' ? 'Crédito' : f === 'CARTAO_DEBITO' ? 'Débito' : 'Boleto'}
+          {/* ===== Painel único de pagamento ===== */}
+          <section className="admin-panel pdv-area-pagamento" aria-label="Pagamento">
+            <div className="pdv-pag-cabecalho">
+              <span>💳 <strong>Pagamento</strong> <small>— adicione uma ou mais formas; a venda fecha quando o total estiver pago <kbd className="pdv-kbd">F5</kbd> troca a forma</small></span>
+              {pagamentosVenda.length > 0 && !pagamentosVenda.some((p) => p.forma === 'PIX') && (
+                <button type="button" className="admin-secondary" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => setPagamentosVenda([])}>✕ Limpar pagamentos</button>
+              )}
+            </div>
+            <div className="pdv-pag-corpo">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6 }}>
+                  {FORMAS_PAINEL.map((f) => {
+                    const ativa = FORMAS_ATIVAS.has(f);
+                    return (
+                      <button key={f} type="button" disabled={!ativa}
+                        title={ativa ? undefined : 'Maquininha (TEF) ainda não integrada ao sistema'}
+                        className={forma === f ? 'admin-primary pdv-btn-grad' : 'admin-secondary'}
+                        style={{ padding: '7px 4px', fontSize: 12.5, borderRadius: 10, opacity: ativa ? 1 : 0.45 }}
+                        onClick={() => setForma(f)}>
+                        {f === 'DINHEIRO' ? '💵 Dinheiro' : f === 'PIX' ? '⚡ PIX' : f === 'CARTAO_CREDITO' ? '💳 Crédito' : '🏧 Débito'}
+                        {!ativa && <small style={{ display: 'block', fontSize: 9.5 }}>não configurado</small>}
                       </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-
-                {forma === 'CARTAO_CREDITO' && (
-                  <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    Parcelas
-                    <select value={parcelas} onChange={(e) => setParcelas(e.target.value)}>
-                      {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}× de {brl(total / n)}</option>)}
-                    </select>
+                <form style={{ display: 'flex', gap: 8, alignItems: 'center' }} onSubmit={(e) => { e.preventDefault(); void adicionarPagamento(); }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, fontSize: 12 }}>
+                    <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>{forma === 'DINHEIRO' ? 'Valor recebido R$' : 'Valor R$'}</span>
+                    <input aria-label="Valor do pagamento" type="number" min="0" step="0.01" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, padding: '6px 10px' }} />
                   </label>
-                )}
+                  <button type="submit" className="admin-primary pdv-btn-grad" style={{ padding: '8px 14px', borderRadius: 10, whiteSpace: 'nowrap' }} disabled={!caixa || carrinho.length === 0 || restante <= 0} aria-label="Adicionar pagamento">+ Adicionar</button>
+                </form>
+              </div>
 
-                {forma === 'DINHEIRO' && (
-                  <>
-                    <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input type="checkbox" checked={misto} onChange={(e) => { setMisto(e.target.checked); if (!e.target.checked) setParteDinheiro(''); }} />
-                      Dividir: parte em dinheiro + restante no PIX
-                    </label>
-                    {misto && (
-                      <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        Parte em dinheiro (R$)
-                        <input type="number" min="0" step="0.01" value={parteDinheiro} onChange={(e) => setParteDinheiro(e.target.value)} placeholder="0,00" style={{ fontSize: 15, fontWeight: 700 }} />
-                        <span style={{ opacity: 0.75 }}>⚡ PIX: <strong>{brl(partePix)}</strong></span>
-                      </label>
-                    )}
-                    <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      Valor recebido em dinheiro (R$)
-                      <input type="number" min="0" step="0.01" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" style={{ fontSize: 15, fontWeight: 700 }} />
-                    </label>
-                    <div style={{ padding: '10px 12px', borderRadius: 12, background: recebidoNum >= devidoEmDinheiro ? 'rgba(16,185,129,.10)' : 'rgba(245,158,11,.10)', border: `1px solid ${recebidoNum >= devidoEmDinheiro ? 'rgba(16,185,129,.4)' : 'rgba(245,158,11,.4)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {recebidoNum >= devidoEmDinheiro ? (
-                        <>
-                          <span style={{ color: '#34d399', fontWeight: 700, fontSize: 13 }}>Troco</span>
-                          <strong style={{ color: '#34d399', fontFamily: 'monospace', fontSize: 17 }}>{brl(troco)}</strong>
-                        </>
-                      ) : (
-                        <>
-                          <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: 13 }}>Faltam</span>
-                          <strong style={{ color: '#fbbf24', fontFamily: 'monospace', fontSize: 17 }}>{brl(Math.max(0, devidoEmDinheiro - recebidoNum))}</strong>
-                        </>
+              <div className="pdv-pag-lista">
+                <span style={{ fontSize: 11.5, fontWeight: 700, opacity: 0.75 }}>Pagamentos adicionados</span>
+                {pagamentosVenda.length === 0 ? (
+                  <span style={{ fontSize: 12, opacity: 0.55 }}>Nenhum pagamento ainda.</span>
+                ) : pagamentosVenda.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+                    <span>{p.forma === 'DINHEIRO' ? '💵 Dinheiro' : '⚡ PIX'}{p.forma === 'DINHEIRO' && p.recebido != null && p.recebido > p.valor ? <small style={{ opacity: 0.7 }}> (recebido {brl(p.recebido)})</small> : null}{p.forma === 'PIX' ? <small style={{ opacity: 0.7 }}> ✓ confirmado</small> : null}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <strong>{brl(p.valor)}</strong>
+                      {p.forma === 'DINHEIRO' && (
+                        <button type="button" className="admin-secondary pdv-mini" aria-label="Remover pagamento" style={{ color: '#f87171' }} onClick={() => removerPagamento(p.id)}>🗑</button>
                       )}
-                    </div>
-                  </>
-                )}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-                {/* Aviso perto do botão de cobrar: o operador olha aqui, não no topo. */}
-                {error && <p role="alert" className="admin-message admin-error" style={{ margin: 0, fontSize: 12.5 }}>{error}</p>}
-                <button id="pdv-cobrar" className="admin-primary pdv-btn-grad" type="button" style={{ width: '100%', height: 48, fontSize: 14.5, letterSpacing: 0.6, borderRadius: 12 }}
-                  disabled={!podeCobrar}
-                  onClick={() => void cobrar()}>
-                  {finalizando
-                    ? 'Registrando…'
-                    : forma === 'PIX' ? `PIX QR CODE • ${brl(total)}` : misto && forma === 'DINHEIRO' ? `COBRAR • ${brl(parteDinheiroNum)} + PIX ${brl(partePix)}` : `FINALIZAR VENDA • ${brl(total)} (F4)`}
-                </button>
-                {mostrarPix && (
-                  <PixQrCodeModal
-                    valor={forma === 'DINHEIRO' && misto ? partePix : total}
-                    onClose={() => setMostrarPix(false)}
-                    onPago={async (txid) => {
-                      if (!(forma === 'DINHEIRO' && misto)) setForma('PIX');
-                      const vendaGravada = await finalizarVenda(txid);
-                      if (!vendaGravada) throw new Error('Pagamento confirmado, mas a venda não foi gravada. Tente novamente ou confira as vendas do turno antes de fechar esta janela.');
-                      setMostrarPix(false);
-                      setImprimirCupomAoFinalizar(true);
-                    }}
-                  />
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="admin-secondary" style={{ padding: '4px 10px', fontSize: 11 }} disabled={!caixa} onClick={() => { setTipoMov('SANGRIA'); setMostrarSangria(true); }}>F7 Sangria</button>
-                  <button type="button" className="admin-secondary" style={{ padding: '4px 10px', fontSize: 11 }} disabled={!caixa} onClick={() => { setTipoMov('SUPRIMENTO'); setMostrarSangria(true); }}>F8 Suprimento</button>
-                  <button type="button" className="admin-secondary" style={{ padding: '4px 10px', fontSize: 11, color: '#f87171' }} disabled={!caixa || fechando} onClick={() => setMostrarFechar(true)}>Fechar Caixa</button>
+              <div className="pdv-pag-resumo">
+                <div><span>Total da venda</span><strong>{brl(total)}</strong></div>
+                <div><span>Total pago</span><strong style={{ color: '#10b981' }}>{brl(totalPago)}</strong></div>
+                {troco > 0 && <div><span>Troco</span><strong style={{ color: '#10b981' }}>{brl(troco)}</strong></div>}
+                <div className={pagamentoFechado ? 'pdv-pag-ok' : 'pdv-pag-falta'}>
+                  {pagamentoFechado ? '✅ Pagamento completo' : excedente ? '⚠ Pagamentos passam do total' : `Falta ${brl(restante)}`}
                 </div>
               </div>
-            </section>
 
-            <section className="admin-panel">
-              <h2>Turno do caixa</h2>
-              {resumo ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 12.5, opacity: 0.85 }}>
-                  <span>Fundo de troco: <strong>{brl(resumo.fundoTroco)}</strong></span>
-                  <span>Suprimentos: <strong>{brl(resumo.suprimentos)}</strong></span>
-                  {/* Sangrias e estornos vêm separados de propósito. O
-                      cancelamento de uma venda em dinheiro grava uma
-                      movimentação do tipo SANGRIA no caixa (vendas.routes.ts),
-                      e antes ela entrava na MESMA linha: o operador via
-                      "Sangrias: R$ 500" sem nunca ter tirado dinheiro, e é
-                      esse número que cai nele num fechamento contestado. */}
-                  <span>Sangrias: <strong>{brl(resumo.sangrias)}</strong></span>
-                  {Number(resumo.estornos) > 0 && (
-                    <span style={{ opacity: 0.75 }} title="Gerado automaticamente ao cancelar vendas pagas em dinheiro — não foi retirada manual.">Estornos (vendas canceladas): <strong>{brl(resumo.estornos)}</strong></span>
-                  )}
-                  {/* O contador vem do resumo, que conta só FINALIZADA; a
-                      lista abaixo mostra também as canceladas. Exibir os dois
-                      números ao lado torna visível a diferença em vez de
-                      deixar os dois discordarem em silêncio. */}
-                  <span style={{ gridColumn: '1 / -1' }}>Vendas em dinheiro: <strong>{brl(resumo.dinheiroVendas)}</strong>{Number(resumo.qtdVendas) > 0 ? ` · ${resumo.qtdVendas} venda${resumo.qtdVendas !== 1 ? 's' : ''} finalizada${resumo.qtdVendas !== 1 ? 's' : ''}` : ''}</span>
-                  <span style={{ gridColumn: '1 / -1' }}>
-                    Esperado em gaveta: <strong>{brl(resumo.dinheiroEsperado)}</strong>
-                    {Number(resumo.saldoRegistrado) !== Number(resumo.dinheiroEsperado) && (
-                      <span style={{ opacity: 0.7 }}> · registrado: {brl(resumo.saldoRegistrado)}</span>
-                    )}
-                  </span>
-                </div>
-              ) : <p className="empty-state">Sem resumo do turno.</p>}
-            </section>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
+                {error && <p role="alert" className="admin-message admin-error" style={{ margin: 0, fontSize: 12 }}>{error}</p>}
+                <button id="pdv-cobrar" className="admin-primary pdv-btn-grad" type="button" style={{ width: '100%', minHeight: 54, fontSize: 15, borderRadius: 12 }}
+                  disabled={!podeCobrar}
+                  title={podeCobrar ? undefined : 'Só finaliza com o total pago'}
+                  onClick={() => void cobrar()}>
+                  {finalizando ? 'Registrando…' : '✓ Finalizar venda (F4)'}
+                </button>
+              </div>
+            </div>
+            {mostrarPix && pixPendente != null && (
+              <PixQrCodeModal
+                valor={pixPendente}
+                onClose={() => { setMostrarPix(false); setPixPendente(null); }}
+                onPago={async (txid) => {
+                  setPagamentosVenda((ps) => [...ps, { id: novoId(), forma: 'PIX', valor: pixPendente, referencia: txid }]);
+                  setMostrarPix(false); setPixPendente(null);
+                  setNotice(`PIX de ${brl(pixPendente)} confirmado.`);
+                }}
+              />
+            )}
+          </section>
+      </div>
 
-            <section className="admin-panel">
-              <h2>Vendas do turno</h2>
-              {erroVendasTurno ? <p className="admin-message admin-error">{erroVendasTurno}</p> : vendasTurno.length === 0 ? <p className="empty-state">Nenhuma venda neste turno ainda.</p> : (
-                <div className="admin-table">
-                  {vendasTurno.map((v: any) => (
-                    <div key={v.id} className="admin-list-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <strong>#{v.id.slice(-5)} · {brl(Number(v.total))} · {ROTULO_FORMA[v.formaPagamento] ?? v.formaPagamento}</strong>
-                        <span>{new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {v.itens?.length ?? 0} {(v.itens?.length ?? 0) !== 1 ? 'itens' : 'item'}{v.cliente ? ` · ${v.cliente.nome}` : ''} · {v.status}</span>
-                      </div>
-                      {v.status === 'FINALIZADA' && (
-                        // O botão reflecte o cancelamento em curso para que
-                        // dois toques não disparem duas requisições (o
-                        // `cancelando` já trava a função, mas o operador
-                        // precisa VER que o clique foi aceito).
-                        <button type="button" className="admin-secondary" disabled={cancelando === v.id} style={{ padding: '4px 10px', flexShrink: 0, opacity: cancelando === v.id ? 0.5 : 1 }} onClick={() => cancelarVenda(v)}>
-                          {cancelando === v.id ? 'Cancelando…' : traduzir('cancelar', "Cancelar")}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
-
-      <section className="admin-panel admin-wide pdv-noprint" id="pdv-integracoes">
-        <h2>Integrações PDV (seção 14 — API oficial apenas)</h2>
-        <p style={{ fontSize: 12.5, opacity: 0.7 }}>Apenas integra via API, SDK, webhook ou banco oficialmente autorizado pelo fabricante — nunca simula dados de sincronização.</p>
-        <IntegracoesPDV />
-      </section>
-
-      {/* Rodapé do balcão — apenas dados reais do turno */}
-      <footer className="admin-panel admin-wide pdv-noprint" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-        <span style={{ letterSpacing: 0.4 }}><span style={{ opacity: 0.55, textTransform: 'uppercase', fontSize: 10.5 }}>Vendas do turno:</span> <strong style={{ fontFamily: 'monospace' }}>{resumo?.qtdVendas ?? 0} • {brl(Number(resumo?.totalVendas ?? 0))}</strong></span>
-        <span style={{ letterSpacing: 0.4 }}><span style={{ opacity: 0.55, textTransform: 'uppercase', fontSize: 10.5 }}>Ticket médio:</span> <strong style={{ fontFamily: 'monospace' }}>{brl(resumo && Number(resumo.qtdVendas) > 0 ? Number(resumo.totalVendas) / Number(resumo.qtdVendas) : 0)}</strong></span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: modoOffline ? '#fbbf24' : apiOk ? '#34d399' : '#f87171', fontFamily: 'monospace', fontSize: 11 }}>
-          <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: modoOffline ? '#fbbf24' : apiOk ? '#34d399' : '#f87171' }} />
-          {modoOffline ? `Offline · ${pendentesSync} venda(s) pendente(s)` : apiOk ? `Online · ${pendentesSync} pendente(s)` : 'Servidor indisponível'}
-        </span>
-        <div className="pdv-atalhos" aria-label="Atalhos de teclado" style={{ flexBasis: '100%' }}>
-          {[['F2', 'Buscar'], ['F3', 'Cliente'], ['F4', 'Cobrar'], ['F5', 'Pagamento'], ['F6', 'Desconto'], ['F7', 'Sangria'], ['F8', 'Suprimento'], ['F9', 'Reimprimir'], ['Del', 'Remover último item'], ['Esc', 'Fechar menu'], ['3*', 'Multiplicar quantidade']].map(([k, r]) => (
+      {/* Rodapé compacto: atalhos e situação do turno (detalhes em "Turno"). */}
+      <footer className="pdv-rodape pdv-noprint">
+        <div className="pdv-atalhos" aria-label="Atalhos de teclado">
+          {[['F2', 'Buscar'], ['F3', 'Cliente'], ['F4', 'Finalizar'], ['F5', 'Forma'], ['F6', 'Desconto'], ['F7', 'Sangria'], ['F8', 'Suprimento'], ['F9', 'Reimprimir'], ['Del', 'Remover item'], ['3*', 'Quantidade']].map(([k, r]) => (
             <span key={k}><kbd>{k}</kbd>{r}</span>
           ))}
         </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, fontSize: 12, whiteSpace: 'nowrap' }}>
+          <button type="button" className="admin-secondary" style={{ padding: '3px 10px', fontSize: 12 }} onClick={() => setMostrarTurno(true)}>📊 Turno: {resumo?.qtdVendas ?? 0} vendas · {brl(Number(resumo?.totalVendas ?? 0))}</button>
+          <span style={{ color: modoOffline ? '#d97706' : apiOk ? '#059669' : '#dc2626' }}>● {modoOffline ? `Offline · ${pendentesSync} pendente(s)` : apiOk ? 'Online' : 'Servidor indisponível'}</span>
+        </span>
       </footer>
 
       {/* Barra fixa de cobrança em tela pequena (celular/tablet). */}
       {caixa && (
         <div className="pdv-mobile-bar pdv-noprint">
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-            <div style={{ fontSize: 11, opacity: 0.65 }}>{carrinho.length} {carrinho.length === 1 ? 'item' : 'itens'}</div>
+            <div style={{ fontSize: 11, opacity: 0.65 }}>{carrinho.length} {carrinho.length === 1 ? 'item' : 'itens'} · {pagamentoFechado ? 'pago' : `falta ${brl(restante)}`}</div>
             <strong className="pdv-total">{brl(total)}</strong>
           </div>
           <button type="button" className="admin-primary pdv-btn-grad" style={{ flex: '0 0 auto', width: 'auto', padding: '14px 22px', fontSize: 15, borderRadius: 12 }}
-            disabled={!podeCobrar}
-            onClick={() => {
-              // Sem valor recebido ainda: leva o operador ao painel de pagamento.
-              if (!podeCobrar) return;
-              void cobrar();
-            }}>
-            Cobrar
+            disabled={!podeCobrar} onClick={() => void cobrar()}>
+            Finalizar
           </button>
           <button type="button" className="admin-secondary" aria-label="Ir para o pagamento" style={{ flex: '0 0 auto', width: 'auto', padding: '14px 14px', borderRadius: 12 }}
             onClick={() => document.getElementById('pdv-cobrar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>▲</button>
         </div>
+      )}
+
+      {mostrarTurno && (
+        <Modal titulo="Turno do caixa" onFechar={() => setMostrarTurno(false)}>
+          {resumo ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 12.5, marginBottom: 14 }}>
+              <span>Fundo de troco: <strong>{brl(resumo.fundoTroco)}</strong></span>
+              <span>Suprimentos: <strong>{brl(resumo.suprimentos)}</strong></span>
+              <span>Sangrias: <strong>{brl(resumo.sangrias)}</strong></span>
+              {Number(resumo.estornos) > 0 && (
+                <span title="Gerado automaticamente ao cancelar vendas pagas em dinheiro — não foi retirada manual.">Estornos: <strong>{brl(resumo.estornos)}</strong></span>
+              )}
+              <span style={{ gridColumn: '1 / -1' }}>Vendas em dinheiro: <strong>{brl(resumo.dinheiroVendas)}</strong>{Number(resumo.qtdVendas) > 0 ? ` · ${resumo.qtdVendas} venda${resumo.qtdVendas !== 1 ? 's' : ''} finalizada${resumo.qtdVendas !== 1 ? 's' : ''}` : ''}</span>
+              <span style={{ gridColumn: '1 / -1' }}>Ticket médio: <strong>{brl(Number(resumo.qtdVendas) > 0 ? Number(resumo.totalVendas) / Number(resumo.qtdVendas) : 0)}</strong></span>
+              <span style={{ gridColumn: '1 / -1' }}>
+                Esperado em gaveta: <strong>{brl(resumo.dinheiroEsperado)}</strong>
+                {Number(resumo.saldoRegistrado) !== Number(resumo.dinheiroEsperado) && <span style={{ opacity: 0.7 }}> · registrado: {brl(resumo.saldoRegistrado)}</span>}
+              </span>
+            </div>
+          ) : <p className="empty-state">Sem resumo do turno.</p>}
+          <h2 style={{ fontSize: 12, margin: '0 0 8px' }}>Vendas do turno</h2>
+          {erroVendasTurno ? <p className="admin-message admin-error">{erroVendasTurno}</p> : vendasTurno.length === 0 ? <p className="empty-state">Nenhuma venda neste turno ainda.</p> : (
+            <div className="admin-table" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+              {vendasTurno.map((v: any) => (
+                <div key={v.id} className="admin-list-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <strong>#{v.id.slice(-5)} · {brl(Number(v.total))} · {ROTULO_FORMA[v.formaPagamento] ?? v.formaPagamento}</strong>
+                    <span style={{ display: 'block', fontSize: 12, opacity: 0.75 }}>{new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {v.itens?.length ?? 0} {(v.itens?.length ?? 0) !== 1 ? 'itens' : 'item'}{v.cliente ? ` · ${v.cliente.nome}` : ''} · {v.status}</span>
+                  </div>
+                  {v.status === 'FINALIZADA' && (
+                    <button type="button" className="admin-secondary" disabled={cancelando === v.id} style={{ padding: '4px 10px', flexShrink: 0, opacity: cancelando === v.id ? 0.5 : 1 }} onClick={() => { setMostrarTurno(false); cancelarVenda(v); }}>
+                      {cancelando === v.id ? 'Cancelando…' : traduzir('cancelar', "Cancelar")}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {mostrarIntegracoes && (
+        <Modal titulo="Integrações PDV" onFechar={() => setMostrarIntegracoes(false)}>
+          <p style={{ fontSize: 12.5, opacity: 0.7, marginTop: 0 }}>Apenas integra via API, SDK, webhook ou banco oficialmente autorizado pelo fabricante — nunca simula dados de sincronização.</p>
+          <IntegracoesPDV />
+        </Modal>
       )}
 
       {/* Modais */}
