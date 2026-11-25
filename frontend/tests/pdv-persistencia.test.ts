@@ -74,3 +74,24 @@ test('Carrinho local é recuperável somente no escopo empresa/operador correto'
     assert.equal(banco.tables.some((tabela) => tabela.name === 'clientes'), false, 'cache local não deve guardar clientes/PII');
   } finally { await destruirBanco(banco); }
 });
+
+test('Pagamentos da venda (inclusive PIX já pago) sobrevivem a um recarregamento', async () => {
+  const banco = await novoBanco('cart-pagamentos');
+  try {
+    await salvarCarrinho({
+      ...contexto,
+      filialId: 'filial-a',
+      forma: 'DINHEIRO',
+      descontoGeral: 0,
+      itens: [{ produtoId: 'produto-1', nome: 'Produto', preco: 50, quantidade: 1, desconto: 0 }],
+      pagamentos: [
+        { id: 'p1', forma: 'DINHEIRO', valor: 20, recebido: 20 },
+        { id: 'p2', forma: 'PIX', valor: 30, referencia: 'txid-teste-1' },
+      ],
+    });
+    const recuperado = await recuperarCarrinho(contexto);
+    assert.equal(recuperado?.pagamentos?.length, 2);
+    assert.equal(recuperado?.pagamentos?.[1].referencia, 'txid-teste-1');
+    assert.equal(recuperado?.pagamentos?.[1].valor, 30);
+  } finally { await destruirBanco(banco); }
+});

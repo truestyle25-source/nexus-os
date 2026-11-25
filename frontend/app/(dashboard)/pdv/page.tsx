@@ -261,6 +261,12 @@ export default function PDV() {
   const restante = centavosParaReais(Math.max(0, reaisParaCentavos(total) - reaisParaCentavos(totalPago)));
   const excedente = reaisParaCentavos(totalPago) > reaisParaCentavos(total);
   const troco = centavosParaReais(pagamentosVenda.reduce((s, p) => s + (p.recebido != null ? reaisParaCentavos(p.recebido) - reaisParaCentavos(p.valor) : 0), 0));
+  // PIX já recebido: a venda não pode encolher (tirar itens, limpar, aumentar desconto),
+  // senão o pago passaria do total e a venda travaria com dinheiro do cliente dentro.
+  const temPixPago = pagamentosVenda.some((p) => p.forma === 'PIX');
+  const temPixPagoRef = useRef(false);
+  temPixPagoRef.current = temPixPago;
+  const avisoPix = 'Há PIX já pago nesta venda: não é possível retirar itens nem aumentar o desconto. Finalize a venda (e cancele depois, se preciso).';
   const pagamentoFechado = carrinho.length > 0 && total > 0 && restante === 0 && !excedente;
   const podeCobrar = !finalizando && !operacaoCarrinhoPendente && !descontoInvalido && pagamentoFechado;
   const subtotalBruto = carrinho.reduce((s, i) => s + i.preco * i.quantidade, 0);
@@ -521,7 +527,14 @@ export default function PDV() {
             setDescontoGeral(String(carrinhoSalvo.descontoGeral));
             setValorRecebido(carrinhoSalvo.valorRecebido ?? '');
             setParcelas(String(carrinhoSalvo.parcelas ?? 1));
-            setNotice('Carrinho recuperado localmente. Ele ainda não é uma venda confirmada.');
+            const pagamentosSalvos = carrinhoSalvo.pagamentos ?? [];
+            setPagamentosVenda(pagamentosSalvos);
+            setNotice(pagamentosSalvos.some((p) => p.forma === 'PIX')
+              ? 'Venda recuperada com PIX já pago. Confira os pagamentos e finalize a venda.'
+              : 'Carrinho recuperado localmente. Ele ainda não é uma venda confirmada.');
+          } else if ((carrinhoSalvo.pagamentos ?? []).some((p) => p.forma === 'PIX')) {
+            // Nunca descartar em silêncio uma venda com PIX já recebido.
+            setError(`Há uma venda com PIX já pago (${(carrinhoSalvo.pagamentos ?? []).filter((p) => p.forma === 'PIX').map((p) => brl(p.valor)).join(' + ')}) aberta em outra filial. Reabra o caixa daquela filial para finalizá-la.`);
           }
         } else {
           setOperacaoCarrinhoPendente(carrinhoSalvo.operacaoId);
@@ -599,8 +612,9 @@ export default function PDV() {
       valorRecebido,
       parcelas: Number(parcelas) || 1,
       itens: carrinho,
+      pagamentos: pagamentosVenda,
     }).catch(() => setError('Não foi possível salvar a recuperação local do carrinho.'));
-  }, [loading, contextoPdv, filialId, carrinho, clienteId, forma, descontoGeral, valorRecebido, parcelas]);
+  }, [loading, contextoPdv, filialId, carrinho, clienteId, forma, descontoGeral, valorRecebido, parcelas, pagamentosVenda]);
 
   // Relógio ao vivo do balcão (horário real do dispositivo)
   useEffect(() => {
@@ -690,6 +704,7 @@ export default function PDV() {
         if (e.key === 'Delete') {
           // Del fora de campos remove o último item do carrinho.
           e.preventDefault();
+          if (temPixPagoRef.current) { setError(avisoPix); return; }
           setCarrinho((a) => a.slice(0, -1));
         } else if (e.key.length === 1) {
           // Leitor de código de barras "sempre pronto": tecla digitada fora de
@@ -995,7 +1010,7 @@ export default function PDV() {
     } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
-  function limparCarrinho() { setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setPagamentosVenda([]); setAutorizacaoDesconto(null); }
+  function limparCarrinho() { if (temPixPagoRef.current) { setError(avisoPix); return; } setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setPagamentosVenda([]); setAutorizacaoDesconto(null); }
 
   /** Pede ao servidor a autorização do supervisor (e-mail + senha dele). */
   async function autorizarComSupervisor() {
@@ -1221,7 +1236,7 @@ export default function PDV() {
                 </span>
               )}</h2>
               {carrinho.length > 0 && (
-                <button type="button" className="admin-secondary" style={{ padding: '4px 12px', fontSize: 12, flexShrink: 0, color: '#f87171' }} onClick={() => { setCarrinho([]); setDescontoGeral('0'); }}>🗑 {traduzir('limpar', "Limpar")}</button>
+                <button type="button" className="admin-secondary" style={{ padding: '4px 12px', fontSize: 12, flexShrink: 0, color: '#f87171' }} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => { if (temPixPagoRef.current) { setError(avisoPix); return; } setCarrinho([]); setDescontoGeral('0'); }}>🗑 {traduzir('limpar', "Limpar")}</button>
               )}
             </div>
             <div className="pdv-scroll pdv-area-rolavel">
@@ -1245,16 +1260,16 @@ export default function PDV() {
                         <span style={{ fontSize: 11.5, opacity: 0.75 }}>{brl(i.preco)} × {i.quantidade} = <strong style={{ color: 'var(--nexus-accent-2)' }}>{brl(i.preco * i.quantidade - i.desconto)}</strong></span>
                       </div>
                       <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
-                        <button type="button" className="admin-secondary pdv-mini" onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
+                        <button type="button" className="admin-secondary pdv-mini" disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
                         {i.fracionado ? (
-                          <input type="number" min="0.001" step="0.001" aria-label={`Quantidade de ${i.nome}`} value={i.quantidade}
+                          <input type="number" min="0.001" step="0.001" aria-label={`Quantidade de ${i.nome}`} value={i.quantidade} disabled={temPixPago}
                             onChange={(e) => { const r = alterarQuantidade(carrinho, i.produtoId, Math.round(Number(e.target.value) * 1000) / 1000); setCarrinho(r.itens); setError(r.erro); }}
                             style={{ width: 64, padding: '2px 6px', fontSize: 12.5, textAlign: 'right' }} />
                         ) : (
                           <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700, fontSize: 13 }}>{i.quantidade}</span>
                         )}
                         <button type="button" className="admin-secondary pdv-btn-grad pdv-mini" aria-label={`Aumentar ${i.nome}`} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
-                        <button type="button" className="admin-secondary pdv-mini" aria-label={`Remover ${i.nome}`} style={{ color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
+                        <button type="button" className="admin-secondary pdv-mini" aria-label={`Remover ${i.nome}`} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} style={{ color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
                       </div>
                     </div>
                   ))}
@@ -1272,7 +1287,7 @@ export default function PDV() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 13 }}>
                 <span style={{ opacity: 0.75 }}>Desconto (R$) <kbd className="pdv-kbd">F6</kbd></span>
-                <input ref={descontoRef} aria-label="Desconto da venda em reais" type="number" min="0" step="0.01" value={descontoGeral} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 90, padding: '4px 8px', fontSize: 13, textAlign: 'right' }} />
+                <input ref={descontoRef} aria-label="Desconto da venda em reais" type="number" min="0" step="0.01" value={descontoGeral} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onChange={(e) => setDescontoGeral(e.target.value)} style={{ width: 90, padding: '4px 8px', fontSize: 13, textAlign: 'right' }} />
               </div>
               {descontoInvalido && <p role="alert" style={{ margin: 0, color: '#fbbf24', fontSize: 11.5 }}>{descontoInformado < 0 ? 'O desconto não pode ser negativo.' : 'O desconto não pode superar o subtotal.'}</p>}
               <div className="pdv-total-box">

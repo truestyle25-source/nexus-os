@@ -11,7 +11,7 @@ import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotencia.js';
 import { lerAutorizacaoSupervisor } from '../pdv/autorizacao-supervisor.js';
 import { dataNoFuso, dataOperacionalDate } from '../../lib/fuso.js';
-import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado } from '../payments/pixProvider.js';
+import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado, verificarPagamentoPix } from '../payments/pixProvider.js';
 import { expandirKitParaVenda, produtoEhTipoKit } from '../produtos/kit.service.js';
 
 // ============================================================================
@@ -286,6 +286,21 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
       if (!pixProviderConfigurado && formasPagamentoSolicitadas.includes('PIX')) {
         throw new ErroDeNegocio(mensagemPixProviderIndisponivel, 503);
       }
+      // PIX só entra com o código (txid) de cada pagamento, conferido no
+      // provedor (pago e com o valor certo) e nunca repetido na mesma venda.
+      const pixDaVenda = (data.pagamentos ?? []).filter((p) => p.forma === 'PIX');
+      if (formasPagamentoSolicitadas.includes('PIX')) {
+        if (!data.pagamentos || pixDaVenda.some((p) => !p.referencia?.trim())) {
+          throw new ErroDeNegocio('Cada pagamento PIX precisa do código de confirmação do provedor.', 422);
+        }
+        const codigos = pixDaVenda.map((p) => p.referencia!.trim());
+        if (new Set(codigos).size !== codigos.length) {
+          throw new ErroDeNegocio('O mesmo PIX foi informado duas vezes nesta venda.', 422);
+        }
+        for (const p of pixDaVenda) {
+          await verificarPagamentoPix({ txid: p.referencia!.trim(), valor: arred2(p.valor), empresaId: user.empresaId });
+        }
+      }
       if (!tefProviderConfigurado && formasPagamentoSolicitadas.some((forma) => forma === 'CARTAO_CREDITO' || forma === 'CARTAO_DEBITO')) {
         throw new ErroDeNegocio('Cartão indisponível: nenhum provider TEF oficial está configurado.', 503);
       }
@@ -332,6 +347,20 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         if (data.clienteId) {
           const cliente = await tx.cliente.findFirst({ where: { id: data.clienteId, empresaId: user.empresaId } });
           if (!cliente) throw NaoEncontrado('Cliente inválido para esta empresa.');
+        }
+
+        // Um PIX paga UMA venda só: bloqueia o código (contra duas vendas
+        // simultâneas) e recusa se ele já está gravado em outra venda.
+        if (pixDaVenda.length > 0) {
+          const codigos = pixDaVenda.map((p) => p.referencia!.trim());
+          for (const codigo of [...codigos].sort()) {
+            await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`pix:${user.empresaId}:${codigo}`}, 0)) IS NULL AS "ok"`;
+          }
+          const jaUsado = await tx.vendaPagamento.findFirst({
+            where: { empresaId: user.empresaId, forma: 'PIX', referencia: { in: codigos } },
+            select: { vendaId: true, referencia: true },
+          });
+          if (jaUsado) throw Conflito(`Este PIX (${jaUsado.referencia}) já foi usado na venda ${jaUsado.vendaId}.`);
         }
 
         let caixaTurno: { id: string } | null = null;
