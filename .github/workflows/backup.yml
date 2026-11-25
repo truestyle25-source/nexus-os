@@ -103,7 +103,7 @@ jobs:
           echo "enviado=true" >> "$GITHUB_OUTPUT"
 
       - name: Guardar como artefato (cifrado)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backup-${{ env.BACKUP_BASE }}
           path: |
