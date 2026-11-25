@@ -227,7 +227,9 @@ export async function pdvRoutes(app: FastifyInstance) {
     if (!caixa) return { vendas: [] };
     const vendas = await prisma.venda.findMany({
       where: { empresaId: req.user.empresaId, caixaId: caixa.id },
-      include: { itens: true, cliente: { select: { nome: true } } },
+      // `pagamentos` permite à janela de cancelamento mostrar quanto em
+      // dinheiro sai da gaveta (pagamento misto).
+      include: { itens: true, cliente: { select: { nome: true } }, pagamentos: { select: { forma: true, valor: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
