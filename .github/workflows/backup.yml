@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 45
     services:
       verificacao:
-        image: postgres:17
+        image: pgvector/pgvector:pg17 # precisa da extensão vector (NEXUS AI)
         env:
           POSTGRES_PASSWORD: verificacao
         ports: ['5432:5432']
