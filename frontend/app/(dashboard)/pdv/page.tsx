@@ -1143,7 +1143,7 @@ export default function PDV() {
                       {String(p.codigoBarras ?? '') !== '' && (
                         <span aria-hidden style={{ position: 'absolute', left: 6, top: 6, fontSize: 9.5, fontWeight: 700, padding: '3px 6px', borderRadius: 6, background: 'rgba(10,9,15,.78)', border: '1px solid rgba(255,255,255,.14)', color: '#e5e7eb', fontFamily: 'monospace' }}> {String(p.codigoBarras).slice(-4)}</span>
                       )}
-                      <span aria-hidden style={{ position: 'absolute', right: 6, top: 6, fontSize: 9.5, fontWeight: 800, padding: '3px 7px', borderRadius: 999, background: p.estoqueFilial > 10 ? 'rgba(16,185,129,.16)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.16)' : 'rgba(239,68,68,.16)', border: `1px solid ${p.estoqueFilial > 10 ? 'rgba(16,185,129,.45)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.45)' : 'rgba(239,68,68,.45)'}`, color: p.estoqueFilial > 10 ? '#34d399' : p.estoqueFilial > 0 ? '#fbbf24' : '#f87171' }}>{p.estoqueFilial} unidade${p.estoqueFilial !== 1 ? 's' : ''}</span>
+                      <span aria-hidden style={{ position: 'absolute', right: 6, top: 6, fontSize: 9.5, fontWeight: 800, padding: '3px 7px', borderRadius: 999, background: p.estoqueFilial > 10 ? 'rgba(16,185,129,.16)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.16)' : 'rgba(239,68,68,.16)', border: `1px solid ${p.estoqueFilial > 10 ? 'rgba(16,185,129,.45)' : p.estoqueFilial > 0 ? 'rgba(245,158,11,.45)' : 'rgba(239,68,68,.45)'}`, color: p.estoqueFilial > 10 ? '#34d399' : p.estoqueFilial > 0 ? '#fbbf24' : '#f87171' }}>{p.estoqueFilial} {p.vendaFracionada ? 'em estoque' : `unidade${p.estoqueFilial !== 1 ? 's' : ''}`}</span>
                     </span>
                     <strong style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 13, lineHeight: 1.25, minHeight: 33 }}>{p.nome}</strong>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
@@ -1161,7 +1161,7 @@ export default function PDV() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                 <h2 style={{ margin: 0 }}>Carrinho {carrinho.length > 0 && (
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, padding: '3px 9px', borderRadius: 999, background: 'rgba(139,92,246,.16)', border: '1px solid rgba(139,92,246,.4)', color: 'var(--nexus-accent-2)', marginLeft: 6 }}>
-                    {carrinho.length} itens • {carrinho.reduce((s, i) => s + i.quantidade, 0)} un
+                    {carrinho.length} itens • {Math.round(carrinho.reduce((s, i) => s + i.quantidade, 0) * 1000) / 1000} un
                   </span>
                 )}</h2>
                 {carrinho.length > 0 && (
@@ -1351,7 +1351,7 @@ export default function PDV() {
                     <div key={v.id} className="admin-list-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <div style={{ minWidth: 0 }}>
                         <strong>#{v.id.slice(-5)} · {brl(Number(v.total))} · {ROTULO_FORMA[v.formaPagamento] ?? v.formaPagamento}</strong>
-                        <span>{new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {v.itens?.length ?? 0} item${(v.itens?.length ?? 0) !== 1 ? 's' : ''}{v.cliente ? ` · ${v.cliente.nome}` : ''} · {v.status}</span>
+                        <span>{new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · {v.itens?.length ?? 0} {(v.itens?.length ?? 0) !== 1 ? 'itens' : 'item'}{v.cliente ? ` · ${v.cliente.nome}` : ''} · {v.status}</span>
                       </div>
                       {v.status === 'FINALIZADA' && (
                         // O botão reflecte o cancelamento em curso para que
@@ -1394,11 +1394,11 @@ export default function PDV() {
       {/* Barra fixa de cobrança em tela pequena (celular/tablet). */}
       {caixa && (
         <div className="pdv-mobile-bar pdv-noprint">
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: '1 1 auto', minWidth: 0 }}>
             <div style={{ fontSize: 11, opacity: 0.65 }}>{carrinho.length} {carrinho.length === 1 ? 'item' : 'itens'}</div>
             <strong className="pdv-total">{brl(total)}</strong>
           </div>
-          <button type="button" className="admin-primary pdv-btn-grad" style={{ padding: '14px 22px', fontSize: 15, borderRadius: 12 }}
+          <button type="button" className="admin-primary pdv-btn-grad" style={{ flex: '0 0 auto', width: 'auto', padding: '14px 22px', fontSize: 15, borderRadius: 12 }}
             disabled={!podeCobrar}
             onClick={() => {
               // Sem valor recebido ainda: leva o operador ao painel de pagamento.
@@ -1407,7 +1407,7 @@ export default function PDV() {
             }}>
             Cobrar
           </button>
-          <button type="button" className="admin-secondary" aria-label="Ir para o pagamento" style={{ padding: '14px 12px', borderRadius: 12 }}
+          <button type="button" className="admin-secondary" aria-label="Ir para o pagamento" style={{ flex: '0 0 auto', width: 'auto', padding: '14px 14px', borderRadius: 12 }}
             onClick={() => document.getElementById('pdv-cobrar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>▲</button>
         </div>
       )}
