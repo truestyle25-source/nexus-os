@@ -3,7 +3,12 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
-import { resumoDoCaixa } from '../../modules/pdv/pdv.service.js';
+import { resumoDoCaixa, centavos, reais } from '../../modules/pdv/pdv.service.js';
+
+/** Diferença tolerada no fechamento sem gerar divergência: R$ 5,00. */
+export const LIMITE_DIVERGENCIA_CENTAVOS = 500;
+/** Tamanho mínimo da justificativa quando a diferença passa do limite. */
+export const JUSTIFICATIVA_MINIMA = 10;
 
 import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
@@ -305,10 +310,16 @@ export async function pdvRoutes(app: FastifyInstance) {
   });
 
   app.post('/pdv/caixa/fechar', { preHandler: [app.authenticate, await permissaoMiddleware('pdv', 'editar')] }, async (req:any) => {
+    // Contagem OBRIGATÓRIA: antes dava para fechar sem contar, e a quebra de
+    // caixa passava em branco. Diferença acima do limite exige justificativa
+    // e vira um registro em DivergenciaCaixa (ABERTA) para o gerente revisar.
+    if (typeof req.body?.valorContado !== 'number') {
+      throw new ErroDeNegocio('Informe o valor contado na gaveta para fechar o caixa.', 422);
+    }
     const data = z.object({
-      valorContado: z.number().min(0).optional(),
-      observacao: z.string().max(300).optional(),
-    }).parse(req.body);
+      valorContado: z.number().min(0),
+      observacao: z.string().trim().max(300).optional(),
+    }).parse(req.body ?? {});
     const fechamento = await prisma.$transaction(async (tx) => {
       // O mesmo row lock é usado por POST /vendas quando recebe caixaId:
       // venda primeiro => ela entra no resumo; fechamento primeiro => venda
@@ -332,18 +343,43 @@ export async function pdvRoutes(app: FastifyInstance) {
         tx.movimentacaoCaixa.findMany({ where: { caixaId: caixa.id }, orderBy: { createdAt: 'desc' } }),
       ]);
       const resumo = resumoDoCaixa(caixa, vendas, movimentacoes);
-      const diferenca = data.valorContado === undefined ? null : data.valorContado - resumo.dinheiroEsperado;
+      const diferencaC = centavos(data.valorContado) - centavos(resumo.dinheiroEsperado);
+      const diferenca = reais(diferencaC);
+      const acimaDoLimite = Math.abs(diferencaC) > LIMITE_DIVERGENCIA_CENTAVOS;
+      const justificativa = data.observacao || null;
+      if (acimaDoLimite && (!justificativa || justificativa.length < JUSTIFICATIVA_MINIMA)) {
+        throw new ErroDeNegocio(
+          `Diferença de R$ ${diferenca.toFixed(2)} entre o contado e o esperado (R$ ${resumo.dinheiroEsperado.toFixed(2)}). Escreva uma justificativa (mínimo ${JUSTIFICATIVA_MINIMA} caracteres) para fechar o caixa.`,
+          422,
+        );
+      }
       const caixaFechado = await tx.caixa.update({
         where: { id: caixa.id },
-        data: { status: 'FECHADO', fechadoEm: new Date(), valorContado: data.valorContado ?? null, diferenca, observacaoFechamento: data.observacao ?? null },
+        data: { status: 'FECHADO', fechadoEm: new Date(), valorContado: data.valorContado, diferenca, observacaoFechamento: justificativa },
       });
-      return { caixa, caixaFechado, resumo };
+      const divergencia = acimaDoLimite
+        ? await tx.divergenciaCaixa.create({
+            data: {
+              empresaId: req.user.empresaId,
+              caixaId: caixa.id,
+              tipo: diferencaC < 0 ? 'FALTA_NO_FECHAMENTO' : 'SOBRA_NO_FECHAMENTO',
+              descricao: `Fechamento com ${diferencaC < 0 ? 'falta' : 'sobra'} de R$ ${Math.abs(diferenca).toFixed(2)}.`,
+              valorEsperado: resumo.dinheiroEsperado,
+              valorInformado: data.valorContado,
+              diferenca,
+              status: 'ABERTA',
+              operadorId: req.user.id,
+              justificativa,
+            },
+          })
+        : null;
+      return { caixa, caixaFechado, resumo, divergencia };
     });
     await registrarAuditoria({
       usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Caixa', entidadeId: fechamento.caixa.id,
       valorNovo: fechamento.caixaFechado, origem: 'MANUAL', ip: req.ip,
       contexto: `Fechamento de caixa: ${JSON.stringify(fechamento.resumo)}`,
     });
-    return { caixa: fechamento.caixaFechado, resumo: fechamento.resumo };
+    return { caixa: fechamento.caixaFechado, resumo: fechamento.resumo, divergencia: fechamento.divergencia };
   });
 }

@@ -43,10 +43,17 @@ function difere(a: number, b: number): boolean {
 //
 // Ajuste aqui para refletir a política da empresa; isto é fonte única.
 // ============================================================================
+/** Motivo mínimo exigido do operador de PDV ao cancelar uma venda. */
+export const MOTIVO_MINIMO_CANCELAMENTO = 10;
+
 const ALCADAS_DESCONTO: Array<{ ate: number; permissoes: Array<{ modulo: string; acao: string }>; rotulo: string }> = [
   { ate: 10, permissoes: [{ modulo: 'vendas', acao: 'criar' }, { modulo: 'pdv', acao: 'criar' }], rotulo: 'operador' },
-  { ate: 30, permissoes: [{ modulo: 'vendas', acao: 'desconto' }, { modulo: 'vendas', acao: 'editar' }, { modulo: 'pdv', acao: 'editar' }], rotulo: 'supervisor' },
-  { ate: 100, permissoes: [{ modulo: 'vendas', acao: 'desconto' }, { modulo: 'vendas', acao: 'gerente' }, { modulo: 'pdv', acao: 'editar' }], rotulo: 'gerente' },
+  // `pdv:editar` NÃO entra aqui: é a permissão que todo operador de caixa
+  // precisa para sangria e fechamento, e por isso dava a qualquer caixa a
+  // alçada de gerente (até 100% de desconto). As faixas usam permissões
+  // próprias; quem tem a do gerente também cobre a faixa do supervisor.
+  { ate: 30, permissoes: [{ modulo: 'vendas', acao: 'desconto_supervisor' }, { modulo: 'vendas', acao: 'desconto_gerente' }, { modulo: 'vendas', acao: 'desconto' }, { modulo: 'vendas', acao: 'editar' }, { modulo: 'vendas', acao: 'gerente' }], rotulo: 'supervisor' },
+  { ate: 100, permissoes: [{ modulo: 'vendas', acao: 'desconto_gerente' }, { modulo: 'vendas', acao: 'desconto' }, { modulo: 'vendas', acao: 'gerente' }], rotulo: 'gerente' },
 ];
 
 /** Descobre a alçada necessária e valida se o usuário a possui. */
@@ -651,9 +658,24 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           estornarFinanceiro: z.boolean().default(true),
         })
         .parse(req.body ?? {});
+      // Quem entra só por `pdv:editar` (operador de caixa) tem regras mais
+      // estritas: antes ele podia cancelar QUALQUER venda da empresa, sem
+      // motivo e escolhendo não devolver o dinheiro à gaveta. Agora: motivo
+      // digitado obrigatório, só vendas do próprio turno aberto e estorno
+      // completo. Quem tem `vendas:editar` (aba Vendas) segue como antes.
+      const gestorVendas = await prisma.permissao.findFirst({
+        where: { usuarioId: user.id, modulo: 'vendas', acao: 'editar', permitido: true },
+        select: { id: true },
+      });
+      const somenteOperadorPdv = !gestorVendas;
+      if (somenteOperadorPdv) {
+        if (!body.motivo || body.motivo.length < MOTIVO_MINIMO_CANCELAMENTO) {
+          throw new ErroDeNegocio(`Informe o motivo do cancelamento (mínimo ${MOTIVO_MINIMO_CANCELAMENTO} caracteres).`, 422);
+        }
+        body.estornarEstoque = true;
+        body.estornarFinanceiro = true;
+      }
       const motivoCancelamento = body.motivo ?? `Cancelamento venda ${id}`;
-
-
 
       const vendaCancelada = await prisma.$transaction(async (tx) => {
         const bloqueios = await tx.$queryRaw<Array<{ id: string }>>`
@@ -665,6 +687,14 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         const venda = await tx.venda.findUnique({ where: { id }, include: { itens: true, pagamentos: true } });
         if (!venda) throw NaoEncontrado('Venda não encontrada nesta empresa.');
         if (venda.status !== 'FINALIZADA') throw Conflito(`Venda com status ${venda.status} não pode ser estornada novamente.`);
+        if (somenteOperadorPdv) {
+          const turno = venda.caixaId
+            ? await tx.caixa.findFirst({ where: { id: venda.caixaId, empresaId: user.empresaId, usuarioId: user.id, status: 'ABERTO' }, select: { id: true } })
+            : null;
+          if (!turno) {
+            throw new ErroDeNegocio('No PDV só é possível cancelar vendas do seu turno de caixa aberto. Peça a um supervisor para cancelar esta venda.', 403);
+          }
+        }
 
         // O status vira CANCELADA AQUI, antes de qualquer recálculo derivado.
         // Este era um defeito real: o bloco do cliente lá embaixo filtra

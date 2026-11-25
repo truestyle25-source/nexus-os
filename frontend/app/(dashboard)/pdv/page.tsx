@@ -564,16 +564,18 @@ export default function PDV() {
     setFechando(true);
     try {
       const { data } = await api.post('/pdv/caixa/fechar', {
-        valorContado: valorContado === '' ? undefined : Number(valorContado),
-        observacao: obsFechamento || undefined,
+        valorContado: Number(valorContado),
+        observacao: obsFechamento.trim() || undefined,
       });
-      const d = data.diferenca;
+      // A diferença vem dentro de `caixa` (antes era lida no topo da resposta,
+      // onde nunca existiu, e a mensagem de diferença nunca aparecia).
+      const d = data.caixa?.diferenca;
       setMostrarFechar(false); setValorContado(''); setObsFechamento('');
       setNotice(d === null || d === undefined
         ? `Caixa fechado. Vendas do turno: ${brl(data.resumo?.totalVendas ?? 0)}.`
-        : `Caixa fechado. Diferença em gaveta: ${brl(Number(d))} (contado ${brl(data.valorContado ? Number(data.valorContado) : 0)} vs esperado ${brl(data.resumo?.dinheiroEsperado ?? 0)}).`);
+        : `Caixa fechado. Diferença em gaveta: ${brl(Number(d))} (contado ${brl(Number(data.caixa?.valorContado ?? 0))} vs esperado ${brl(data.resumo?.dinheiroEsperado ?? 0)}).${data.divergencia ? ' A diferença foi registrada para revisão do gerente.' : ''}`);
       setCarrinho([]); await carregarCaixa();
-    } catch (err: any) { setError(err.response?.data?.error || 'Não foi possível fechar o caixa.'); }
+    } catch (err: any) { setError(err.response?.data?.message || err.response?.data?.error || 'Não foi possível fechar o caixa.'); }
     finally { fechandoRef.current = false; setFechando(false); }
   }
 
@@ -1183,13 +1185,13 @@ export default function PDV() {
       {mostrarFechar && (
         <Modal titulo="Fechar caixa" onFechar={() => setMostrarFechar(false)}>
           {resumo && <p style={{ fontSize: 12.5, opacity: 0.8, marginBottom: 12 }}>Dinheiro esperado em gaveta: <strong>{brl(resumo.dinheiroEsperado)}</strong></p>}
-          <label style={estiloLabel}>Valor contado na gaveta (R$) — opcional
-            <input type="number" min="0" step="0.01" value={valorContado} onChange={(e) => setValorContado(e.target.value)} autoFocus />
+          <label style={estiloLabel}>Valor contado na gaveta (R$) — obrigatório
+            <input type="number" min="0" step="0.01" required value={valorContado} onChange={(e) => setValorContado(e.target.value)} autoFocus />
           </label>
-          <label style={estiloLabel}>Observação (opcional)
+          <label style={estiloLabel}>Observação (obrigatória se a diferença passar de R$ 5,00)
             <input value={obsFechamento} onChange={(e) => setObsFechamento(e.target.value)} maxLength={300} />
           </label>
-          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={fechando} onClick={fecharCaixa}>{fechando ? 'Fechando⬦' : 'Fechar caixa'}</button>
+          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={fechando || valorContado === ''} onClick={fecharCaixa}>{fechando ? 'Fechando…' : 'Fechar caixa'}</button>
         </Modal>
       )}
       {cupom && (

@@ -23,31 +23,47 @@ import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 
 /** Calcula o resumo do caixa a partir das vendas e movimentações. */
 export function resumoDoCaixa(caixa: { id: string; fundoTroco: unknown; saldo: unknown; abertoEm: Date }, vendas: Array<{ formaPagamento: string; total: unknown; status: string; pagamentos?: Array<{ forma: string; valor: unknown }> }>, movimentacoes: Array<{ tipo: string; valor: unknown; origem?: string }>) {
-  const porForma: Record<string, number> = {};
-  let totalVendas = 0;
+  // Toda a conta é feita em CENTAVOS inteiros e só volta a reais no fim:
+  // somar `Number` de reais acumula erro de ponto flutuante (0,1 + 0,2).
+  const porFormaC: Record<string, number> = {};
+  let totalVendasC = 0;
   let qtdVendas = 0;
-  let dinheiroVendas = 0;
+  let dinheiroVendasC = 0;
   for (const v of vendas) {
-    const total = Number(v.total);
     const pagamentos = v.pagamentos?.length ? v.pagamentos : [{ forma: v.formaPagamento, valor: v.total }];
     // O valor pago continua sendo caixa recebido mesmo quando a venda foi
     // cancelada; a devolução correspondente é contabilizada em `estornos`.
-    dinheiroVendas += pagamentos.filter((p) => p.forma === 'DINHEIRO').reduce((s, p) => s + Number(p.valor), 0);
+    dinheiroVendasC += pagamentos.filter((p) => p.forma === 'DINHEIRO').reduce((s, p) => s + centavos(p.valor), 0);
     if (v.status !== 'FINALIZADA') continue;
-    totalVendas += total;
+    totalVendasC += centavos(v.total);
     qtdVendas += 1;
     for (const pagamento of pagamentos) {
-      porForma[pagamento.forma] = (porForma[pagamento.forma] ?? 0) + Number(pagamento.valor);
+      porFormaC[pagamento.forma] = (porFormaC[pagamento.forma] ?? 0) + centavos(pagamento.valor);
     }
   }
   const saidas = movimentacoes.filter((m) => m.tipo === 'SANGRIA');
   // `origem` ausente em registro antigo é tratado como MANUAL: sem esse
   // fallback, todo estorno já gravado passaria a contar como manual e o
   // número da tela voltaria a misturar os dois.
-  const estornos = saidas.filter((m) => m.origem === 'AUTOMATICO').reduce((s, m) => s + Number(m.valor), 0);
-  const sangrias = saidas.filter((m) => m.origem !== 'AUTOMATICO').reduce((s, m) => s + Number(m.valor), 0);
-  const suprimentos = movimentacoes.filter((m) => m.tipo === 'SUPRIMENTO').reduce((s, m) => s + Number(m.valor), 0);
-  const fundoTroco = Number(caixa.fundoTroco);
-  const dinheiroEsperado = fundoTroco + suprimentos + dinheiroVendas - sangrias - estornos;
-  return { totalVendas, qtdVendas, porForma, dinheiroVendas, fundoTroco, sangrias, suprimentos, estornos, dinheiroEsperado, saldoRegistrado: Number(caixa.saldo), abertoEm: caixa.abertoEm };
+  const estornosC = saidas.filter((m) => m.origem === 'AUTOMATICO').reduce((s, m) => s + centavos(m.valor), 0);
+  const sangriasC = saidas.filter((m) => m.origem !== 'AUTOMATICO').reduce((s, m) => s + centavos(m.valor), 0);
+  const suprimentosC = movimentacoes.filter((m) => m.tipo === 'SUPRIMENTO').reduce((s, m) => s + centavos(m.valor), 0);
+  const fundoTrocoC = centavos(caixa.fundoTroco);
+  const dinheiroEsperadoC = fundoTrocoC + suprimentosC + dinheiroVendasC - sangriasC - estornosC;
+  const porForma = Object.fromEntries(Object.entries(porFormaC).map(([f, c]) => [f, reais(c)]));
+  return {
+    totalVendas: reais(totalVendasC), qtdVendas, porForma, dinheiroVendas: reais(dinheiroVendasC), fundoTroco: reais(fundoTrocoC),
+    sangrias: reais(sangriasC), suprimentos: reais(suprimentosC), estornos: reais(estornosC), dinheiroEsperado: reais(dinheiroEsperadoC),
+    saldoRegistrado: Number(caixa.saldo), abertoEm: caixa.abertoEm,
+  };
+}
+
+/** Converte um valor monetário (Decimal, string ou number) para centavos inteiros. */
+export function centavos(valor: unknown): number {
+  return Math.round(Number(valor) * 100);
+}
+
+/** Converte centavos inteiros de volta para reais. */
+export function reais(c: number): number {
+  return c / 100;
 }
