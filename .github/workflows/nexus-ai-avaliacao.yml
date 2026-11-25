@@ -62,7 +62,7 @@ jobs:
             echo "::error::Segredo GEMINI_API_KEY não configurado no repositório: a avaliação real da NEXUS AI não pode rodar."
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
