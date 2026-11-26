@@ -28,6 +28,9 @@ import { t as traduzir, tMenu } from '@/lib/i18n';
 // dados) e não é uma aba nova: o layout do RH não muda.
 import GestaoTempoPainel from '@/components/rh/GestaoTempoPainel';
 
+/** Cargos de referência do sistema (mesmos do backend: OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR). */
+const CARGOS_REFERENCIA = [{ valor: 'OPERADOR', rotulo: 'Operador' }, { valor: 'SUPERVISOR', rotulo: 'Supervisor' }, { valor: 'FINANCEIRO', rotulo: 'Financeiro / RH' }, { valor: 'GESTOR', rotulo: 'Gestor' }];
+
 type Aba = 'funcionarios' | 'presenca' | 'desempenho' | 'advertencias' | 'suspensoes' | 'desligamento' | 'folha' | 'espelho';
 
 const ABAS: { key: Aba; label: string; icon: any }[] = [
@@ -1215,6 +1218,8 @@ export default function RH() {
   const [depNome, setDepNome] = useState('');
   const [cargoNome, setCargoNome] = useState('');
   const [cargoDep, setCargoDep] = useState('');
+  // Cargo de referência do sistema: define o acesso do login de quem está neste cargo.
+  const [cargoRef, setCargoRef] = useState('');
   // id em edição: null = criando. Os formulários de criar e de editar são o
   // mesmo, com o rótulo do botão trocando — evita dois formulários parecidos.
   const [editandoDep, setEditandoDep] = useState<string | null>(null);
@@ -1273,14 +1278,15 @@ export default function RH() {
         // `departamentoId: null` desvincula; enviar o id move para outro
         // departamento. A distinção existe porque o backend trata as duas
         // coisas de forma diferente.
-        await api.put(`/cargos/${editandoCargo}`, { nome: cargoNome, departamentoId: cargoDep || null });
-        setNotice(traduzir('cargo_atualizado', 'Cargo atualizado.'));
+        const r: any = await api.put(`/cargos/${editandoCargo}`, { nome: cargoNome, departamentoId: cargoDep || null, cargoReferencia: cargoRef || null });
+        const n = Number(r?.loginsAtualizados ?? r?.data?.loginsAtualizados ?? 0);
+        setNotice(n > 0 ? `Cargo atualizado. Acesso de ${n} login(s) atualizado.` : traduzir('cargo_atualizado', 'Cargo atualizado.'));
         setEditandoCargo(null);
       } else {
-        await api.post('/cargos', { nome: cargoNome, departamentoId: cargoDep || undefined });
+        await api.post('/cargos', { nome: cargoNome, departamentoId: cargoDep || undefined, cargoReferencia: cargoRef || undefined });
         setNotice(traduzir('cargo_criado', 'Cargo criado.'));
       }
-      setCargoNome(''); setCargoDep('');
+      setCargoNome(''); setCargoDep(''); setCargoRef('');
       await load();
     } catch (err: any) { setError(msgErro(err, traduzir('falha_cargo', 'Falha ao salvar cargo.'))); }
   }
@@ -1289,6 +1295,7 @@ export default function RH() {
     setEditandoCargo(c.id);
     setCargoNome(c.nome ?? '');
     setCargoDep(c.departamentoId ?? '');
+    setCargoRef(c.cargoReferencia ?? '');
   }
 
   /** Exclui um cargo — recusado (409) pelo servidor se houver funcionário vinculado. */
@@ -2351,19 +2358,25 @@ export default function RH() {
                       {deps.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
                     </select>
                   </label>
+                  <label title="Define o que o login de quem está neste cargo pode acessar">Acesso no sistema<select value={cargoRef} onChange={(e) => setCargoRef(e.target.value)}>
+                      <option value="">Sem referência</option>
+                      {CARGOS_REFERENCIA.map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
+                    </select>
+                  </label>
                   <button className="admin-primary" type="submit">{editandoCargo ? traduzir('salvar', "Salvar") : traduzir('criar', "Criar")}</button>
                   {editandoCargo && (
-                    <button className="admin-secondary" type="button" onClick={() => { setEditandoCargo(null); setCargoNome(''); setCargoDep(''); }}>
+                    <button className="admin-secondary" type="button" onClick={() => { setEditandoCargo(null); setCargoNome(''); setCargoDep(''); setCargoRef(''); }}>
                       {traduzir('cancelar', "Cancelar")}
                     </button>
                   )}
                 </form>
                 <table className="admin-simple-table">
-                  <thead><tr><th>{traduzir('nome', "Nome")}</th><th>{traduzir('departamento', "Departamento")}</th><th></th></tr></thead>
+                  <thead><tr><th>{traduzir('nome', "Nome")}</th><th>{traduzir('departamento', "Departamento")}</th><th>Acesso no sistema</th><th></th></tr></thead>
                   <tbody>{cargos.map((c: any) => (
                     <tr key={c.id}>
                       <td>{c.nome}</td>
                       <td>{c.departamento?.nome || '—'}</td>
+                      <td>{CARGOS_REFERENCIA.find((r) => r.valor === c.cargoReferencia)?.rotulo || '—'}</td>
                       <td>
                         <button className="admin-secondary" type="button" onClick={() => editarCargo(c)}>{traduzir('editar', "Editar")}</button>
                         <button className="admin-secondary" type="button" onClick={() => excluirCargo(c.id, c.nome)}>{traduzir('excluir', "Excluir")}</button>

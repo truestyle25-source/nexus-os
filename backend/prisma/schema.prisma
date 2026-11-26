@@ -1706,6 +1706,9 @@ model Cargo {
   departamento   Departamento? @relation(fields: [departamentoId], references: [id])
   nome           String
   descricao      String?
+  /// Cargo de referência do sistema (OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR).
+  /// O login do funcionário neste cargo recebe os acessos desse cargo.
+  cargoReferencia String?
   createdAt      DateTime      @default(now())
   funcionarios   Funcionario[]
 

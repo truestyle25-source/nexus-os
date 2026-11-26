@@ -9,6 +9,7 @@ import { MODULOS, ACOES } from '../../lib/permissoes.js';
 import { PERMISSOES_ESPECIAIS, ehPermissaoEspecial, CARGOS, permissoesDoCargo, ROTULO_CARGO } from '../../lib/permissoes-catalogo.js';
 import { Conflito, NaoEncontrado } from '../../lib/erros.js';
 import { comoSistema } from '../../lib/tenant-context.js';
+import { aplicarCargoAoUsuario, cargoRhDoUsuario } from '../../lib/cargo-usuario.js';
 
 const origemSchema = z.enum(['MANUAL', 'IMPORTADO', 'API', 'AUTOMATICO']);
 // Valida modulo/acao contra o catálogo central (lib/permissoes.ts) em vez de
@@ -27,10 +28,20 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
     '/usuarios',
     { preHandler: [app.authenticate, await permissaoMiddleware('usuarios', 'visualizar')] },
     async (req: FastifyRequest) => {
-      return prisma.usuario.findMany({
+      const usuarios = await prisma.usuario.findMany({
         where: { empresaId: req.user.empresaId },
         select: { id: true, nome: true, email: true, status: true, filialId: true, setorId: true, origem: true, cargo: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
+      });
+      // Login ligado a um funcionário cujo cargo do RH define o acesso.
+      const funcs = await prisma.funcionario.findMany({
+        where: { empresaId: req.user.empresaId, usuarioId: { in: usuarios.map((u) => u.id) }, status: { not: 'ARQUIVADO' }, cargo: { cargoReferencia: { not: null } } },
+        select: { usuarioId: true, cargo: { select: { nome: true, cargoReferencia: true, departamento: { select: { nome: true } } } } },
+      });
+      const porUsuario = new Map(funcs.map((f) => [f.usuarioId, f.cargo]));
+      return usuarios.map((u) => {
+        const c = porUsuario.get(u.id);
+        return { ...u, cargoDoRh: c ? { nome: c.nome, departamento: c.departamento?.nome ?? null, cargoReferencia: c.cargoReferencia } : null };
       });
     },
   );
@@ -104,14 +115,12 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       if (id === req.user.id) return reply.code(403).send({ error: 'Você não pode trocar o próprio cargo. Peça a outro gestor.' });
       const alvo = await prisma.usuario.findFirst({ where: { id, empresaId: req.user.empresaId }, select: { id: true, cargo: true } });
       if (!alvo) throw NaoEncontrado('Usuário não encontrado nesta empresa.');
+      const doRh = await cargoRhDoUsuario(req.user.empresaId, id);
+      if (doRh && doRh.cargoReferencia !== cargo) {
+        throw Conflito(`O acesso deste login é definido pelo RH (${doRh.departamento ? doRh.departamento + ' → ' : ''}${doRh.nome}). Troque o cargo do funcionário no RH.`);
+      }
       const anterior = await prisma.permissao.findMany({ where: { usuarioId: id }, select: { modulo: true, acao: true, permitido: true } });
-      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        await tx.permissao.deleteMany({ where: { usuarioId: id } });
-        for (const p of permissoesDoCargo(cargo)) {
-          await tx.permissao.create({ data: { usuarioId: id, modulo: p.modulo, acao: p.acao, permitido: true, origem: 'MANUAL' } });
-        }
-        await tx.usuario.update({ where: { id }, data: { cargo } });
-      });
+      await prisma.$transaction((tx: Prisma.TransactionClient) => aplicarCargoAoUsuario(tx, id, cargo));
       await registrarAuditoria({
         usuarioId: req.user.id,
         empresaId: req.user.empresaId,
