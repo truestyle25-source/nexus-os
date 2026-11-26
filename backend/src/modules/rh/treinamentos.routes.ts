@@ -225,7 +225,6 @@ export async function treinamentosRoutes(app: FastifyInstance): Promise<void> {
       (app as any).authenticate,
       permissaoQualquerDas([
         { modulo: 'rh', acao: 'visualizar' },
-        { modulo: 'relatorios', acao: 'visualizar' },
       ]),
     ],
   };
@@ -234,7 +233,6 @@ export async function treinamentosRoutes(app: FastifyInstance): Promise<void> {
       (app as any).authenticate,
       permissaoQualquerDas([
         { modulo: 'rh', acao: 'editar' },
-        { modulo: 'relatorios', acao: 'editar' },
       ]),
     ],
   };

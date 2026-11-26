@@ -213,7 +213,6 @@ export async function radarRoutes(app: FastifyInstance) {
     preHandler: [
       (app as any).authenticate,
       permissaoQualquerDas([
-        { modulo: 'relatorios', acao: 'visualizar' },
         { modulo: 'rh', acao: 'visualizar' },
       ]),
     ],
@@ -222,7 +221,6 @@ export async function radarRoutes(app: FastifyInstance) {
     preHandler: [
       (app as any).authenticate,
       permissaoQualquerDas([
-        { modulo: 'relatorios', acao: 'editar' },
         { modulo: 'rh', acao: 'editar' },
       ]),
     ],
