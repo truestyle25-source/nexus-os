@@ -13,6 +13,7 @@ import api, { getToken } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { definirIdioma, t as traduzir, tMenu, tGrupo, getIdioma } from '@/lib/i18n';
 import { lerPrefs } from '@/lib/prefs';
+import { podeAcessar } from '@/lib/acessoMenu';
 
 /**
  * Shell do dashboard — fiel ao Layout Mestre V2.1:
@@ -122,6 +123,17 @@ export default function DashboardLayout({
   // PDV ocupa a tela inteira: o menu lateral entra recolhido (só ícones) ao abrir o PDV.
   useEffect(() => { if (pathname?.startsWith("/pdv")) setSidebarCollapsed(true); }, [pathname]);
   const [user, setUser] = useState<{ nome?: string; email?: string } | null>(null);
+  // Permissões do usuário logado: o menu esconde o que o cargo não pode usar.
+  const [permissoes, setPermissoes] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!getToken()) return;
+    let vivo = true;
+    api.get<{ permissions?: string[] }>('/auth/me')
+      .then(({ data }) => { if (vivo && Array.isArray(data?.permissions)) setPermissoes(data.permissions); })
+      .catch(() => { /* sem resposta: mostra o menu inteiro; o servidor continua barrando */ });
+    return () => { vivo = false; };
+  }, []);
+  const semAcesso = !!pathname && !podeAcessar(pathname, permissoes);
   const [notificacoes, setNotificacoes] = useState<Array<{ id: string; lida?: boolean; titulo?: string }>>([]);
   const notifRef = useRef<HTMLDivElement>(null);
   const buscaRef = useRef<HTMLDivElement>(null);
@@ -392,14 +404,14 @@ export default function DashboardLayout({
 
         {/* Navegação */}
         <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto nx-scroll">
-          {grupos.map((g) => (
+          {grupos.filter((g) => g.itens.some((i) => podeAcessar(i.href, permissoes))).map((g) => (
             <div key={g.titulo}>
               {!sidebarCollapsed && (
                 <p className="px-3 mb-1.5 text-[10px] tracking-[0.14em] text-[var(--nx-ink-3)] font-semibold uppercase">
                   {tGrupo(g.titulo)}
                 </p>
               )}
-              <div className="space-y-0.5">{g.itens.map(renderLink)}</div>
+              <div className="space-y-0.5">{g.itens.filter((i) => podeAcessar(i.href, permissoes)).map(renderLink)}</div>
             </div>
           ))}
         </nav>
@@ -605,7 +617,13 @@ export default function DashboardLayout({
         </header>
 
         <main className="flex-1 overflow-auto bg-[var(--nx-canvas)]">
-          {children}
+          {semAcesso ? (
+            <div className="nx-card" style={{ maxWidth: 520, margin: '48px auto', padding: 28, textAlign: 'center' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Sem acesso a esta área</h2>
+              <p style={{ opacity: 0.7, fontSize: 14, marginBottom: 16 }}>O seu cargo não permite abrir esta tela. Se precisar, peça ao gestor.</p>
+              <Link href="/" className="admin-primary" style={{ display: 'inline-block', padding: '8px 16px', borderRadius: 10 }}>Voltar ao início</Link>
+            </div>
+          ) : children}
         </main>
       </div>
     </div>

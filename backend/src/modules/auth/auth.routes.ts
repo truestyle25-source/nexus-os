@@ -6,7 +6,7 @@ import { prisma } from '../../lib/prisma.js';
 import { hashSenha, verificarSenha } from '../../lib/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { createRateLimiter, createLoginRateLimiter, registrarLoginSucesso } from '../../middlewares/rateLimiter.js';
-import { todasPermissoes } from '../../lib/permissoes.js';
+import { permissoesDoCargo } from '../../lib/permissoes-catalogo.js';
 import { clean } from '../../lib/format.js';
 import { enviarEmailRecuperacaoSenha } from '../../lib/email.js';
 import { isValidCnpj } from '../../domain/cnpj.js';
@@ -83,13 +83,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         data: { empresaId: empresa.id, nome: d.nomeEmpresa, cnpj, cidade: d.cidade, estado: d.estado, origem },
       });
       const usuario = await tx.usuario.create({
-        data: { empresaId: empresa.id, filialId: filial.id, nome: d.nome, email, senhaHash: await hashSenha(d.senha), origem },
+        data: { empresaId: empresa.id, filialId: filial.id, nome: d.nome, email, senhaHash: await hashSenha(d.senha), origem, cargo: 'GESTOR' },
       });
       // Fundador nasce com todas as permissões (decisão de produto — ver
       // lib/permissoes.ts). Usuários adicionais recebem permissões
       // granulares via PUT /usuarios/:id/permissoes.
       await tx.permissao.createMany({
-        data: todasPermissoes().map((p) => ({ usuarioId: usuario.id, modulo: p.modulo, acao: p.acao, permitido: true, origem })),
+        data: permissoesDoCargo('GESTOR').map((p) => ({ usuarioId: usuario.id, modulo: p.modulo, acao: p.acao, permitido: true, origem })),
         skipDuplicates: true,
       });
       await tx.assinatura.create({

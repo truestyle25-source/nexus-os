@@ -1,0 +1,2 @@
+-- Cargo de referência do usuário (OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR).
+ALTER TABLE "Usuario" ADD COLUMN IF NOT EXISTS "cargo" TEXT;
