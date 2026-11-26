@@ -18,6 +18,7 @@ import { db } from '@/lib/pdv/db';
 import { atualizarCatalogoLocal, listarCatalogoLocal } from '@/lib/pdv/sincronizarCatalogo';
 import { precoVigente, resolverBipagem } from '@/lib/pdv/catalogo';
 import { cupomDaVenda, renderCupom } from '@/lib/pdv/cupom';
+import { renderCancelamentoVenda, renderMovimentacao, renderRelatorioFechamento } from '@/lib/pdv/comprovantes';
 import { conectarImpressora, impressaoDiretaSuportada, impressoraConectada, imprimirTextoTermico } from '@/lib/pdv/impressoraTermica';
 import { contextoLocalDoToken } from '@/lib/pdv/contextoLocal';
 import { enfileirarVendaComCarrinho, obterOperacao, processarFila, recuperarOperacoesInterrompidas, contarPorStatus, marcar } from '@/lib/pdv/syncQueue';
@@ -265,6 +266,9 @@ export default function PDV() {
   // senão o pago passaria do total e a venda travaria com dinheiro do cliente dentro.
   const temPixPago = pagamentosVenda.some((p) => p.forma === 'PIX');
   const temPixPagoRef = useRef(false);
+  const carrinhoRef = useRef(carrinho);
+  carrinhoRef.current = carrinho;
+  const pedirCancelamentoItemRef = useRef<(id: string) => void>(() => undefined);
   temPixPagoRef.current = temPixPago;
   const avisoPix = 'Há PIX já pago nesta venda: não é possível retirar itens nem aumentar o desconto. Finalize a venda (e cancele depois, se preciso).';
   const pagamentoFechado = carrinho.length > 0 && total > 0 && restante === 0 && !excedente;
@@ -705,7 +709,8 @@ export default function PDV() {
           // Del fora de campos remove o último item do carrinho.
           e.preventDefault();
           if (temPixPagoRef.current) { setError(avisoPix); return; }
-          setCarrinho((a) => a.slice(0, -1));
+          const ultimo = carrinhoRef.current[carrinhoRef.current.length - 1];
+          if (ultimo) pedirCancelamentoItemRef.current(ultimo.produtoId);
         } else if (e.key.length === 1) {
           // Leitor de código de barras "sempre pronto": tecla digitada fora de
           // um campo vai para a busca, então a bipagem não se perde quando o
@@ -750,12 +755,21 @@ export default function PDV() {
       // O `movimentandoRef` já evita o envio simultâneo na mesma aba; a chave
       // protege também contra repetição após perda de resposta (o servidor
       // reconhece a repetição e devolve o resultado original sem reaplicar).
+      if (tipoMov === 'SANGRIA' && motivoMov.trim().length < 3) { setError('Informe o motivo da sangria.'); return; }
       const chave = novaIdempotencyKey(tipoMov === 'SANGRIA' ? 'sangria' : 'suprimento');
-      await api.post('/pdv/caixa/movimentacoes', { tipo: tipoMov, valor, motivo: motivoMov || undefined }, { headers: { 'x-idempotency-key': chave } });
+      // Sangria: autorização do supervisor (uso único) junto com a retirada.
+      const aut = tipoMov === 'SANGRIA' ? await obterAutorizacao('SANGRIA') : { token: null, nome: null };
+      const { data } = await api.post('/pdv/caixa/movimentacoes', { tipo: tipoMov, valor, motivo: motivoMov.trim() || undefined }, { headers: { 'x-idempotency-key': chave, ...cabecalhoAut(aut.token) } });
       setMostrarSangria(false); setValorMov(''); setMotivoMov('');
       setNotice(tipoMov === 'SANGRIA' ? 'Sangria registrada.' : 'Suprimento registrado.');
       await carregarCaixa();
-    } catch (err: any) { setError(err.response?.data?.error || 'Não foi possível registrar a movimentação.'); }
+      // Comprovante com valor, motivo, operador, supervisor e horário.
+      await imprimirComprovante(tipoMov === 'SANGRIA' ? 'Comprovante de sangria' : 'Comprovante de suprimento', renderMovimentacao({
+        tipo: tipoMov, valor: Number(data.valor), motivo: data.motivo, createdAt: data.createdAt, operadorNome: data.operadorNome,
+        autorizadoPorNome: data.autorizadoPorNome, caixaNumero: data.caixaNumero, caixaId: data.caixaId,
+        saldoAntes: Number(data.saldoAntes), saldoDepois: Number(data.saldoDepois),
+      }, nomeLoja(), brl));
+    } catch (err: any) { setError(err?.response?.data?.error || err?.message || 'Não foi possível registrar a movimentação.'); }
     finally { movimentandoRef.current = false; setMovimentando(false); }
   }
 
@@ -777,6 +791,8 @@ export default function PDV() {
         ? `Caixa fechado. Vendas do turno: ${brl(data.resumo?.totalVendas ?? 0)}.`
         : `Caixa fechado. Diferença em gaveta: ${brl(Number(d))} (contado ${brl(Number(data.caixa?.valorContado ?? 0))} vs esperado ${brl(data.resumo?.dinheiroEsperado ?? 0)}).${data.divergencia ? ' A diferença foi registrada para revisão do gerente.' : ''}`);
       setCarrinho([]); await carregarCaixa();
+      // Relatório de fechamento na tela (com botão de imprimir).
+      if (data.relatorio) setRelatorio(data.relatorio);
     } catch (err: any) { setError(err.response?.data?.message || err.response?.data?.error || 'Não foi possível fechar o caixa.'); }
     finally { fechandoRef.current = false; setFechando(false); }
   }
@@ -1003,14 +1019,120 @@ export default function PDV() {
     setCancelando(venda.id);
     setErroCancelamento(null);
     try {
-      await api.post(`/vendas/${venda.id}/cancelar`, { motivo });
+      const aut = await obterAutorizacao('CANCELAMENTO');
+      const { data } = await api.post(`/vendas/${venda.id}/cancelar`, { motivo }, { headers: cabecalhoAut(aut.token) });
       setVendaACancelar(null);
       setNotice('Venda cancelada: estoque devolvido e gaveta ajustada.');
       await Promise.all([carregarCaixa(), carregarProdutos(busca)]);
-    } catch (err: any) { setErroCancelamento(err.response?.data?.error || 'Não foi possível cancelar a venda.'); }
+      await imprimirComprovante('Comprovante de cancelamento', renderCancelamentoVenda({
+        vendaId: venda.id, total: Number(venda.total), motivo: data?.motivo ?? motivo, dinheiroDevolvido: Number(data?.estorno?.dinheiro ?? 0),
+        operadorNome: caixa?.usuario?.nome ?? null, autorizadoPorNome: data?.autorizadoPor?.nome ?? aut.nome, quando: new Date().toISOString(),
+      }, nomeLoja(), brl));
+    } catch (err: any) { setErroCancelamento(err?.response?.data?.error || err?.message || 'Não foi possível cancelar a venda.'); }
     finally { cancelandoRef.current = false; setCancelando(null); }
   }
   function limparCarrinho() { if (temPixPagoRef.current) { setError(avisoPix); return; } setCarrinho([]); setDescontoGeral('0'); setValorRecebido(''); setPagamentosVenda([]); setAutorizacaoDesconto(null); }
+
+  // ===== Autorização do supervisor nas janelas (sangria, item, venda) =====
+  /**
+   * Com e-mail e senha do supervisor preenchidos, pede a autorização (uso
+   * único) e devolve o token; sem eles devolve null e o servidor decide
+   * (operador que já é supervisor de caixa não precisa de outra pessoa).
+   */
+  async function obterAutorizacao(acao: 'SANGRIA' | 'CANCELAMENTO' | 'CANCELAR_ITEM'): Promise<{ token: string | null; nome: string | null }> {
+    if (!supEmail.trim() && !supSenha) return { token: null, nome: null };
+    if (!supEmail.trim() || !supSenha) throw new Error('Informe o e-mail e a senha do supervisor.');
+    try {
+      const { data } = await api.post('/pdv/autorizacoes', { email: supEmail.trim(), senha: supSenha, acao });
+      return { token: data.autorizacao, nome: data.supervisor?.nome ?? null };
+    } finally { setSupSenha(''); }
+  }
+  const cabecalhoAut = (token: string | null): Record<string, string> => (token ? { 'x-autorizacao-supervisor': token } : {});
+
+  // ===== Comprovantes (sangria, suprimento, cancelamento, fechamento) =====
+  const [comprovante, setComprovante] = useState<{ titulo: string; texto: string } | null>(null);
+  /** Térmica conectada: imprime direto; senão abre o comprovante para imprimir pelo navegador. */
+  async function imprimirComprovante(titulo: string, texto: string) {
+    if (termicaConectada) {
+      try { await imprimirTextoTermico(texto); setNotice(`${titulo} impresso.`); return; } catch (e) {
+        setError(`Impressora térmica: ${e instanceof Error ? e.message : 'falha ao imprimir'}.`);
+      }
+    }
+    setComprovante({ titulo, texto });
+  }
+  const nomeLoja = () => caixa?.filial?.nome ?? filiais.find((f) => f.id === filialId)?.nome ?? '';
+
+  // ===== Cancelamento de item do carrinho (com autorização) =====
+  const [itemACancelar, setItemACancelar] = useState<{ produtoIds: string[]; quantidade: string; todos: boolean } | null>(null);
+  const [motivoItem, setMotivoItem] = useState('');
+  const [cancelandoItem, setCancelandoItem] = useState(false);
+  const [erroItem, setErroItem] = useState<string | null>(null);
+  function pedirCancelamentoItem(produtoId: string | null, quantidade?: number) {
+    setError(null);
+    if (temPixPagoRef.current) { setError(avisoPix); return; }
+    const alvo = produtoId ? carrinho.find((i) => i.produtoId === produtoId) : null;
+    if (produtoId && !alvo) return;
+    setMotivoItem(''); setErroItem(null);
+    setItemACancelar(produtoId
+      ? { produtoIds: [produtoId], quantidade: String(quantidade ?? alvo!.quantidade), todos: false }
+      : { produtoIds: carrinho.map((i) => i.produtoId), quantidade: '', todos: true });
+  }
+  pedirCancelamentoItemRef.current = (id: string) => pedirCancelamentoItem(id);
+
+  /** Campos de e-mail e senha do supervisor usados nas janelas que pedem autorização. */
+  function camposSupervisor(texto: string) {
+    return (
+      <div style={{ border: '1px solid rgba(245,158,11,.4)', background: 'rgba(245,158,11,.08)', borderRadius: 12, padding: '10px 12px', margin: '4px 0 12px' }}>
+        <p style={{ margin: '0 0 8px', fontSize: 12.5, color: '#d97706', fontWeight: 600 }}>🔐 {texto}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <input type="email" autoComplete="off" aria-label="E-mail do supervisor" placeholder="E-mail do supervisor" value={supEmail} onChange={(e) => setSupEmail(e.target.value)} />
+          <input type="password" autoComplete="off" aria-label="Senha do supervisor" placeholder="Senha do supervisor" value={supSenha} onChange={(e) => setSupSenha(e.target.value)} />
+        </div>
+        <p style={{ margin: '6px 0 0', fontSize: 11, opacity: 0.7 }}>Vale para esta operação só. Se você já é supervisor de caixa, pode deixar em branco.</p>
+      </div>
+    );
+  }
+
+  async function confirmarCancelamentoItem() {
+    if (!itemACancelar || cancelandoItem) return;
+    if (motivoItem.trim().length < 3) { setErroItem('Informe o motivo.'); return; }
+    setCancelandoItem(true); setErroItem(null);
+    try {
+      const itens = carrinho.filter((i) => itemACancelar.produtoIds.includes(i.produtoId));
+      const cancelados = itens.map((item) => ({
+        produtoId: item.produtoId,
+        quantidade: itemACancelar.todos ? item.quantidade : Math.min(item.quantidade, Math.round(Number(String(itemACancelar.quantidade).replace(',', '.')) * 1000) / 1000),
+      }));
+      if (cancelados.some((c) => !(c.quantidade > 0))) throw new Error('Informe a quantidade a cancelar.');
+      // Uma autorização para o pedido inteiro (vale uma vez só).
+      const aut = await obterAutorizacao('CANCELAR_ITEM');
+      await api.post('/pdv/itens-cancelados', { itens: cancelados, motivo: motivoItem.trim() }, { headers: cabecalhoAut(aut.token) });
+      let novos = carrinho;
+      for (const c of cancelados) {
+        const atual = novos.find((i) => i.produtoId === c.produtoId)!;
+        const resto = Math.round((atual.quantidade - c.quantidade) * 1000) / 1000;
+        novos = resto > 0 ? alterarQuantidade(novos, c.produtoId, resto).itens : removerProduto(novos, c.produtoId);
+      }
+      setCarrinho(novos);
+      if (novos.length === 0) { setDescontoGeral('0'); setPagamentosVenda([]); }
+      setItemACancelar(null);
+      setNotice(itens.length > 1 ? 'Itens cancelados e registrados.' : 'Item cancelado e registrado.');
+    } catch (err: any) { setErroItem(err?.response?.data?.error || err?.message || 'Não foi possível cancelar o item.'); }
+    finally { setCancelandoItem(false); }
+  }
+
+  // ===== Relatório de fechamento e histórico =====
+  const [relatorio, setRelatorio] = useState<any>(null);
+  const [historico, setHistorico] = useState<any[] | null>(null);
+  async function abrirHistorico() {
+    setMostrarMenu(false);
+    try { const { data } = await api.get('/pdv/caixa/historico'); setHistorico(data.caixas ?? []); }
+    catch (err: any) { setError(err.response?.data?.error || 'Não foi possível carregar o histórico de caixas.'); }
+  }
+  async function abrirRelatorio(caixaId: string) {
+    try { const { data } = await api.get(`/pdv/caixa/${caixaId}/relatorio`); setHistorico(null); setRelatorio(data); }
+    catch (err: any) { setError(err.response?.data?.error || 'Não foi possível carregar o relatório.'); }
+  }
 
   /** Pede ao servidor a autorização do supervisor (e-mail + senha dele). */
   async function autorizarComSupervisor() {
@@ -1142,6 +1264,7 @@ export default function PDV() {
                   <button type="button" className="admin-secondary" style={item} onClick={() => { setMostrarMenu(false); buscaRef.current?.focus(); }}><span>🔍 Ir para o leitor / busca</span><span style={atalho}>F2</span></button>
                   <button type="button" className="admin-secondary" style={item} disabled={!caixa} onClick={() => { setMostrarMenu(false); setTipoMov('SANGRIA'); setMostrarSangria(true); }}><span>💸 Sangria · Suprimento</span><span style={atalho}>F7 · F8</span></button>
                   <button type="button" className="admin-secondary" style={item} disabled={!caixa} onClick={() => { setMostrarMenu(false); setMostrarTurno(true); }}><span>📊 Turno e vendas do turno</span></button>
+                  <button type="button" className="admin-secondary" style={item} onClick={() => void abrirHistorico()}><span>📄 Histórico de caixas (relatórios)</span></button>
                 </div>
                 <h2 style={{ margin: '12px 0 8px' }}>EQUIPAMENTOS E INTEGRAÇÕES</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1236,7 +1359,7 @@ export default function PDV() {
                 </span>
               )}</h2>
               {carrinho.length > 0 && (
-                <button type="button" className="admin-secondary" style={{ padding: '4px 12px', fontSize: 12, flexShrink: 0, color: '#f87171' }} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => { if (temPixPagoRef.current) { setError(avisoPix); return; } setCarrinho([]); setDescontoGeral('0'); }}>🗑 {traduzir('limpar', "Limpar")}</button>
+                <button type="button" className="admin-secondary" style={{ padding: '4px 12px', fontSize: 12, flexShrink: 0, color: '#f87171' }} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => { pedirCancelamentoItem(null); }}>🗑 {traduzir('limpar', "Limpar")}</button>
               )}
             </div>
             <div className="pdv-scroll pdv-area-rolavel">
@@ -1260,16 +1383,16 @@ export default function PDV() {
                         <span style={{ fontSize: 11.5, opacity: 0.75 }}>{brl(i.preco)} × {i.quantidade} = <strong style={{ color: 'var(--nexus-accent-2)' }}>{brl(i.preco * i.quantidade - i.desconto)}</strong></span>
                       </div>
                       <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
-                        <button type="button" className="admin-secondary pdv-mini" disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, Math.max(1, i.quantidade - 1)).itens)} aria-label={`Diminuir ${i.nome}`}>−</button>
+                        <button type="button" className="admin-secondary pdv-mini" disabled={temPixPago} title={temPixPago ? avisoPix : undefined} onClick={() => pedirCancelamentoItem(i.produtoId, Math.min(1, i.quantidade))} aria-label={`Diminuir ${i.nome}`}>−</button>
                         {i.fracionado ? (
                           <input type="number" min="0.001" step="0.001" aria-label={`Quantidade de ${i.nome}`} value={i.quantidade} disabled={temPixPago}
-                            onChange={(e) => { const r = alterarQuantidade(carrinho, i.produtoId, Math.round(Number(e.target.value) * 1000) / 1000); setCarrinho(r.itens); setError(r.erro); }}
+                            onChange={(e) => { const nova = Math.round(Number(e.target.value) * 1000) / 1000; if (nova < i.quantidade) { pedirCancelamentoItem(i.produtoId, Math.round((i.quantidade - nova) * 1000) / 1000); return; } const r = alterarQuantidade(carrinho, i.produtoId, nova); setCarrinho(r.itens); setError(r.erro); }}
                             style={{ width: 64, padding: '2px 6px', fontSize: 12.5, textAlign: 'right' }} />
                         ) : (
                           <span style={{ minWidth: 18, textAlign: 'center', fontWeight: 700, fontSize: 13 }}>{i.quantidade}</span>
                         )}
                         <button type="button" className="admin-secondary pdv-btn-grad pdv-mini" aria-label={`Aumentar ${i.nome}`} disabled={i.quantidade >= i.estoque} onClick={() => setCarrinho((a) => alterarQuantidade(a, i.produtoId, i.quantidade + 1).itens)}>+</button>
-                        <button type="button" className="admin-secondary pdv-mini" aria-label={`Remover ${i.nome}`} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} style={{ color: '#f87171' }} onClick={() => setCarrinho((a) => removerProduto(a, i.produtoId))}>×</button>
+                        <button type="button" className="admin-secondary pdv-mini" aria-label={`Remover ${i.nome}`} disabled={temPixPago} title={temPixPago ? avisoPix : undefined} style={{ color: '#f87171' }} onClick={() => pedirCancelamentoItem(i.produtoId)}>×</button>
                       </div>
                     </div>
                   ))}
@@ -1474,10 +1597,19 @@ export default function PDV() {
           <label style={estiloLabel}>Valor (R$)
             <input type="number" min="0.01" step="0.01" value={valorMov} onChange={(e) => setValorMov(e.target.value)} autoFocus />
           </label>
-          <label style={estiloLabel}>Motivo (opcional)
-            <input value={motivoMov} onChange={(e) => setMotivoMov(e.target.value)} maxLength={200} placeholder="ex.: retirada para depósito" />
+          {resumo && tipoMov === 'SANGRIA' && <p style={{ fontSize: 12.5, opacity: 0.8, margin: '0 0 10px' }}>Dinheiro em gaveta: <strong>{brl(Number(resumo.saldoRegistrado ?? resumo.dinheiroEsperado))}</strong></p>}
+          {tipoMov === 'SANGRIA' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {['Excesso de dinheiro', 'Depósito bancário', 'Pagamento a fornecedor', 'Outro'].map((m) => (
+                <button key={m} type="button" className={motivoMov === m ? 'admin-primary pdv-btn-grad' : 'admin-secondary'} style={{ borderRadius: 999, padding: '5px 11px', fontSize: 12 }} onClick={() => setMotivoMov(m === 'Outro' ? '' : m)}>{m}</button>
+              ))}
+            </div>
+          )}
+          <label style={estiloLabel}>{tipoMov === 'SANGRIA' ? 'Motivo *' : 'Motivo (opcional)'}
+            <input value={motivoMov} onChange={(e) => setMotivoMov(e.target.value)} maxLength={200} placeholder={tipoMov === 'SANGRIA' ? 'ex.: recolhimento para o cofre' : 'ex.: troco extra'} />
           </label>
-          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={movimentando} onClick={movimentar}>{movimentando ? 'Registrando…' : 'Confirmar'}</button>
+          {tipoMov === 'SANGRIA' && camposSupervisor('Sangria exige autorização do supervisor')}
+          <button className="admin-primary" type="button" style={{ width: '100%' }} disabled={movimentando} onClick={movimentar}>{movimentando ? 'Registrando…' : tipoMov === 'SANGRIA' ? 'Autorizar e registrar' : 'Confirmar'}</button>
         </Modal>
       )}
       {mostrarFechar && (
@@ -1522,7 +1654,7 @@ export default function PDV() {
         const motivoFinal = (motivoTexto.trim() || motivoRapido).trim();
         return (
           <Modal titulo="Cancelar venda" onFechar={() => { if (!cancelando) setVendaACancelar(null); }}>
-            <p style={{ fontSize: 12.5, opacity: 0.7, margin: '-6px 0 12px' }}>Só vendas do seu turno aberto podem ser canceladas aqui.</p>
+            <p style={{ fontSize: 12, opacity: 0.7, margin: '-6px 0 12px' }}>Regras: só vendas do dia; o dinheiro é devolvido pela gaveta aberta agora; venda com PIX não é cancelada no PDV (devolução de PIX ainda não integrada).</p>
             <div style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 12, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Venda #{String(v.id).slice(-5)} · {new Date(v.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span><strong>{brl(Number(v.total))}</strong></div>
               <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.8 }}><span>{qtdItens} {qtdItens === 1 ? 'item' : 'itens'} · {formas}</span>{caixa?.numero != null && <span>Caixa {String(caixa.numero).padStart(2, '0')}</span>}</div>
@@ -1543,8 +1675,12 @@ export default function PDV() {
             <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 12.5, opacity: 0.85 }}>
               <li>os produtos voltam para o estoque;</li>
               <li>a venda sai do faturamento, do ticket médio e da meta do dia;</li>
-              {dinheiro > 0 && <li>{brl(dinheiro)} em dinheiro saem da gaveta deste turno.</li>}
+              {dinheiro > 0 && <li>{brl(dinheiro)} em dinheiro são devolvidos ao cliente (saem da gaveta aberta).</li>}
             </ul>
+            {pagamentos.some((p) => p.forma === 'PIX') && (
+              <p role="alert" className="admin-message admin-error" style={{ margin: '0 0 10px' }}>⚡ Esta venda tem PIX: a devolução pelo provedor ainda não está integrada. Procure o gestor.</p>
+            )}
+            {camposSupervisor('Cancelar venda paga exige autorização do supervisor')}
             <div role="note" style={{ background: 'rgba(239,68,68,.10)', border: '1px solid rgba(239,68,68,.35)', color: '#dc2626', borderRadius: 10, padding: '8px 10px', fontSize: 12.5, marginBottom: 12 }}>
               ⚠ Esta ação não pode ser desfeita e fica registrada com seu nome e o motivo.
             </div>
@@ -1552,13 +1688,114 @@ export default function PDV() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="button" className="admin-secondary" style={{ flex: 1, padding: 12 }} disabled={Boolean(cancelando)} onClick={() => setVendaACancelar(null)}>Voltar</button>
               <button type="button" style={{ flex: 1, padding: 12, borderRadius: 10, border: 0, background: '#dc2626', color: '#fff', fontWeight: 700, opacity: cancelando || motivoFinal.length < MOTIVO_MINIMO ? 0.5 : 1 }}
-                disabled={Boolean(cancelando) || motivoFinal.length < MOTIVO_MINIMO} onClick={() => void confirmarCancelamento()}>
+                disabled={Boolean(cancelando) || motivoFinal.length < MOTIVO_MINIMO || pagamentos.some((p) => p.forma === 'PIX')} onClick={() => void confirmarCancelamento()}>
                 {cancelando ? 'Cancelando…' : 'Confirmar cancelamento'}
               </button>
             </div>
           </Modal>
         );
       })()}
+      {itemACancelar && (() => {
+        const itens = carrinho.filter((i) => itemACancelar.produtoIds.includes(i.produtoId));
+        const unico = itens.length === 1 ? itens[0] : null;
+        const qtd = itemACancelar.todos || !unico ? null : Math.min(unico.quantidade, Number(String(itemACancelar.quantidade).replace(',', '.')) || 0);
+        const valor = itemACancelar.todos || !unico ? itens.reduce((s, i) => s + i.preco * i.quantidade, 0) : unico.preco * (qtd ?? 0);
+        return (
+          <Modal titulo={itemACancelar.todos ? 'Cancelar todos os itens' : 'Cancelar item'} onFechar={() => { if (!cancelandoItem) setItemACancelar(null); }}>
+            <div style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 12, padding: '10px 12px', marginBottom: 12, fontSize: 13 }}>
+              {itens.map((i) => (
+                <div key={i.produtoId} style={{ display: 'flex', justifyContent: 'space-between' }}><span>{i.nome} · {i.quantidade} × {brl(i.preco)}</span><strong>{brl(i.preco * i.quantidade)}</strong></div>
+              ))}
+            </div>
+            {unico && (
+              <label style={estiloLabel}>Quantidade a cancelar (de {unico.quantidade})
+                <input type="number" min={unico.fracionado ? '0.001' : '1'} step={unico.fracionado ? '0.001' : '1'} max={unico.quantidade} value={itemACancelar.quantidade} onChange={(e) => setItemACancelar({ ...itemACancelar, quantidade: e.target.value })} />
+              </label>
+            )}
+            <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 6px' }}>Motivo *</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {['Cliente desistiu', 'Lançado errado', 'Produto com defeito', 'Outro'].map((m) => (
+                <button key={m} type="button" className={motivoItem === m ? 'admin-primary pdv-btn-grad' : 'admin-secondary'} style={{ borderRadius: 999, padding: '5px 11px', fontSize: 12 }} onClick={() => setMotivoItem(m === 'Outro' ? '' : m)}>{m}</button>
+              ))}
+            </div>
+            <input aria-label="Motivo do cancelamento do item" value={motivoItem} onChange={(e) => setMotivoItem(e.target.value)} maxLength={200} placeholder="Motivo" style={{ width: '100%', marginBottom: 10 }} />
+            {camposSupervisor('Retirar item já lançado exige autorização do supervisor')}
+            <p style={{ fontSize: 12, opacity: 0.75, margin: '0 0 10px' }}>Valor retirado: <strong>{brl(valor)}</strong> · fica registrado com motivo, operador, supervisor e horário.</p>
+            {erroItem && <p role="alert" className="admin-message admin-error" style={{ margin: '0 0 10px' }}>{erroItem}</p>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="admin-secondary" style={{ flex: 1, padding: 11 }} disabled={cancelandoItem} onClick={() => setItemACancelar(null)}>Voltar</button>
+              <button type="button" style={{ flex: 1, padding: 11, borderRadius: 10, border: 0, background: '#dc2626', color: '#fff', fontWeight: 700, opacity: cancelandoItem ? 0.5 : 1 }} disabled={cancelandoItem} onClick={() => void confirmarCancelamentoItem()}>
+                {cancelandoItem ? 'Cancelando…' : itemACancelar.todos ? 'Cancelar itens' : 'Cancelar item'}
+              </button>
+            </div>
+          </Modal>
+        );
+      })()}
+      {relatorio && (
+        <Modal titulo="Relatório de fechamento de caixa" onFechar={() => setRelatorio(null)}>
+          {(() => {
+            const r = relatorio;
+            const linhaR = (rotulo: React.ReactNode, valor: React.ReactNode, forte = false, cor?: string) => (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--nexus-border)', fontWeight: forte ? 700 : 400, color: cor }}>
+                <span>{rotulo}</span><span>{valor}</span>
+              </div>
+            );
+            return (
+              <div style={{ fontSize: 13 }}>
+                <p style={{ margin: '0 0 8px', opacity: 0.75, fontSize: 12 }}>
+                  Caixa {r.numero != null ? String(r.numero).padStart(2, '0') : `#${String(r.caixaId).slice(-5)}`} · {r.operador ?? ''} · aberto {new Date(r.abertoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  {r.fechadoEm ? ` · fechado ${new Date(r.fechadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}
+                </p>
+                {linhaR('Fundo inicial (troco)', brl(r.fundoTroco))}
+                {linhaR(<>Total de vendas ({r.qtdVendas})</>, brl(r.totalVendas), true)}
+                {Object.entries(r.porForma ?? {}).map(([f, v]) => <div key={f} style={{ paddingLeft: 12 }}>{linhaR(ROTULO_FORMA[f] ?? f, brl(Number(v)))}</div>)}
+                {linhaR('Suprimentos', brl(r.suprimentos))}
+                {linhaR('Sangrias', `− ${brl(r.sangrias)}`)}
+                {linhaR('Estornos (vendas canceladas)', `− ${brl(r.estornos)}`)}
+                {linhaR('Dinheiro esperado', brl(r.dinheiroEsperado), true)}
+                {linhaR('Dinheiro contado', r.valorContado == null ? '—' : brl(r.valorContado), true)}
+                {linhaR('Diferença', r.diferenca == null ? '—' : `${r.diferenca < 0 ? '− ' : r.diferenca > 0 ? '+ ' : ''}${brl(Math.abs(r.diferenca))}${r.diferenca < 0 ? ' (falta)' : r.diferenca > 0 ? ' (sobra)' : ''}`, true, r.diferenca ? (r.diferenca < 0 ? '#dc2626' : '#d97706') : '#059669')}
+                {linhaR('Vendas canceladas', String(r.vendasCanceladas ?? 0))}
+                {linhaR('Itens cancelados no carrinho', `${r.itensCancelados?.quantidade ?? 0} (${brl(r.itensCancelados?.valor ?? 0)})`)}
+                {r.observacao && <p style={{ fontSize: 12, opacity: 0.8 }}>Obs.: {r.observacao}</p>}
+                <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                  <button type="button" className="admin-secondary" style={{ flex: 1 }} onClick={() => { setRelatorio(null); void abrirHistorico(); }}>📄 Histórico de caixas</button>
+                  <button type="button" className="admin-primary pdv-btn-grad" style={{ flex: 1 }} onClick={() => void imprimirComprovante('Relatório de fechamento', renderRelatorioFechamento(r, brl, ROTULO_FORMA))}>🖨️ Imprimir relatório</button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+      {historico && (
+        <Modal titulo="Histórico de caixas" onFechar={() => setHistorico(null)}>
+          {historico.length === 0 ? <p className="empty-state">Nenhum caixa fechado ainda.</p> : (
+            <div className="admin-table" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+              {historico.map((c: any) => (
+                <button key={c.id} type="button" className="admin-list-row admin-secondary" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', textAlign: 'left', marginBottom: 4 }} onClick={() => void abrirRelatorio(c.id)}>
+                  <span>
+                    <strong>{c.fechadoEm ? new Date(c.fechadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</strong>
+                    <span style={{ display: 'block', fontSize: 12, opacity: 0.75 }}>{c.usuario?.nome ?? ''} · {c.filial?.nome ?? ''}</span>
+                  </span>
+                  <span style={{ textAlign: 'right', fontSize: 12.5 }}>
+                    Contado {c.valorContado == null ? '—' : brl(Number(c.valorContado))}
+                    <span style={{ display: 'block', color: Number(c.diferenca ?? 0) < 0 ? '#dc2626' : Number(c.diferenca ?? 0) > 0 ? '#d97706' : '#059669' }}>dif. {brl(Number(c.diferenca ?? 0))}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+      {comprovante && (
+        <Modal titulo={comprovante.titulo} onFechar={() => setComprovante(null)} imprimir>
+          <pre style={{ background: '#fff', color: '#111', border: '1px solid var(--nexus-border)', borderRadius: 8, padding: 14, fontSize: 12, lineHeight: 1.45, overflowX: 'auto', whiteSpace: 'pre' }}>{comprovante.texto}</pre>
+          <div className="pdv-noprint" style={{ display: 'flex', gap: 8 }}>
+            <button className="admin-secondary" type="button" style={{ flex: 1 }} onClick={() => window.print()}>🖨️ Imprimir</button>
+            <button className="admin-primary" type="button" style={{ flex: 1 }} onClick={() => setComprovante(null)}>Concluir</button>
+          </div>
+        </Modal>
+      )}
       {cupom && (
         <Modal titulo="Cupom da venda" onFechar={() => setCupom(null)} imprimir>
           <pre style={{ background: 'var(--nexus-panel-2)', border: '1px solid var(--nexus-border)', borderRadius: 8, padding: 14, fontSize: 12, lineHeight: 1.5, overflowX: 'auto', whiteSpace: 'pre-wrap', color: 'inherit' }}>{renderCupom(cupom, brl, ROTULO_FORMA)}</pre>
