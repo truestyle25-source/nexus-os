@@ -8,6 +8,8 @@ import { filtroPonto } from '../../lib/escopo-proprio.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { decryptSecret, encryptSecret } from '../../lib/secrets.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
+import { CARGOS } from '../../lib/permissoes-catalogo.js';
+import { preverMudancaDeAcesso, preverMudancasDoCargo, aplicarMudancasDeAcesso, podeEditarUsuarios } from '../../lib/cargo-usuario.js';
 // Fuso da empresa: decide a que dia pertence uma marcação de ponto.
 import { dataNoFuso, instanteNaHoraLocal, normalizarFuso } from '../../lib/fuso.js';
 import { fecharExpediente } from './ponto-fechamento.service.js';
@@ -277,11 +279,16 @@ export async function rhRoutes(app: FastifyInstance) {
   });
   app.post('/cargos', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'criar')] }, async (req:any) => {
     const { nome, departamentoId, descricao } = req.body as any;
+    const { cargoReferencia } = z.object({ cargoReferencia: z.enum(CARGOS).nullish() }).parse(req.body ?? {});
     if (departamentoId) {
       const dep = await prisma.departamento.findFirst({ where: { id: departamentoId, empresaId: req.user.empresaId } });
       if (!dep) throw new ErroDeNegocio('Departamento inválido para esta empresa.');
     }
-    const cargo = await prisma.cargo.create({ data: { empresaId: req.user.empresaId, nome, departamentoId, descricao } });
+    // Definir o acesso que um cargo dá é decisão de Usuários, não só de RH.
+    if (cargoReferencia && !(await podeEditarUsuarios(req.user.id))) {
+      throw new ErroDeNegocio('Para definir o acesso do cargo é preciso permissão de editar usuários.', 403);
+    }
+    const cargo = await prisma.cargo.create({ data: { empresaId: req.user.empresaId, nome, departamentoId, descricao, cargoReferencia: cargoReferencia ?? null } });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'Cargo', entidadeId: cargo.id, valorNovo: cargo, origem: 'MANUAL', ip: req.ip });
     return cargo;
   });
@@ -293,11 +300,19 @@ export async function rhRoutes(app: FastifyInstance) {
    * outro departamento seria indistinguível de limpar o campo.
    */
   app.put('/cargos/:id', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'editar')] }, async (req:any) => {
-    const { nome, departamentoId, descricao } = z
-      .object({ nome: z.string().min(2), departamentoId: z.string().nullish(), descricao: z.string().optional() })
+    const { nome, departamentoId, descricao, cargoReferencia } = z
+      .object({ nome: z.string().min(2), departamentoId: z.string().nullish(), descricao: z.string().optional(), cargoReferencia: z.enum(CARGOS).nullish() })
       .parse(req.body ?? {});
     const anterior = await prisma.cargo.findFirst({ where: { id: req.params.id, empresaId: req.user.empresaId } });
     if (!anterior) throw new ErroDeNegocio('Cargo não encontrado nesta empresa.', 404);
+    // Omitido = mantém; null = tira a referência (os logins ficam com o acesso atual).
+    const mudaReferencia = cargoReferencia !== undefined && (cargoReferencia ?? null) !== (anterior.cargoReferencia ?? null);
+    if (mudaReferencia && !(await podeEditarUsuarios(req.user.id))) {
+      throw new ErroDeNegocio('Para mudar o acesso do cargo é preciso permissão de editar usuários.', 403);
+    }
+    const mudancas = mudaReferencia && cargoReferencia
+      ? await preverMudancasDoCargo({ empresaId: req.user.empresaId, atorId: req.user.id, cargoId: anterior.id, referencia: cargoReferencia })
+      : [];
     if (departamentoId) {
       const dep = await prisma.departamento.findFirst({ where: { id: departamentoId, empresaId: req.user.empresaId } });
       if (!dep) throw new ErroDeNegocio('Departamento inválido para esta empresa.');
@@ -308,14 +323,16 @@ export async function rhRoutes(app: FastifyInstance) {
         nome: nome.trim(),
         descricao: textoOpcional(descricao) ?? null,
         ...(departamentoId === null ? { departamentoId: null } : departamentoId ? { departamentoId } : {}),
+        ...(mudaReferencia ? { cargoReferencia: cargoReferencia ?? null } : {}),
       },
     });
     await registrarAuditoria({
       usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Cargo',
-      entidadeId: cargo.id, valorAnterior: { nome: anterior.nome, departamentoId: anterior.departamentoId },
-      valorNovo: { nome: cargo.nome, departamentoId: cargo.departamentoId }, origem: 'MANUAL', ip: req.ip,
+      entidadeId: cargo.id, valorAnterior: { nome: anterior.nome, departamentoId: anterior.departamentoId, cargoReferencia: anterior.cargoReferencia },
+      valorNovo: { nome: cargo.nome, departamentoId: cargo.departamentoId, cargoReferencia: cargo.cargoReferencia }, origem: 'MANUAL', ip: req.ip,
     });
-    return cargo;
+    await aplicarMudancasDeAcesso(mudancas, { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `cargo ${cargo.nome}` });
+    return { ...cargo, loginsAtualizados: mudancas.length };
   });
 
   /** Exclui um cargo — recusado (409) se houver funcionário vinculado a ele. */
@@ -454,6 +471,8 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
+    // O cargo do RH pode definir o acesso do login: valida ANTES de gravar.
+    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
     // CPF único validação
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
@@ -495,6 +514,7 @@ export async function rhRoutes(app: FastifyInstance) {
       }
     });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'Funcionario', entidadeId: func.id, valorNovo: func, origem: data.origem as any, ip: req.ip });
+    if (mudancaAcesso) await aplicarMudancasDeAcesso([mudancaAcesso], { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `funcionário ${func.nome}` });
     return func;
   });
 
@@ -517,6 +537,7 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo && vinculo.id !== id) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
+    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
       if (existe && existe.id !== id) throw new Error('CPF já cadastrado - CPF único Seção 20');
@@ -560,6 +581,7 @@ export async function rhRoutes(app: FastifyInstance) {
       },
     });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Funcionario', entidadeId: id, valorAnterior: anterior, valorNovo: atualizado, origem: 'MANUAL', ip: req.ip });
+    if (mudancaAcesso) await aplicarMudancasDeAcesso([mudancaAcesso], { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `funcionário ${atualizado.nome}` });
     return atualizado;
   });
 
