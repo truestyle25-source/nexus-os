@@ -44,6 +44,9 @@ test('M10 idempotência: sangria repetida com a mesma chave NÃO duplica movimen
     data: [
       { usuarioId: operadorId, modulo: 'pdv', acao: 'criar', permitido: true },
       { usuarioId: operadorId, modulo: 'pdv', acao: 'editar', permitido: true },
+      // Sangria exige supervisor; este operador já é supervisor de caixa, então
+      // o teste segue focado só na idempotência.
+      { usuarioId: operadorId, modulo: 'pdv', acao: 'supervisor', permitido: true },
     ],
   });
   const filial = await prisma.filial.findFirst({ where: { id: FILIAL, empresaId: EMPRESA }, select: { id: true } });

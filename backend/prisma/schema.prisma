@@ -1374,9 +1374,29 @@ model MovimentacaoCaixa {
   motivo    String?
   usuarioId String
   origem    Origem             @default(MANUAL)
+  autorizadoPorId String? // supervisor que autorizou (sangria / estorno no PDV)
   createdAt DateTime           @default(now())
 
   @@index([caixaId])
+}
+
+// PDV: item retirado do carrinho depois de lançado (com autorização do supervisor).
+// Trilha contra fraude e linha do relatório de fechamento.
+model ItemCanceladoPdv {
+  id              String   @id @default(cuid())
+  empresaId       String
+  caixaId         String
+  usuarioId       String
+  autorizadoPorId String?
+  produtoId       String
+  produtoNome     String
+  quantidade      Decimal  @db.Decimal(14, 3)
+  valorUnitario   Decimal  @db.Decimal(12, 2)
+  valorTotal      Decimal  @db.Decimal(12, 2)
+  motivo          String
+  createdAt       DateTime @default(now())
+
+  @@index([empresaId, caixaId])
 }
 
 // ============================================================================

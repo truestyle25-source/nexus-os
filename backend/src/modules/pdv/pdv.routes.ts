@@ -9,7 +9,7 @@ import { resumoDoCaixa, centavos, reais } from '../../modules/pdv/pdv.service.js
 export const LIMITE_DIVERGENCIA_CENTAVOS = 500;
 /** Tamanho mínimo da justificativa quando a diferença passa do limite. */
 export const JUSTIFICATIVA_MINIMA = 10;
-import { autorizacaoSupervisorRoutes } from './autorizacao-supervisor.js';
+import { autorizacaoSupervisorRoutes, lerAutorizacaoSupervisor, supervisorAindaPode, consumirAutorizacao, ehSupervisorDeCaixa } from './autorizacao-supervisor.js';
 
 import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
@@ -248,8 +248,17 @@ export async function pdvRoutes(app: FastifyInstance) {
     const data = z.object({
       tipo: z.enum(['SANGRIA', 'SUPRIMENTO']),
       valor: z.number().positive(),
-      motivo: z.string().max(200).optional(),
+      motivo: z.string().trim().max(200).optional(),
     }).parse(req.body);
+    // SANGRIA: motivo obrigatório e autorização do supervisor (dispensada só
+    // quando o próprio operador é supervisor de caixa). Suprimento segue livre.
+    let autorizacaoSangria: ReturnType<typeof lerAutorizacaoSupervisor> = null;
+    if (data.tipo === 'SANGRIA') {
+      if (!data.motivo || data.motivo.length < 3) throw new ErroDeNegocio('Informe o motivo da sangria.', 422);
+      autorizacaoSangria = lerAutorizacaoSupervisor(app, req, 'SANGRIA');
+      if (autorizacaoSangria) await supervisorAindaPode(prisma, autorizacaoSangria);
+      else if (!(await ehSupervisorDeCaixa(req.user.id))) throw new ErroDeNegocio('Sangria exige autorização do supervisor.', 403);
+    }
 
     // IDEMPOTÊNCIA (Módulo 10) — mesma proteção das vendas. Sem isto, um clique
     // duplo, um retry após timeout ou uma reconexão repetiam a sangria/suprimento
@@ -304,9 +313,21 @@ export async function pdvRoutes(app: FastifyInstance) {
         if (idemId) await tx.idempotencyKey.update({ where: { id: idemId }, data: { status: 'REJEITADA', responseStatus: 409, responseBody: corpo } });
         throw new ErroDeNegocio(corpo.error, 409);
       }
-      const mov = await tx.movimentacaoCaixa.create({
-        data: { caixaId: caixa.id, tipo: data.tipo, valor: data.valor, motivo: data.motivo, usuarioId: req.user.id, origem: 'MANUAL' },
+      if (autorizacaoSangria) await consumirAutorizacao(tx, autorizacaoSangria);
+      const criada = await tx.movimentacaoCaixa.create({
+        data: { caixaId: caixa.id, tipo: data.tipo, valor: data.valor, motivo: data.motivo, usuarioId: req.user.id, origem: 'MANUAL', autorizadoPorId: autorizacaoSangria?.supervisorId ?? null },
       });
+      const saldoDepois = Number((await tx.caixa.findUniqueOrThrow({ where: { id: caixa.id }, select: { saldo: true } })).saldo);
+      const operador = await tx.usuario.findUnique({ where: { id: req.user.id }, select: { nome: true } });
+      // Dados do comprovante impresso (gaveta antes/depois, quem fez e quem autorizou).
+      const mov = {
+        ...criada,
+        saldoAntes: data.tipo === 'SANGRIA' ? saldoDepois + data.valor : saldoDepois - data.valor,
+        saldoDepois,
+        operadorNome: operador?.nome ?? null,
+        autorizadoPorNome: autorizacaoSangria?.supervisorNome ?? null,
+        caixaNumero: caixa.numero ?? null,
+      };
       // Conclui a chave NA MESMA transação da movimentação: antes, se a
       // auditoria falhasse depois do commit, a chave ficava "processando" e
       // o retry recebia 409 até o prazo expirar.
@@ -393,6 +414,89 @@ export async function pdvRoutes(app: FastifyInstance) {
       valorNovo: fechamento.caixaFechado, origem: 'MANUAL', ip: req.ip,
       contexto: `Fechamento de caixa: ${JSON.stringify(fechamento.resumo)}`,
     });
-    return { caixa: fechamento.caixaFechado, resumo: fechamento.resumo, divergencia: fechamento.divergencia };
+    const relatorio = await relatorioDoCaixa(req.user.empresaId, fechamento.caixa.id);
+    return { caixa: fechamento.caixaFechado, resumo: fechamento.resumo, divergencia: fechamento.divergencia, relatorio };
   });
+
+  // ===== Item retirado do carrinho (com autorização) =====
+  app.post('/pdv/itens-cancelados', { preHandler: [app.authenticate, await permissaoMiddleware('pdv', 'criar')] }, async (req: any) => {
+    // Um ou vários itens (ex.: "limpar carrinho") com UMA autorização.
+    const data = z.object({
+      itens: z.array(z.object({ produtoId: z.string().min(1), quantidade: z.number().positive() })).min(1).max(200),
+      motivo: z.string().trim().min(3, 'Informe o motivo.').max(200),
+    }).parse(req.body ?? {});
+    const aut = lerAutorizacaoSupervisor(app, req, 'CANCELAR_ITEM');
+    if (aut) await supervisorAindaPode(prisma, aut);
+    else if (!(await ehSupervisorDeCaixa(req.user.id))) throw new ErroDeNegocio('Retirar item já lançado exige autorização do supervisor.', 403);
+    const registros = await prisma.$transaction(async (tx) => {
+      const caixa = await tx.caixa.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: req.user.id, status: 'ABERTO' }, select: { id: true, filialId: true } });
+      if (!caixa) throw new ErroDeNegocio('Nenhum caixa aberto.', 422);
+      if (aut) await consumirAutorizacao(tx, aut);
+      const criados = [];
+      for (const item of data.itens) {
+        const produto = await tx.produto.findFirst({ where: { id: item.produtoId, empresaId: req.user.empresaId }, select: { id: true, nome: true, precoVenda: true } });
+        if (!produto) throw NaoEncontrado('Produto não encontrado nesta empresa.');
+        const pf = await tx.produtoFilial.findUnique({ where: { produtoId_filialId: { produtoId: produto.id, filialId: caixa.filialId } }, select: { precoVenda: true } });
+        const unit = Number(pf?.precoVenda ?? produto.precoVenda);
+        criados.push(await tx.itemCanceladoPdv.create({
+          data: {
+            empresaId: req.user.empresaId, caixaId: caixa.id, usuarioId: req.user.id, autorizadoPorId: aut?.supervisorId ?? null,
+            produtoId: produto.id, produtoNome: produto.nome, quantidade: item.quantidade,
+            valorUnitario: unit, valorTotal: reais(Math.round(unit * item.quantidade * 100)), motivo: data.motivo,
+          },
+        }));
+      }
+      return criados;
+    });
+    await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'ItemCanceladoPdv', entidadeId: registros[0].id, valorNovo: registros as any, origem: 'PDV' as any, ip: req.ip,
+      contexto: `Itens retirados do carrinho: ${registros.map((r) => `${r.produtoNome} × ${r.quantidade}`).join(', ')} (${data.motivo})${aut ? `, autorizado por ${aut.supervisorNome}` : ''}.` });
+    return { itens: registros, autorizadoPorNome: aut?.supervisorNome ?? null };
+  });
+
+  // ===== Relatório de fechamento e histórico de caixas =====
+  app.get('/pdv/caixa/historico', { preHandler: [app.authenticate, await permissaoMiddleware('pdv', 'visualizar')] }, async (req: any) => {
+    const supervisor = await ehSupervisorDeCaixa(req.user.id);
+    const caixas = await prisma.caixa.findMany({
+      where: { empresaId: req.user.empresaId, status: 'FECHADO', ...(supervisor ? {} : { usuarioId: req.user.id }) },
+      orderBy: { fechadoEm: 'desc' }, take: 30,
+      select: { id: true, numero: true, abertoEm: true, fechadoEm: true, valorContado: true, diferenca: true, usuario: { select: { nome: true } }, filial: { select: { nome: true } } },
+    });
+    return { caixas };
+  });
+
+  app.get('/pdv/caixa/:id/relatorio', { preHandler: [app.authenticate, await permissaoMiddleware('pdv', 'visualizar')] }, async (req: any) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const caixa = await prisma.caixa.findFirst({ where: { id, empresaId: req.user.empresaId }, select: { usuarioId: true } });
+    if (!caixa) throw NaoEncontrado('Caixa não encontrado.');
+    if (caixa.usuarioId !== req.user.id && !(await ehSupervisorDeCaixa(req.user.id))) throw new ErroDeNegocio('Só o operador do caixa ou um supervisor veem este relatório.', 403);
+    return relatorioDoCaixa(req.user.empresaId, id);
+  });
+}
+
+/** Relatório completo de um turno de caixa (tela de fechamento, histórico e impressão). */
+async function relatorioDoCaixa(empresaId: string, caixaId: string) {
+  const caixa = await prisma.caixa.findFirstOrThrow({
+    where: { id: caixaId, empresaId },
+    include: { usuario: { select: { nome: true } }, filial: { select: { nome: true } } },
+  });
+  const [vendas, movimentacoes, itensCancelados] = await Promise.all([
+    prisma.venda.findMany({ where: { empresaId, caixaId }, select: { formaPagamento: true, total: true, status: true, pagamentos: { select: { forma: true, valor: true } } } }),
+    prisma.movimentacaoCaixa.findMany({ where: { caixaId }, orderBy: { createdAt: 'asc' } }),
+    prisma.itemCanceladoPdv.findMany({ where: { empresaId, caixaId }, select: { valorTotal: true } }),
+  ]);
+  const resumo = resumoDoCaixa(caixa, vendas, movimentacoes);
+  return {
+    caixaId: caixa.id,
+    numero: caixa.numero,
+    filial: caixa.filial?.nome ?? null,
+    operador: caixa.usuario?.nome ?? null,
+    status: caixa.status,
+    fechadoEm: caixa.fechadoEm,
+    ...resumo,
+    vendasCanceladas: vendas.filter((v) => v.status === 'CANCELADA').length,
+    valorContado: caixa.valorContado == null ? null : Number(caixa.valorContado),
+    diferenca: caixa.diferenca == null ? null : Number(caixa.diferenca),
+    observacao: caixa.observacaoFechamento,
+    itensCancelados: { quantidade: itensCancelados.length, valor: reais(itensCancelados.reduce((s, i) => s + centavos(i.valorTotal), 0)) },
+  };
 }

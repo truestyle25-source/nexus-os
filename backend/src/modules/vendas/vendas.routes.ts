@@ -9,7 +9,7 @@ import { aplicarMovimento } from '../estoque/estoque.service.js';
 import { converterParaUnidadeBaseVenda } from '../estoque/conversao.service.js';
 import { NaoEncontrado, Conflito, ErroDeNegocio } from '../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotencia.js';
-import { lerAutorizacaoSupervisor } from '../pdv/autorizacao-supervisor.js';
+import { lerAutorizacaoSupervisor, consumirAutorizacao, supervisorAindaPode, ehSupervisorDeCaixa } from '../pdv/autorizacao-supervisor.js';
 import { dataNoFuso, dataOperacionalDate } from '../../lib/fuso.js';
 import { mensagemPixProviderIndisponivel, pixProviderConfigurado, tefProviderConfigurado, verificarPagamentoPix } from '../payments/pixProvider.js';
 import { expandirKitParaVenda, produtoEhTipoKit } from '../produtos/kit.service.js';
@@ -477,6 +477,8 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         // Avalia o desconto TOTAL (itens + venda) sobre a base BRUTA: impede que
         // um desconto por item contorne a alçada e mede o percentual correto.
         descontoAutorizadoPor = await validarAlcadaDesconto(user.id, arred2(descontoTotal + data.desconto), subtotalBruto, tx, autorizacaoDesconto?.supervisorId);
+        // Autorização usada de fato: vale uma vez só.
+        if (descontoAutorizadoPor && autorizacaoDesconto) await consumirAutorizacao(tx, autorizacaoDesconto);
 
         // FASA 2 — pagamento misto: a soma precisa bater EXATAMENTE com o total.
         if (data.pagamentos) {
@@ -766,23 +768,27 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         where: { usuarioId: user.id, modulo: 'vendas', acao: 'editar', permitido: true },
         select: { id: true },
       });
-      // Autorização do supervisor no balcão libera cancelar venda fora do
-      // próprio turno (as permissões dele são reconferidas agora).
+      // Autorização do supervisor no balcão (as permissões dele são reconferidas agora).
       const autorizacaoCancel = lerAutorizacaoSupervisor(app, req, 'CANCELAMENTO');
-      const supervisorCancelValido = autorizacaoCancel
-        ? await prisma.permissao.findFirst({ where: { usuarioId: autorizacaoCancel.supervisorId, modulo: 'vendas', acao: 'editar', permitido: true }, select: { id: true } })
-        : null;
-      if (autorizacaoCancel && !supervisorCancelValido) {
-        throw new ErroDeNegocio('O supervisor que autorizou não pode mais cancelar vendas.', 403);
-      }
+      if (autorizacaoCancel) await supervisorAindaPode(prisma, autorizacaoCancel);
+      const supervisorCancelValido = Boolean(autorizacaoCancel);
       const somenteOperadorPdv = !gestorVendas;
+      // REGRAS DO PDV (operador de caixa): venda paga só se cancela com
+      // autorização do supervisor (ou se o próprio operador for supervisor de
+      // caixa), no mesmo dia, sem PIX (devolução de PIX ainda não integrada) e
+      // devolvendo o dinheiro pela gaveta aberta.
+      const operadorEhSupervisor = somenteOperadorPdv ? await ehSupervisorDeCaixa(user.id) : false;
       if (somenteOperadorPdv) {
         if (!body.motivo || body.motivo.length < MOTIVO_MINIMO_CANCELAMENTO) {
           throw new ErroDeNegocio(`Informe o motivo do cancelamento (mínimo ${MOTIVO_MINIMO_CANCELAMENTO} caracteres).`, 422);
         }
+        if (!supervisorCancelValido && !operadorEhSupervisor) {
+          throw new ErroDeNegocio('Cancelar venda paga exige autorização do supervisor.', 403);
+        }
         body.estornarEstoque = true;
         body.estornarFinanceiro = true;
       }
+      let estornoDinheiro = { valor: 0, caixaId: null as string | null };
       const motivoCancelamento = body.motivo ?? `Cancelamento venda ${id}`;
 
       const vendaCancelada = await prisma.$transaction(async (tx) => {
@@ -795,13 +801,18 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         const venda = await tx.venda.findUnique({ where: { id }, include: { itens: true, pagamentos: true } });
         if (!venda) throw NaoEncontrado('Venda não encontrada nesta empresa.');
         if (venda.status !== 'FINALIZADA') throw Conflito(`Venda com status ${venda.status} não pode ser estornada novamente.`);
-        if (somenteOperadorPdv && !supervisorCancelValido) {
-          const turno = venda.caixaId
-            ? await tx.caixa.findFirst({ where: { id: venda.caixaId, empresaId: user.empresaId, usuarioId: user.id, status: 'ABERTO' }, select: { id: true } })
-            : null;
-          if (!turno) {
-            throw new ErroDeNegocio('No PDV só é possível cancelar vendas do seu turno de caixa aberto. Peça a um supervisor para cancelar esta venda.', 403);
+        if (somenteOperadorPdv) {
+          // Mesmo dia operacional da venda.
+          const filialDaVenda = await tx.filial.findFirst({ where: { id: venda.filialId, empresaId: user.empresaId }, select: { fusoHorario: true } });
+          const [{ agoraUtc }] = await tx.$queryRaw<Array<{ agoraUtc: Date }>>`SELECT CURRENT_TIMESTAMP AS "agoraUtc"`;
+          const diaVenda = venda.dataOperacional ? venda.dataOperacional.toISOString().slice(0, 10) : dataNoFuso(venda.createdAt, filialDaVenda?.fusoHorario);
+          if (diaVenda !== dataNoFuso(agoraUtc, filialDaVenda?.fusoHorario)) {
+            throw new ErroDeNegocio('No PDV só é possível cancelar vendas do dia. Para vendas antigas, use a aba Vendas (gestor).', 422);
           }
+          if (venda.pagamentos.some((p) => p.forma === 'PIX') || venda.formaPagamento === 'PIX') {
+            throw new ErroDeNegocio('Venda com PIX não pode ser cancelada no PDV: a devolução do PIX ainda não está integrada. Procure o gestor.', 422);
+          }
+          if (autorizacaoCancel) await consumirAutorizacao(tx, autorizacaoCancel);
         }
 
         // O status vira CANCELADA AQUI, antes de qualquer recálculo derivado.
@@ -882,9 +893,20 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
           // REGRESSÃO: só estorna se o caixa estiver ABERTO. Caixa fechado não
           // deve ter saldo alterado nem receber movimentação SANGRIA automática.
           const caixaVenda = await tx.caixa.findUnique({ where: { id: venda.caixaId }, select: { status: true } });
-          if (caixaVenda?.status === 'ABERTO') {
-            await tx.caixa.update({ where: { id: venda.caixaId }, data: { saldo: { decrement: dinheiroEstornado } } });
-            await tx.movimentacaoCaixa.create({ data: { caixaId: venda.caixaId, vendaId: id, tipo: 'SANGRIA', valor: dinheiroEstornado, motivo: motivoCancelamento, usuarioId: user.id, origem: 'AUTOMATICO' } });
+          // Caixa da venda ainda aberto: o dinheiro sai dele. Já fechado: no PDV,
+          // o dinheiro devolvido ao cliente sai do caixa aberto AGORA pelo operador
+          // (senão a gaveta de hoje sobraria sem explicação no fechamento).
+          let caixaDoEstorno: string | null = caixaVenda?.status === 'ABERTO' ? venda.caixaId : null;
+          if (!caixaDoEstorno && somenteOperadorPdv) {
+            const atual = await tx.caixa.findFirst({ where: { empresaId: user.empresaId, usuarioId: user.id, status: 'ABERTO' }, select: { id: true, saldo: true } });
+            if (!atual) throw new ErroDeNegocio('Abra o seu caixa para devolver o dinheiro ao cliente.', 422);
+            if (Number(atual.saldo) < dinheiroEstornado) throw new ErroDeNegocio(`Não há dinheiro suficiente na gaveta para devolver R$ ${dinheiroEstornado.toFixed(2)}.`, 422);
+            caixaDoEstorno = atual.id;
+          }
+          if (caixaDoEstorno) {
+            await tx.caixa.update({ where: { id: caixaDoEstorno }, data: { saldo: { decrement: dinheiroEstornado } } });
+            await tx.movimentacaoCaixa.create({ data: { caixaId: caixaDoEstorno, vendaId: id, tipo: 'SANGRIA', valor: dinheiroEstornado, motivo: motivoCancelamento, usuarioId: user.id, origem: 'AUTOMATICO', autorizadoPorId: autorizacaoCancel?.supervisorId ?? null } });
+            estornoDinheiro = { valor: dinheiroEstornado, caixaId: caixaDoEstorno };
           }
         }
 
@@ -896,7 +918,8 @@ export async function vendasRoutes(app: FastifyInstance): Promise<void> {
         valorNovo: vendaCancelada, origem: 'MANUAL', ip: req.ip,
         contexto: `Cancelamento transacional (${motivoCancelamento}). Estorno de estoque: ${body.estornarEstoque ? 'sim' : 'não'}; estorno financeiro (financeiro, indicadores, metas, cliente e caixa): ${body.estornarFinanceiro ? 'sim' : 'não'}.${supervisorCancelValido ? ` Autorizado no balcão pelo supervisor ${autorizacaoCancel?.supervisorNome} (${autorizacaoCancel?.supervisorId}).` : ''}`,
       });
-      return vendaCancelada;
+      // Dados extras para o comprovante de cancelamento impresso no PDV.
+      return { ...vendaCancelada, estorno: { dinheiro: estornoDinheiro.valor, caixaId: estornoDinheiro.caixaId }, autorizadoPor: autorizacaoCancel ? { id: autorizacaoCancel.supervisorId, nome: autorizacaoCancel.supervisorNome } : null, motivo: motivoCancelamento };
     },
   );
 
