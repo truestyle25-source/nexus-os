@@ -757,3 +757,24 @@ export const api = {
 };
 
 export default api;
+
+export interface AlcadaCaixa {
+  modulo: string;
+  acao: string;
+  rotulo: string;
+  descricao: string;
+  permitido: boolean;
+}
+
+/** Alçadas do caixa (supervisor e descontos) de um usuário. */
+export async function fetchAlcadasCaixa(usuarioId: string) {
+  const data = await request<{ permissoes: AlcadaCaixa[] }>(`/usuarios/${encodeURIComponent(usuarioId)}/permissoes-especiais`);
+  return data.permissoes;
+}
+
+export async function salvarAlcadasCaixa(usuarioId: string, permissoes: Array<Pick<AlcadaCaixa, 'modulo' | 'acao' | 'permitido'>>) {
+  return request<{ ok: true }>(`/usuarios/${encodeURIComponent(usuarioId)}/permissoes-especiais`, {
+    method: 'PATCH',
+    body: JSON.stringify({ permissoes }),
+  });
+}

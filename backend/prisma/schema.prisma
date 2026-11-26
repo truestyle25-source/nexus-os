@@ -288,6 +288,7 @@ model Usuario {
   sessoesValidasDesde       DateTime?
   status                    StatusGeral                @default(ATIVO)
   origem                    Origem                     @default(MANUAL)
+  cargo                     String?
   ultimoLogin               DateTime?
   permissoes                Permissao[]
   caixas                    Caixa[]

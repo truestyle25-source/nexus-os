@@ -217,11 +217,21 @@ interface Empresa {
   filiais?: Filial[];
 }
 
+/** Cargos: a pessoa só vê o nome; as permissões ficam gravadas no servidor. */
+const CARGOS_USUARIO: Array<{ valor: string; rotulo: string }> = [
+  { valor: 'OPERADOR', rotulo: 'Operador' },
+  { valor: 'SUPERVISOR', rotulo: 'Supervisor' },
+  { valor: 'FINANCEIRO', rotulo: 'Financeiro / RH' },
+  { valor: 'GESTOR', rotulo: 'Gestor' },
+];
+
 interface UsuarioResumo {
   id: string;
   nome?: string;
   email: string;
   status?: string;
+  /** Cargo de referência (OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR). */
+  cargo?: string | null;
   /** `GET /usuarios` devolve a data de criação do usuário. */
   createdAt?: string | null;
 }
@@ -717,7 +727,7 @@ export default function ConfiguracoesPage() {
     nome: '',
     email: '',
     senha: '',
-    cargo: 'Operador',
+    cargo: 'OPERADOR',
   });
   const [novaApiKey, setNovaApiKey] = useState({ nome: '', escopos: 'vendas:leitura' });
   /**
@@ -1167,6 +1177,26 @@ export default function ConfiguracoesPage() {
 
   /* ---------------------- criação nos modais (API real) ---------------------- */
 
+  const [trocandoCargo, setTrocandoCargo] = useState<string | null>(null);
+  const trocarCargo = useCallback(
+    async (u: UsuarioResumo, cargo: string) => {
+      if (!cargo || cargo === u.cargo) return;
+      const rotulo = CARGOS_USUARIO.find((c) => c.valor === cargo)?.rotulo ?? cargo;
+      if (!window.confirm(`Trocar o cargo de ${u.nome || u.email} para ${rotulo}? As permissões passam a ser as do novo cargo.`)) return;
+      setTrocandoCargo(u.id);
+      try {
+        await api.put(`/usuarios/${encodeURIComponent(u.id)}/cargo`, { cargo });
+        addToast(`Cargo de ${u.nome || u.email} alterado para ${rotulo}.`, 'success');
+        await carregarUsuarios();
+      } catch (err) {
+        addToast(err instanceof Error && err.message ? err.message : 'Não foi possível trocar o cargo.', 'error');
+      } finally {
+        setTrocandoCargo(null);
+      }
+    },
+    [addToast, carregarUsuarios],
+  );
+
   const salvarUsuario = useCallback(
     async (evento: React.FormEvent<HTMLFormElement>) => {
       evento.preventDefault();
@@ -1184,10 +1214,11 @@ export default function ConfiguracoesPage() {
           nome: novoUsuario.nome.trim(),
           email: novoUsuario.email.trim(),
           senha: novoUsuario.senha,
+          cargo: novoUsuario.cargo,
           origem: 'MANUAL',
         });
-        addToast('Usuário criado. As permissões são definidas em Administração.', 'success');
-        setNovoUsuario({ nome: '', email: '', senha: '', cargo: 'Operador' });
+        addToast(`Usuário criado como ${CARGOS_USUARIO.find((c) => c.valor === novoUsuario.cargo)?.rotulo ?? novoUsuario.cargo}.`, 'success');
+        setNovoUsuario({ nome: '', email: '', senha: '', cargo: 'OPERADOR' });
         closeModal('modalUsuario');
         await carregarUsuarios();
       } catch (err) {
@@ -2129,6 +2160,22 @@ export default function ConfiguracoesPage() {
                         key={u.id}
                         label={u.nome || 'Usuário sem nome'}
                         hint={u.email}
+                        value={
+                          <select
+                            aria-label={`Cargo de ${u.nome || u.email}`}
+                            className="input-nexus"
+                            style={{ padding: '4px 8px', fontSize: 12, width: 'auto' }}
+                            value={u.cargo ?? ''}
+                            disabled={trocandoCargo === u.id || u.id === usuarioAtual?.id}
+                            title={u.id === usuarioAtual?.id ? 'Você não pode trocar o próprio cargo' : 'Trocar cargo'}
+                            onChange={(e) => void trocarCargo(u, e.target.value)}
+                          >
+                            {!u.cargo && <option value="">Sem cargo</option>}
+                            {CARGOS_USUARIO.map((c) => (
+                              <option key={c.valor} value={c.valor}>{c.rotulo}</option>
+                            ))}
+                          </select>
+                        }
                         badge={
                           <Badge tone={toneForStatus(u.status)} dot>
                             {u.status || '—'}
@@ -2139,7 +2186,7 @@ export default function ConfiguracoesPage() {
                   </div>
                 )}
                 <p className="mt-4 text-[11px] text-white/25 leading-relaxed">
-                  Modelo atual: permissões granulares por usuário (visualizar / criar / editar / excluir por módulo), aplicadas também à IA.
+                  Cada cargo tem acessos definidos (Operador, Supervisor, Financeiro / RH, Gestor). A IA respeita os mesmos limites.
                 </p>
               </Card>
             </div>
@@ -2525,15 +2572,14 @@ export default function ConfiguracoesPage() {
               value={novoUsuario.cargo}
               onChange={(e) => setNovoUsuario((prev) => ({ ...prev, cargo: e.target.value }))}
             >
-              <option value="Operador">Operador</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Financeiro">{traduzir('financeiro', "Financeiro")}</option>
-              <option value="Gestor">Gestor</option>
+              {CARGOS_USUARIO.map((c) => (
+                <option key={c.valor} value={c.valor}>{c.rotulo}</option>
+              ))}
             </select>
           </label>
           <p className="text-[11px] text-white/25 leading-relaxed">
-            O usuário nasce com o perfil padrão; visualizar / criar / editar / excluir por módulo é
-            definido na tela de Administração.
+            O cargo define o que a pessoa pode acessar no sistema. O que não for do cargo
+            fica escondido no menu e bloqueado no servidor.
           </p>
         </form>
       </Modal>
