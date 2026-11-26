@@ -279,9 +279,15 @@ export async function folhaRoutes(app: FastifyInstance) {
 
     const { inicio, fim } = intervaloDaCompetencia(folha.competencia);
     const ativos = await prisma.funcionario.findMany({
+      // Desligados entram só se saíram DEPOIS do fim da competência (ex.:
+      // reprocessar outubro de quem saiu em novembro). Quem saiu DENTRO do mês
+      // recebe o saldo de salário na rescisão, então fica fora para não pagar duas vezes.
       where: {
         empresaId: req.user.empresaId,
-        status: { notIn: ['ARQUIVADO', 'DESLIGADO'] },
+        OR: [
+          { status: { notIn: ['ARQUIVADO', 'DESLIGADO'] } },
+          { status: { in: ['ARQUIVADO', 'DESLIGADO'] }, dataDesligamento: { gte: fim } },
+        ],
       },
       // `dataAdmissao` e consultada porque o filtro ABAIXO depende dela: sem esta
       // coluna, um funcionario admitido depois da competencia entraria na folha e
