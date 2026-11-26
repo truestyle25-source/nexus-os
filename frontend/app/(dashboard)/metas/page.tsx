@@ -52,6 +52,20 @@ const EVOLUCAO = [{ mes: 'Abr', ating: 62 }, { mes: 'Mai', ating: 71 }, { mes: '
 export default function Metas() {
   const router = useRouter();
   const [baseMetas, setBaseMetas] = useState<Meta[]>([]);
+  // Permissões do usuário: Operador e Supervisor só veem; não criam, editam
+  // nem mexem em premiação (o servidor também recusa).
+  const [permissoes, setPermissoes] = useState<string[] | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    api.get<{ permissions?: string[] }>('/auth/me')
+      .then(({ data }) => { if (vivo) setPermissoes(Array.isArray(data?.permissions) ? data.permissions : []); })
+      .catch(() => { if (vivo) setPermissoes([]); });
+    return () => { vivo = false; };
+  }, []);
+  const podeCriarMeta = !!permissoes?.includes('metas:criar');
+  const podeEditarMeta = !!permissoes?.includes('metas:editar');
+  // Pagar premiação é decisão financeira: só Gestor e Financeiro / RH.
+  const podePagarPremiacao = !!permissoes?.some((p) => p === 'financeiro:administrar' || p === 'metas:administrar');
   const [query, setQuery] = useState('');
   const [queryDeb, setQueryDeb] = useState('');
   const [tab, setTab] = useState<TabKey>('Todas');
@@ -218,7 +232,7 @@ export default function Metas() {
       if (e.key === 'Escape') { setShowNew(false); setDetail(null); setShowProgress(null); setShowRanking(false); setEditing(null); }
       const tag = (document.activeElement?.tagName ?? '').toUpperCase();
       if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); searchRef.current?.focus(); }
-      if ((e.key === 'n' || e.key === 'N') && tag !== 'INPUT' && tag !== 'TEXTAREA' && !showNew) { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }
+      if ((e.key === 'n' || e.key === 'N') && tag !== 'INPUT' && tag !== 'TEXTAREA' && !showNew && podeCriarMeta) { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
@@ -375,7 +389,7 @@ export default function Metas() {
           </div>
           <button type="button" style={btnG} onClick={() => setAdvOpen((v) => !v)}><SlidersHorizontal size={14} /> Filtros Avancados</button>
           <button type="button" style={btnG} onClick={exportCSV}><Download size={14} /> Exportar</button>
-          <button type="button" className="metas-btn-p" style={btnP} onClick={() => { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }}><Plus size={14} /> Nova Meta</button>
+          {podeCriarMeta && <button type="button" className="metas-btn-p" style={btnP} onClick={() => { setForm(EMPTY_FORM); setEditing(null); setShowNew(true); }}><Plus size={14} /> Nova Meta</button>}
         </div>
       </div>
       <div role="tablist" aria-label="Categorias de metas" style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 14, padding: 6, gap: 6, width: 'fit-content', margin: '20px 0', display: 'flex', flexWrap: 'wrap' }}>
@@ -552,7 +566,7 @@ export default function Metas() {
           <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>Ranking + Premiacoes</h3>
           <div style={{ fontSize: 22, fontWeight: 800 }}>{formatBRL(kpis.prem, { maxFractionDigits: 0 })}</div>
           <button type="button" onClick={() => setShowRanking(true)} style={{ background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', fontSize: 11, padding: '8px 12px', cursor: 'pointer', marginTop: 8 }}>Ver Ranking</button>
-          <button type="button" onClick={() => addToast('Premiacoes pagas')} style={{ background: 'var(--nx-green)', height: 36, borderRadius: 8, padding: '0 14px', color: 'var(--text)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', marginTop: 8, marginLeft: 8 }}>Pagar Premiacoes</button>
+          {podePagarPremiacao && <button type="button" onClick={() => addToast('O pagamento de premiações ainda não está disponível no sistema. Nada foi pago.', 'warn')} style={{ background: 'var(--nx-green)', height: 36, borderRadius: 8, padding: '0 14px', color: 'var(--text)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', marginTop: 8, marginLeft: 8 }}>Pagar Premiacoes</button>}
         </div>
       </div>
 
@@ -599,11 +613,11 @@ export default function Metas() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
-              <button type="button" onClick={() => { setEditing(detail); setForm({ nome: detail.nome, equipe: detail.equipe, colaborador: detail.colaborador || '', tipo: detail.tipo, valorMeta: String(detail.valorMeta), valorAtual: String(detail.valorAtual), prazoInicio: detail.prazoInicio || '', prazoFim: detail.prazoFim || '', responsavel: detail.responsavel || '', premiacaoTipo: 'Valor fixo', valor: String(detail.premiacaoValor || ''), condicao: 'Atingir 100%', descricao: detail.descricao || '' }); setShowNew(true); }} style={btnG}><Pencil size={13} />{traduzir('editar', "Editar")}</button>
-              <button type="button" onClick={() => duplicar(detail)} style={btnG}><Copy size={13} />{traduzir('duplicar', "Duplicar")}</button>
-              <button type="button" onClick={() => pausar(detail)} style={btnG}><Pause size={13} /> {detail.status === 'Pausada' ? 'Reativar' : 'Pausar'}</button>
-              <button type="button" onClick={() => excluir(detail.id)} style={{ ...btnG, color: '#ef4444' }}><Trash2 size={13} />{traduzir('excluir', "Excluir")}</button>
-              <button type="button" onClick={() => { setShowProgress(detail); setProgForm({ atual: String(detail.valorAtual), novo: '', incremento: '', motivo: '', obs: '' }); }} style={{ ...btnP, height: 40 }}><CheckCircle2 size={13} /> Atualizar Progresso</button>
+              {podeEditarMeta && <button type="button" onClick={() => { setEditing(detail); setForm({ nome: detail.nome, equipe: detail.equipe, colaborador: detail.colaborador || '', tipo: detail.tipo, valorMeta: String(detail.valorMeta), valorAtual: String(detail.valorAtual), prazoInicio: detail.prazoInicio || '', prazoFim: detail.prazoFim || '', responsavel: detail.responsavel || '', premiacaoTipo: 'Valor fixo', valor: String(detail.premiacaoValor || ''), condicao: 'Atingir 100%', descricao: detail.descricao || '' }); setShowNew(true); }} style={btnG}><Pencil size={13} />{traduzir('editar', "Editar")}</button>}
+              {podeCriarMeta && <button type="button" onClick={() => duplicar(detail)} style={btnG}><Copy size={13} />{traduzir('duplicar', "Duplicar")}</button>}
+              {podeEditarMeta && <button type="button" onClick={() => pausar(detail)} style={btnG}><Pause size={13} /> {detail.status === 'Pausada' ? 'Reativar' : 'Pausar'}</button>}
+              {!!permissoes?.includes('metas:excluir') && <button type="button" onClick={() => excluir(detail.id)} style={{ ...btnG, color: '#ef4444' }}><Trash2 size={13} />{traduzir('excluir', "Excluir")}</button>}
+              {podeEditarMeta && <button type="button" onClick={() => { setShowProgress(detail); setProgForm({ atual: String(detail.valorAtual), novo: '', incremento: '', motivo: '', obs: '' }); }} style={{ ...btnP, height: 40 }}><CheckCircle2 size={13} /> Atualizar Progresso</button>}
               <button type="button" onClick={() => addToast('Premiacao paga')} style={{ ...btnP, height: 40, background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>Pagar Premiacao</button>
               <button type="button" onClick={() => addToast('Link copiado')} style={btnG}><Share2 size={13} /> Compartilhar</button>
             </div>
