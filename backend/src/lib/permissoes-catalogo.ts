@@ -60,6 +60,13 @@ export const PERMISSOES_ESPECIAIS = [
   { modulo: 'vendas', acao: 'desconto_gerente', rotulo: 'Desconto acima de 30%', descricao: 'Pode conceder ou autorizar descontos maiores (alçada de gerente).' },
 ] as const;
 
+/** Escopos restritos (não aparecem como alçada; vêm do cargo). */
+export const PERMISSOES_ESCOPO = [
+  { modulo: 'ponto', acao: 'proprio' },
+  { modulo: 'metas', acao: 'proprio' },
+  { modulo: 'metas', acao: 'equipe' },
+] as const;
+
 export function ehPermissaoEspecial(modulo: string, acao: string): boolean {
   return PERMISSOES_ESPECIAIS.some((p) => p.modulo === modulo && p.acao === acao);
 }
@@ -101,6 +108,8 @@ const OPERADOR: Regra = {
   clientes: ['visualizar', 'criar'],
   produtos: V,
   estoque: V,
+  ponto: ['proprio'], // só as próprias batidas
+  metas: ['proprio'], // só as suas metas
 };
 
 const SUPERVISOR: Regra = {
@@ -113,7 +122,8 @@ const SUPERVISOR: Regra = {
   compras: ['visualizar', 'criar'],
   fornecedores: V,
   relatorios: V,
-  metas: V,
+  metas: ['equipe'], // metas do próprio setor
+  ponto: ['proprio'],
 };
 
 const FINANCEIRO: Regra = {
