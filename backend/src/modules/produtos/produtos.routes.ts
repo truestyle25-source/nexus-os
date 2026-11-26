@@ -571,7 +571,7 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
   // ARQUIVADO exige a permissão mais forte (excluir); ATIVO/INATIVO usam editar.
   app.patch(
     '/produtos/:id/status',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, permissaoMiddleware('produtos', 'editar')] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
       const { status } = z.object({ status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']) }).parse(req.body);
@@ -600,7 +600,7 @@ export async function produtosRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/produtos/status-lote',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, permissaoMiddleware('produtos', 'editar')] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { ids, status } = z.object({
         ids: z.array(z.string().min(1)).min(1).max(5000),

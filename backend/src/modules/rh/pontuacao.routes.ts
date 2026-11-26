@@ -244,7 +244,6 @@ export async function pontuacaoRoutes(app: FastifyInstance): Promise<void> {
       (app as any).authenticate,
       permissaoQualquerDas([
         { modulo: 'rh', acao: 'visualizar' },
-        { modulo: 'relatorios', acao: 'visualizar' },
       ]),
     ],
   };
@@ -253,7 +252,6 @@ export async function pontuacaoRoutes(app: FastifyInstance): Promise<void> {
       (app as any).authenticate,
       permissaoQualquerDas([
         { modulo: 'rh', acao: 'editar' },
-        { modulo: 'relatorios', acao: 'editar' },
       ]),
     ],
   };

@@ -52,7 +52,6 @@ export async function gestaoTempoRoutes(app: FastifyInstance): Promise<void> {
       (app as any).authenticate,
       permissaoQualquerDas([
         { modulo: 'rh', acao: 'visualizar' },
-        { modulo: 'relatorios', acao: 'visualizar' },
       ]),
     ],
   };

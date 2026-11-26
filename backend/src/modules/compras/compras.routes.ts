@@ -133,7 +133,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/fornecedores/:id/status',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, permissaoMiddleware('fornecedores', 'editar')] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
       const { status: statusRawF } = z
@@ -647,7 +647,7 @@ export async function comprasRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/clientes/:id/status',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, permissaoMiddleware('clientes', 'editar')] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const { id } = req.params as { id: string };
       const { status } = z.object({ status: z.enum(['ATIVO', 'INATIVO', 'ARQUIVADO']) }).parse(req.body);
