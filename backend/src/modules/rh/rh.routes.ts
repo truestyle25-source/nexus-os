@@ -8,8 +8,6 @@ import { filtroPonto } from '../../lib/escopo-proprio.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { decryptSecret, encryptSecret } from '../../lib/secrets.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
-import { CARGOS } from '../../lib/permissoes-catalogo.js';
-import { preverMudancaDeAcesso, preverMudancasDoCargo, aplicarMudancasDeAcesso, podeEditarUsuarios } from '../../lib/cargo-usuario.js';
 // Fuso da empresa: decide a que dia pertence uma marcação de ponto.
 import { dataNoFuso, instanteNaHoraLocal, normalizarFuso } from '../../lib/fuso.js';
 import { fecharExpediente } from './ponto-fechamento.service.js';
@@ -209,6 +207,22 @@ const resolverCargo = async (
   return criado.id;
 };
 
+/**
+ * Desligamento encerra o acesso: o login ligado ao funcionário passa a INATIVO
+ * e as sessões abertas caem na hora (o middleware recusa quem não está ATIVO).
+ * Recontratar NÃO reativa sozinho: reativar é decisão de Configurações → Usuários.
+ */
+const desativarLoginDoDesligado = async (tx: Prisma.TransactionClient, empresaId: string, usuarioId: string | null | undefined): Promise<boolean> => {
+  if (!usuarioId) return false;
+  const r = await tx.usuario.updateMany({ where: { id: usuarioId, empresaId, status: 'ATIVO' }, data: { status: 'INATIVO', sessoesValidasDesde: new Date() } });
+  return r.count > 0;
+};
+const auditarLoginDesativado = (req: any, usuarioId: string, funcionarioNome: string) => registrarAuditoria({
+  usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Usuario', entidadeId: usuarioId,
+  valorAnterior: { status: 'ATIVO' }, valorNovo: { status: 'INATIVO' }, origem: 'MANUAL', ip: req.ip,
+  contexto: `Login desativado no desligamento de ${funcionarioNome}`,
+});
+
 const MES_INICIO = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const DIA_INICIO = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
@@ -279,16 +293,11 @@ export async function rhRoutes(app: FastifyInstance) {
   });
   app.post('/cargos', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'criar')] }, async (req:any) => {
     const { nome, departamentoId, descricao } = req.body as any;
-    const { cargoReferencia } = z.object({ cargoReferencia: z.enum(CARGOS).nullish() }).parse(req.body ?? {});
     if (departamentoId) {
       const dep = await prisma.departamento.findFirst({ where: { id: departamentoId, empresaId: req.user.empresaId } });
       if (!dep) throw new ErroDeNegocio('Departamento inválido para esta empresa.');
     }
-    // Definir o acesso que um cargo dá é decisão de Usuários, não só de RH.
-    if (cargoReferencia && !(await podeEditarUsuarios(req.user.id))) {
-      throw new ErroDeNegocio('Para definir o acesso do cargo é preciso permissão de editar usuários.', 403);
-    }
-    const cargo = await prisma.cargo.create({ data: { empresaId: req.user.empresaId, nome, departamentoId, descricao, cargoReferencia: cargoReferencia ?? null } });
+    const cargo = await prisma.cargo.create({ data: { empresaId: req.user.empresaId, nome, departamentoId, descricao } });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'Cargo', entidadeId: cargo.id, valorNovo: cargo, origem: 'MANUAL', ip: req.ip });
     return cargo;
   });
@@ -300,19 +309,11 @@ export async function rhRoutes(app: FastifyInstance) {
    * outro departamento seria indistinguível de limpar o campo.
    */
   app.put('/cargos/:id', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'editar')] }, async (req:any) => {
-    const { nome, departamentoId, descricao, cargoReferencia } = z
-      .object({ nome: z.string().min(2), departamentoId: z.string().nullish(), descricao: z.string().optional(), cargoReferencia: z.enum(CARGOS).nullish() })
+    const { nome, departamentoId, descricao } = z
+      .object({ nome: z.string().min(2), departamentoId: z.string().nullish(), descricao: z.string().optional() })
       .parse(req.body ?? {});
     const anterior = await prisma.cargo.findFirst({ where: { id: req.params.id, empresaId: req.user.empresaId } });
     if (!anterior) throw new ErroDeNegocio('Cargo não encontrado nesta empresa.', 404);
-    // Omitido = mantém; null = tira a referência (os logins ficam com o acesso atual).
-    const mudaReferencia = cargoReferencia !== undefined && (cargoReferencia ?? null) !== (anterior.cargoReferencia ?? null);
-    if (mudaReferencia && !(await podeEditarUsuarios(req.user.id))) {
-      throw new ErroDeNegocio('Para mudar o acesso do cargo é preciso permissão de editar usuários.', 403);
-    }
-    const mudancas = mudaReferencia && cargoReferencia
-      ? await preverMudancasDoCargo({ empresaId: req.user.empresaId, atorId: req.user.id, cargoId: anterior.id, referencia: cargoReferencia })
-      : [];
     if (departamentoId) {
       const dep = await prisma.departamento.findFirst({ where: { id: departamentoId, empresaId: req.user.empresaId } });
       if (!dep) throw new ErroDeNegocio('Departamento inválido para esta empresa.');
@@ -323,16 +324,14 @@ export async function rhRoutes(app: FastifyInstance) {
         nome: nome.trim(),
         descricao: textoOpcional(descricao) ?? null,
         ...(departamentoId === null ? { departamentoId: null } : departamentoId ? { departamentoId } : {}),
-        ...(mudaReferencia ? { cargoReferencia: cargoReferencia ?? null } : {}),
       },
     });
     await registrarAuditoria({
       usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Cargo',
-      entidadeId: cargo.id, valorAnterior: { nome: anterior.nome, departamentoId: anterior.departamentoId, cargoReferencia: anterior.cargoReferencia },
-      valorNovo: { nome: cargo.nome, departamentoId: cargo.departamentoId, cargoReferencia: cargo.cargoReferencia }, origem: 'MANUAL', ip: req.ip,
+      entidadeId: cargo.id, valorAnterior: { nome: anterior.nome, departamentoId: anterior.departamentoId },
+      valorNovo: { nome: cargo.nome, departamentoId: cargo.departamentoId }, origem: 'MANUAL', ip: req.ip,
     });
-    await aplicarMudancasDeAcesso(mudancas, { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `cargo ${cargo.nome}` });
-    return { ...cargo, loginsAtualizados: mudancas.length };
+    return cargo;
   });
 
   /** Exclui um cargo — recusado (409) se houver funcionário vinculado a ele. */
@@ -367,7 +366,8 @@ export async function rhRoutes(app: FastifyInstance) {
     // Quem precisa ver o histórico usa `GET /rh/funcionarios/arquivados`.
     return prisma.funcionario.findMany({
       where: { empresaId: req.user.empresaId, status: { not: 'ARQUIVADO' } },
-      include: { cargo: true, departamento: true },
+      // Login ligado: só nome, e-mail, cargo e situação (o card mostra quem é).
+      include: { cargo: true, departamento: true, usuario: { select: { id: true, nome: true, email: true, cargo: true, status: true } } },
       orderBy: { createdAt: 'desc' },
     });
   });
@@ -471,8 +471,6 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
-    // O cargo do RH pode definir o acesso do login: valida ANTES de gravar.
-    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
     // CPF único validação
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
@@ -514,7 +512,6 @@ export async function rhRoutes(app: FastifyInstance) {
       }
     });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'Funcionario', entidadeId: func.id, valorNovo: func, origem: data.origem as any, ip: req.ip });
-    if (mudancaAcesso) await aplicarMudancasDeAcesso([mudancaAcesso], { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `funcionário ${func.nome}` });
     return func;
   });
 
@@ -537,7 +534,6 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo && vinculo.id !== id) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
-    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
       if (existe && existe.id !== id) throw new Error('CPF já cadastrado - CPF único Seção 20');
@@ -546,6 +542,11 @@ export async function rhRoutes(app: FastifyInstance) {
     const status: "ATIVO" | "INATIVO" | "FERIAS" | "AFASTADO" | "DESLIGADO" | undefined =
       typeof data.status === 'string' && statusValidos.includes(data.status) ? data.status : undefined;
     const desligamento = dataOpcional(data.dataDesligamento);
+    const vaiDesligar = status === 'DESLIGADO' && anterior.status !== 'DESLIGADO';
+    const loginDoFuncionario = textoOpcional(data.usuarioId) ?? null;
+    if (vaiDesligar && loginDoFuncionario && loginDoFuncionario === req.user.id) {
+      throw new ErroDeNegocio('Você não pode desligar a si mesmo: isso desativaria o seu próprio login. Peça a outro gestor.', 403);
+    }
     const atualizado = await prisma.funcionario.update({
       where: { id },
       data: {
@@ -581,8 +582,12 @@ export async function rhRoutes(app: FastifyInstance) {
       },
     });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'EDITAR', entidade: 'Funcionario', entidadeId: id, valorAnterior: anterior, valorNovo: atualizado, origem: 'MANUAL', ip: req.ip });
-    if (mudancaAcesso) await aplicarMudancasDeAcesso([mudancaAcesso], { empresaId: req.user.empresaId, atorId: req.user.id, ip: req.ip, motivo: `funcionário ${atualizado.nome}` });
-    return atualizado;
+    let loginDesativado = false;
+    if (vaiDesligar && atualizado.usuarioId) {
+      loginDesativado = await prisma.$transaction((tx) => desativarLoginDoDesligado(tx, req.user.empresaId, atualizado.usuarioId));
+      if (loginDesativado) await auditarLoginDesativado(req, atualizado.usuarioId, atualizado.nome);
+    }
+    return { ...atualizado, loginDesativado };
   });
 
   // Indicadores RH Seção 20
@@ -591,12 +596,12 @@ export async function rhRoutes(app: FastifyInstance) {
   // não podem ser atribuídas à pessoa na aba Desempenho.
   app.get('/rh/usuarios-vinculaveis', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
     const [usuarios, vinculados] = await Promise.all([
-      prisma.usuario.findMany({ where: { empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, email: true }, orderBy: { nome: 'asc' } }),
+      prisma.usuario.findMany({ where: { empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, email: true, cargo: true }, orderBy: { nome: 'asc' } }),
       prisma.funcionario.findMany({ where: { empresaId: req.user.empresaId, usuarioId: { not: null } }, select: { usuarioId: true, nome: true } }),
     ]);
     const mapa = new Map<string, string>();
     for (const v of vinculados) if (v.usuarioId) mapa.set(v.usuarioId, v.nome);
-    return usuarios.map((u:any) => ({ id: u.id, nome: u.nome, email: u.email, vinculadoA: mapa.get(u.id) ?? null }));
+    return usuarios.map((u:any) => ({ id: u.id, nome: u.nome, email: u.email, cargo: u.cargo ?? null, vinculadoA: mapa.get(u.id) ?? null }));
   });
   // Advertências (Seção 20 - disciplina)
   app.get('/rh/advertencias', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
@@ -1607,6 +1612,7 @@ export async function rhRoutes(app: FastifyInstance) {
     // mandava `tipoLabel`/`art` e o banco guardava o que o navegador enviou.
     const tipo = TIPOS_DESLIGAMENTO[d.tipo];
 
+    const loginDesl: { v: { usuarioId: string; nome: string } | null } = { v: null };
     const desligamento = await prisma.$transaction(async (tx) => {
       const criado = await tx.desligamento.create({
         data: {
@@ -1642,10 +1648,16 @@ export async function rhRoutes(app: FastifyInstance) {
       });
       // O funcionário passa a DESLIGADO e ganha a data — é o que o resto do
       // sistema lê para não gerar ponto ou venda para quem já saiu.
-      await tx.funcionario.update({
+      const desligado = await tx.funcionario.update({
         where: { id: d.funcionarioId },
         data: { dataDesligamento: dataDesligamento, status: 'DESLIGADO' },
+        select: { usuarioId: true, nome: true },
       });
+      if (desligado.usuarioId === req.user.id) {
+        throw new ErroDeNegocio('Você não pode desligar a si mesmo: isso desativaria o seu próprio login. Peça a outro gestor.', 403);
+      }
+      // Mesma transação: o desligamento e o fim do acesso acontecem juntos.
+      if (await desativarLoginDoDesligado(tx, req.user.empresaId, desligado.usuarioId)) loginDesl.v = { usuarioId: desligado.usuarioId as string, nome: desligado.nome };
       return criado;
     });
 
@@ -1667,6 +1679,7 @@ export async function rhRoutes(app: FastifyInstance) {
       ip: req.ip,
       contexto: `Desligamento ${desligamento.id} registrado para ${funcionario.nome}. Verbas apuradas no servidor.`,
     });
+    if (loginDesl.v) await auditarLoginDesativado(req, loginDesl.v.usuarioId, loginDesl.v.nome);
 
     return desligamento;
   });

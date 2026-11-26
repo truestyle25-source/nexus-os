@@ -28,8 +28,9 @@ import { t as traduzir, tMenu } from '@/lib/i18n';
 // dados) e não é uma aba nova: o layout do RH não muda.
 import GestaoTempoPainel from '@/components/rh/GestaoTempoPainel';
 
-/** Cargos de referência do sistema (mesmos do backend: OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR). */
+/** Cargos do login (definidos em Configurações → Usuários), só para exibir. */
 const CARGOS_REFERENCIA = [{ valor: 'OPERADOR', rotulo: 'Operador' }, { valor: 'SUPERVISOR', rotulo: 'Supervisor' }, { valor: 'FINANCEIRO', rotulo: 'Financeiro / RH' }, { valor: 'GESTOR', rotulo: 'Gestor' }];
+const rotuloCargoLogin = (c?: string | null) => CARGOS_REFERENCIA.find((x) => x.valor === c)?.rotulo ?? 'Sem cargo';
 
 type Aba = 'funcionarios' | 'presenca' | 'desempenho' | 'advertencias' | 'suspensoes' | 'desligamento' | 'folha' | 'espelho';
 
@@ -1176,8 +1177,9 @@ export default function RH() {
     };
     try {
       if (editId) {
-        await api.put(`/funcionarios/${editId}`, body);
-        setNotice('Funcionário atualizado.');
+        const r: any = await api.put(`/funcionarios/${editId}`, body);
+        const desativado = Boolean(r?.loginDesativado ?? r?.data?.loginDesativado);
+        setNotice(desativado ? 'Funcionário desligado. O login dele foi desativado e não entra mais no sistema.' : 'Funcionário atualizado.');
       } else {
         await api.post('/funcionarios', { ...body, origem: 'MANUAL' });
         setNotice('Funcionário cadastrado.');
@@ -1218,8 +1220,6 @@ export default function RH() {
   const [depNome, setDepNome] = useState('');
   const [cargoNome, setCargoNome] = useState('');
   const [cargoDep, setCargoDep] = useState('');
-  // Cargo de referência do sistema: define o acesso do login de quem está neste cargo.
-  const [cargoRef, setCargoRef] = useState('');
   // id em edição: null = criando. Os formulários de criar e de editar são o
   // mesmo, com o rótulo do botão trocando — evita dois formulários parecidos.
   const [editandoDep, setEditandoDep] = useState<string | null>(null);
@@ -1278,15 +1278,14 @@ export default function RH() {
         // `departamentoId: null` desvincula; enviar o id move para outro
         // departamento. A distinção existe porque o backend trata as duas
         // coisas de forma diferente.
-        const r: any = await api.put(`/cargos/${editandoCargo}`, { nome: cargoNome, departamentoId: cargoDep || null, cargoReferencia: cargoRef || null });
-        const n = Number(r?.loginsAtualizados ?? r?.data?.loginsAtualizados ?? 0);
-        setNotice(n > 0 ? `Cargo atualizado. Acesso de ${n} login(s) atualizado.` : traduzir('cargo_atualizado', 'Cargo atualizado.'));
+        await api.put(`/cargos/${editandoCargo}`, { nome: cargoNome, departamentoId: cargoDep || null });
+        setNotice(traduzir('cargo_atualizado', 'Cargo atualizado.'));
         setEditandoCargo(null);
       } else {
-        await api.post('/cargos', { nome: cargoNome, departamentoId: cargoDep || undefined, cargoReferencia: cargoRef || undefined });
+        await api.post('/cargos', { nome: cargoNome, departamentoId: cargoDep || undefined });
         setNotice(traduzir('cargo_criado', 'Cargo criado.'));
       }
-      setCargoNome(''); setCargoDep(''); setCargoRef('');
+      setCargoNome(''); setCargoDep('');
       await load();
     } catch (err: any) { setError(msgErro(err, traduzir('falha_cargo', 'Falha ao salvar cargo.'))); }
   }
@@ -1295,7 +1294,6 @@ export default function RH() {
     setEditandoCargo(c.id);
     setCargoNome(c.nome ?? '');
     setCargoDep(c.departamentoId ?? '');
-    setCargoRef(c.cargoReferencia ?? '');
   }
 
   /** Exclui um cargo — recusado (409) pelo servidor se houver funcionário vinculado. */
@@ -2179,7 +2177,7 @@ export default function RH() {
                 </label>
                 <label>{traduzir('usuario_do_sistema_login', "Usuário do sistema (login)")}<select value={f.usuarioId} onChange={(e) => setCampo('usuarioId', e.target.value)}>
                     <option value="">—</option>
-                    {vinculaveis.map((u: any) => <option key={u.id} value={u.id}>{u.nome}{u.vinculadoA ? ` (vinculado a ${u.vinculadoA})` : ''}</option>)}
+                    {vinculaveis.map((u: any) => <option key={u.id} value={u.id}>{u.nome} · {rotuloCargoLogin(u.cargo)}{u.vinculadoA ? ` (vinculado a ${u.vinculadoA})` : ''}</option>)}
                   </select>
                 </label>
                 <label>{traduzir('id_no_ponto_controlid', "ID no ponto (ControlID)")}<input value={f.idExternoPonto} onChange={(e) => setCampo('idExternoPonto', e.target.value)} /></label>
@@ -2308,7 +2306,7 @@ export default function RH() {
                 <div className="rh-card-info">
                   <span>ID Ponto: <strong>{fu.idExternoPonto || '—'}</strong></span>
                   <span>Matrícula: <strong>{fu.matricula || '—'}</strong></span>
-                  <span>Usuário: <strong>{fu.usuario?.nome || 'não vinculado'}</strong></span>
+                  <span>Usuário: <strong>{fu.usuario ? `${fu.usuario.nome} · ${rotuloCargoLogin(fu.usuario.cargo)}${fu.usuario.status && fu.usuario.status !== 'ATIVO' ? ' · login desativado' : ''}` : 'não vinculado'}</strong></span>
                   <span>{traduzir('salario', "Salário")}: <strong>{fu.salario != null ? brl(Number(fu.salario)) : '—'}</strong></span>
                   <span>BIO: <strong>{fu.biometriaCadastrada ? 'cadastrada' : 'não'}</strong></span>
                 </div>
@@ -2358,25 +2356,19 @@ export default function RH() {
                       {deps.map((d) => <option key={d.id} value={d.id}>{d.nome}</option>)}
                     </select>
                   </label>
-                  <label title="Define o que o login de quem está neste cargo pode acessar">Acesso no sistema<select value={cargoRef} onChange={(e) => setCargoRef(e.target.value)}>
-                      <option value="">Sem referência</option>
-                      {CARGOS_REFERENCIA.map((c) => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
-                    </select>
-                  </label>
                   <button className="admin-primary" type="submit">{editandoCargo ? traduzir('salvar', "Salvar") : traduzir('criar', "Criar")}</button>
                   {editandoCargo && (
-                    <button className="admin-secondary" type="button" onClick={() => { setEditandoCargo(null); setCargoNome(''); setCargoDep(''); setCargoRef(''); }}>
+                    <button className="admin-secondary" type="button" onClick={() => { setEditandoCargo(null); setCargoNome(''); setCargoDep(''); }}>
                       {traduzir('cancelar', "Cancelar")}
                     </button>
                   )}
                 </form>
                 <table className="admin-simple-table">
-                  <thead><tr><th>{traduzir('nome', "Nome")}</th><th>{traduzir('departamento', "Departamento")}</th><th>Acesso no sistema</th><th></th></tr></thead>
+                  <thead><tr><th>{traduzir('nome', "Nome")}</th><th>{traduzir('departamento', "Departamento")}</th><th></th></tr></thead>
                   <tbody>{cargos.map((c: any) => (
                     <tr key={c.id}>
                       <td>{c.nome}</td>
                       <td>{c.departamento?.nome || '—'}</td>
-                      <td>{CARGOS_REFERENCIA.find((r) => r.valor === c.cargoReferencia)?.rotulo || '—'}</td>
                       <td>
                         <button className="admin-secondary" type="button" onClick={() => editarCargo(c)}>{traduzir('editar', "Editar")}</button>
                         <button className="admin-secondary" type="button" onClick={() => excluirCargo(c.id, c.nome)}>{traduzir('excluir', "Excluir")}</button>

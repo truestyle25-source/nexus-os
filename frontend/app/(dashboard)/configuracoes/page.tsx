@@ -232,8 +232,6 @@ interface UsuarioResumo {
   status?: string;
   /** Cargo de referência (OPERADOR, SUPERVISOR, FINANCEIRO, GESTOR). */
   cargo?: string | null;
-  /** Quando o login está ligado a um funcionário cujo cargo do RH define o acesso. */
-  cargoDoRh?: { nome: string; departamento: string | null; cargoReferencia: string } | null;
   /** `GET /usuarios` devolve a data de criação do usuário. */
   createdAt?: string | null;
 }
@@ -2161,15 +2159,15 @@ export default function ConfiguracoesPage() {
                       <Row
                         key={u.id}
                         label={u.nome || 'Usuário sem nome'}
-                        hint={u.cargoDoRh ? `${u.email} · definido pelo RH (${u.cargoDoRh.departamento ? u.cargoDoRh.departamento + ' → ' : ''}${u.cargoDoRh.nome})` : u.email}
+                        hint={u.email}
                         value={
                           <select
                             aria-label={`Cargo de ${u.nome || u.email}`}
                             className="input-nexus"
                             style={{ padding: '4px 8px', fontSize: 12, width: 'auto' }}
                             value={u.cargo ?? ''}
-                            disabled={trocandoCargo === u.id || u.id === usuarioAtual?.id || Boolean(u.cargoDoRh)}
-                            title={u.id === usuarioAtual?.id ? 'Você não pode trocar o próprio cargo' : u.cargoDoRh ? 'Definido pelo RH: troque o cargo do funcionário no RH' : 'Trocar cargo'}
+                            disabled={trocandoCargo === u.id || u.id === usuarioAtual?.id}
+                            title={u.id === usuarioAtual?.id ? 'Você não pode trocar o próprio cargo' : 'Trocar cargo'}
                             onChange={(e) => void trocarCargo(u, e.target.value)}
                           >
                             {!u.cargo && <option value="">Sem cargo</option>}
