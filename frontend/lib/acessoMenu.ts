@@ -51,3 +51,29 @@ export function podeAcessar(caminho: string, permissoes: string[] | null): boole
   if (!exigidas) return true;
   return exigidas.some((p) => permissoes.includes(p));
 }
+
+/**
+ * Abas de Configurações. Idioma, Aparência e Minha Conta ficam para todos;
+ * as demais são da empresa (Gestor) — Financeiro / RH vê as suas.
+ * Também só esconde: o servidor barra quem não pode salvar.
+ */
+export const ACESSO_ABA_CONFIG: Record<string, string[]> = {
+  Empresa: ['empresa:visualizar'],
+  'Usuários e Permissões': ['usuarios:visualizar'],
+  Segurança: ['empresa:editar'],
+  PDV: ['empresa:editar'],
+  'PIX / Recebimentos': ['empresa:visualizar', 'financeiro:visualizar'],
+  Estoque: ['empresa:editar'],
+  Financeiro: ['empresa:editar', 'financeiro:administrar'],
+  RH: ['empresa:editar', 'rh:administrar'],
+  IA: ['empresa:editar'],
+  'App & API': ['api_publica:visualizar', 'integracoes:visualizar'],
+};
+
+export function podeVerAbaConfig(aba: string, permissoes: string[] | null): boolean {
+  const exigidas = ACESSO_ABA_CONFIG[aba];
+  if (!exigidas) return true;
+  // Enquanto carrega, esconde as restritas (evita mostrar e sumir).
+  if (!permissoes) return false;
+  return exigidas.some((p) => permissoes.includes(p));
+}

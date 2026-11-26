@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { permissaoMiddleware } from '../../middlewares/auth.js';
+import { permissaoQualquerDas, permissaoMiddleware } from '../../middlewares/auth.js';
 import { encryptSecret, decryptSecret } from '../../lib/secrets.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
@@ -47,7 +47,9 @@ function mascaraChave(chave: string): string {
 export async function pixRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/api/v1/settings/pix',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('pdv', 'visualizar')] },
+    // Configuração da empresa: só Gestor (empresa) e Financeiro (consulta).
+    // Antes bastava `pdv:visualizar` — qualquer operador via o CPF do titular.
+    { preHandler: [(app as any).authenticate, permissaoQualquerDas([{ modulo: 'empresa', acao: 'visualizar' }, { modulo: 'financeiro', acao: 'visualizar' }])] },
     async (req: FastifyRequest) => {
       const empresaId = (req as any).user.empresaId as string;
       const cfg = await prisma.pixSettings.findUnique({ where: { empresaId } });
@@ -64,7 +66,9 @@ export async function pixRoutes(app: FastifyInstance): Promise<void> {
 
   app.put(
     '/api/v1/settings/pix',
-    { preHandler: [(app as any).authenticate, await permissaoMiddleware('pdv', 'editar')] },
+    // Trocar a chave PIX que recebe o dinheiro da empresa é só do Gestor.
+    // Antes bastava `pdv:editar`, que todo operador de caixa tem.
+    { preHandler: [(app as any).authenticate, await permissaoMiddleware('empresa', 'editar')] },
     async (req: FastifyRequest) => {
       const user = (req as any).user;
       const data = pixSettingsSchema.parse(req.body);

@@ -123,7 +123,8 @@ export async function pdvRoutes(app: FastifyInstance) {
     return prisma.integracaoPDV.findMany({ where: { empresaId: req.user.empresaId } });
   });
 
-  app.post('/pdv/integracoes', { preHandler: [(app as any).authenticate, await permissaoMiddleware('pdv', 'criar')] }, async (req:any) => {
+  // Cadastrar equipamento do PDV é configuração da empresa (Gestor), não do operador.
+  app.post('/pdv/integracoes', { preHandler: [(app as any).authenticate, await permissaoMiddleware('empresa', 'editar')] }, async (req:any) => {
     // Antes o corpo vinha como `req.body as any`, sem schema: um `nome`
     // ausente quebrava dentro do Prisma (500 com mensagem interna) e o tipo
     // inválido caía num `throw new Error` cru, que o setErrorHandler não

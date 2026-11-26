@@ -9,6 +9,7 @@ import { definirIdioma, t as traduzir, tAba } from '@/lib/i18n';
 import PixSettingsTab from '@/components/PixSettingsTab';
 import { Badge, EmptyState, toneForStatus } from '@/components/ui';
 import { formatDate } from '@/lib/format';
+import { podeVerAbaConfig } from '@/lib/acessoMenu';
 import {
   CHAVE_PREFS as CHAVE_PREFS_COMPARTILHADA,
   gravarPrefs as gravarPrefsCompartilhado,
@@ -692,6 +693,11 @@ export default function ConfiguracoesPage() {
    * "nenhuma chave criada" em vez de "você não pode ver as chaves".
    */
   const [erros, setErros] = useState<Record<string, string>>({});
+  // "Permissão negada" é esperado para quem não é do cargo: não é falha.
+  const errosVisiveis = useMemo(
+    () => Object.fromEntries(Object.entries(erros).filter(([, m]) => m && !/permiss[aã]o negada|403/i.test(m))),
+    [erros],
+  );
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [modais, setModais] = useState<Record<ModalKey, boolean>>(MODAIS_FECHADOS);
@@ -798,28 +804,40 @@ export default function ConfiguracoesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fecharTodosModais]);
 
+  /* ------------- abas visíveis conforme o cargo (servidor também barra) ------------- */
+  const [permissoesMe, setPermissoesMe] = useState<string[] | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    api.get<{ permissions?: string[] }>('/auth/me')
+      .then(({ data }) => { if (vivo) setPermissoesMe(Array.isArray(data?.permissions) ? data.permissions : []); })
+      .catch(() => { if (vivo) setPermissoesMe([]); });
+    return () => { vivo = false; };
+  }, []);
+  const abas = useMemo(() => TABS.filter((t) => podeVerAbaConfig(t, permissoesMe)), [permissoesMe]);
+  useEffect(() => { if (!abas.includes(tab)) setTab(abas[0] ?? 'Idioma e Região'); }, [abas, tab]);
+
   /* --------------------- navegação das abas por teclado --------------------- */
 
   const handleTablistKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      const currentIndex = TABS.indexOf(tab);
+      const currentIndex = abas.indexOf(tab);
       if (currentIndex === -1) return;
 
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setTab(TABS[(currentIndex + 1) % TABS.length]);
+        setTab(abas[(currentIndex + 1) % abas.length]);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        setTab(TABS[(currentIndex - 1 + TABS.length) % TABS.length]);
+        setTab(abas[(currentIndex - 1 + abas.length) % abas.length]);
       } else if (e.key === 'Home') {
         e.preventDefault();
-        setTab(TABS[0]);
+        setTab(abas[0]);
       } else if (e.key === 'End') {
         e.preventDefault();
-        setTab(TABS[TABS.length - 1]);
+        setTab(abas[abas.length - 1]);
       }
     },
-    [tab],
+    [tab, abas],
   );
 
   /* ----------------------------- preferências ----------------------------- */
@@ -1557,14 +1575,14 @@ export default function ConfiguracoesPage() {
           }
         />
 
-        {Object.values(erros).filter(Boolean).length > 0 && (
+        {Object.values(errosVisiveis).filter(Boolean).length > 0 && (
           <div
             role="alert"
             className="rounded-[12px] bg-red-500/10 border border-red-500/20 text-red-300 text-[13px] px-4 py-3"
           >
             <p className="font-semibold mb-1">{traduzir('cfg_sections_failed', 'Uma ou mais seções não carregaram:')}</p>
             <ul className="list-disc pl-5 space-y-0.5">
-              {Object.entries(erros)
+              {Object.entries(errosVisiveis)
                 .filter(([, mensagem]) => mensagem)
                 .map(([secao, mensagem]) => (
                   <li key={secao}>
@@ -1585,7 +1603,7 @@ export default function ConfiguracoesPage() {
           onKeyDown={handleTablistKeyDown}
           className="flex gap-1.5 overflow-x-auto nx-scroll p-1.5 rounded-[14px] bg-[var(--card2)] border border-[var(--border)]"
         >
-          {TABS.map((item) => {
+          {abas.map((item) => {
             const ativo = tab === item;
             return (
               <button
