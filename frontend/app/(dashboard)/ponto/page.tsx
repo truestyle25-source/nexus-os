@@ -86,12 +86,14 @@ export default function Ponto() {
     try {
       const [{ data: p, headers }, { data: f }, { data: rel }] = await Promise.all([
         api.getComHeaders('/ponto'),
-        api.get('/funcionarios'),
+        // Operador/Supervisor (ponto:proprio) não têm acesso ao RH: a lista de
+        // funcionários e o relógio ficam vazios e a tela mostra só as próprias batidas.
+        api.get('/funcionarios').catch(() => ({ data: [] })),
         // Integração REAL do equipamento (GET /rh/relogio). Traz o id que
         // `POST /ponto/sincronizar/:integracaoId` exige e o status que o
         // servidor verificou por healthcheck. Sem isto, a tela não sabia se
         // havia integração configurada e criava uma nova a cada clique.
-        api.get('/rh/relogio'),
+        api.get('/rh/relogio').catch(() => ({ data: null })),
       ]);
       setPontos(p);
       setFuncs(f);

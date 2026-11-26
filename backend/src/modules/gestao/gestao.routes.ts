@@ -2,7 +2,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { permissaoMiddleware } from '../../middlewares/auth.js';
+import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
+import { filtroMetas } from '../../lib/escopo-proprio.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 
 /**
@@ -395,7 +396,8 @@ export async function gestaoRoutes(app: FastifyInstance) {
   });
 
   // Metas Seção 19 - CRUD + ranking + progresso
-  app.get('/metas', { preHandler: [(app as any).authenticate, await permissaoMiddleware('metas', 'visualizar')] }, async (req: any) => {
+  // `metas:equipe` (Supervisor) vê o setor; `metas:proprio` (Operador) só as suas.
+  app.get('/metas', { preHandler: [(app as any).authenticate, permissaoQualquerDas([{ modulo: 'metas', acao: 'visualizar' }, { modulo: 'metas', acao: 'equipe' }, { modulo: 'metas', acao: 'proprio' }])] }, async (req: any) => {
     const { tipo, periodo, status, filialId, setorId, funcionarioId } = req.query as any;
     const where: any = { empresaId: req.user.empresaId };
     if (tipo) where.tipo = tipo;
@@ -404,8 +406,10 @@ export async function gestaoRoutes(app: FastifyInstance) {
     if (filialId) where.filialId = filialId;
     if (setorId) where.setorId = setorId;
     if (funcionarioId) where.funcionarioId = funcionarioId;
+    const escopo = await filtroMetas(req.user.id, req.user.empresaId);
+    const filtro = escopo ? { AND: [where, escopo] } : where;
 
-    const metas = await prisma.meta.findMany({ where, orderBy: { percentual: 'desc' } });
+    const metas = await prisma.meta.findMany({ where: filtro, orderBy: { percentual: 'desc' } });
     const ranking = [...metas].sort((a, b) => Number(b.percentual) - Number(a.percentual));
     return { metas, ranking };
   });

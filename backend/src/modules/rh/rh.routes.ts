@@ -3,7 +3,8 @@ import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma.js';
-import { permissaoMiddleware } from '../../middlewares/auth.js';
+import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/auth.js';
+import { filtroPonto } from '../../lib/escopo-proprio.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { decryptSecret, encryptSecret } from '../../lib/secrets.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
@@ -728,10 +729,13 @@ export async function rhRoutes(app: FastifyInstance) {
   });
 
   // Controle de Ponto Seção 21
-  app.get('/ponto', { preHandler: [(app as any).authenticate, await permissaoMiddleware('ponto', 'visualizar')] }, async (req:any, reply:any) => {
+  // `ponto:proprio` (Operador, Supervisor) vê só as próprias batidas.
+  app.get('/ponto', { preHandler: [(app as any).authenticate, permissaoQualquerDas([{ modulo: 'ponto', acao: 'visualizar' }, { modulo: 'ponto', acao: 'proprio' }])] }, async (req:any, reply:any) => {
     const { funcionarioId, dataInicio, dataFim, take, skip } = req.query as any;
     const where:any = { empresaId: req.user.empresaId };
     if (funcionarioId) where.funcionarioId = funcionarioId;
+    const escopo = await filtroPonto(req.user.id, req.user.empresaId);
+    if (escopo) Object.assign(where, escopo);
     if (dataInicio && dataFim) {
       // `lt` do dia SEGUINTE, e não `lte` do dia pedido: `Ponto.data` é
       // `@db.Date` e o Prisma converte o parâmetro para data, o que faz `lte`
