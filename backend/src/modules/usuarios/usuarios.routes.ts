@@ -35,7 +35,7 @@ export async function usuariosRoutes(app: FastifyInstance): Promise<void> {
       });
       // Login ligado a um funcionário cujo cargo do RH define o acesso.
       const funcs = await prisma.funcionario.findMany({
-        where: { empresaId: req.user.empresaId, usuarioId: { in: usuarios.map((u) => u.id) }, status: { not: 'ARQUIVADO' }, cargo: { cargoReferencia: { not: null } } },
+        where: { empresaId: req.user.empresaId, usuarioId: { in: usuarios.map((u) => u.id) }, status: { notIn: ['ARQUIVADO', 'DESLIGADO'] }, cargo: { cargoReferencia: { not: null } } },
         select: { usuarioId: true, cargo: { select: { nome: true, cargoReferencia: true, departamento: { select: { nome: true } } } } },
       });
       const porUsuario = new Map(funcs.map((f) => [f.usuarioId, f.cargo]));

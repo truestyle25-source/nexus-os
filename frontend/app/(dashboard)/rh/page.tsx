@@ -2179,7 +2179,7 @@ export default function RH() {
                 </label>
                 <label>{traduzir('usuario_do_sistema_login', "Usuário do sistema (login)")}<select value={f.usuarioId} onChange={(e) => setCampo('usuarioId', e.target.value)}>
                     <option value="">—</option>
-                    {vinculaveis.map((u: any) => <option key={u.id} value={u.id}>{u.nome}{u.vinculadoA ? ` (vinculado a ${u.vinculadoA})` : ''}</option>)}
+                    {vinculaveis.map((u: any) => <option key={u.id} value={u.id}>{u.nome} · {CARGOS_REFERENCIA.find((c) => c.valor === u.cargo)?.rotulo ?? 'Sem cargo'}{u.vinculadoA ? ` (vinculado a ${u.vinculadoA})` : ''}</option>)}
                   </select>
                 </label>
                 <label>{traduzir('id_no_ponto_controlid', "ID no ponto (ControlID)")}<input value={f.idExternoPonto} onChange={(e) => setCampo('idExternoPonto', e.target.value)} /></label>
@@ -2308,7 +2308,7 @@ export default function RH() {
                 <div className="rh-card-info">
                   <span>ID Ponto: <strong>{fu.idExternoPonto || '—'}</strong></span>
                   <span>Matrícula: <strong>{fu.matricula || '—'}</strong></span>
-                  <span>Usuário: <strong>{fu.usuario?.nome || 'não vinculado'}</strong></span>
+                  <span>Usuário: <strong>{fu.usuario ? `${fu.usuario.nome} · ${CARGOS_REFERENCIA.find((c) => c.valor === fu.usuario.cargo)?.rotulo ?? 'Sem cargo'}` : 'não vinculado'}</strong></span>
                   <span>{traduzir('salario', "Salário")}: <strong>{fu.salario != null ? brl(Number(fu.salario)) : '—'}</strong></span>
                   <span>BIO: <strong>{fu.biometriaCadastrada ? 'cadastrada' : 'não'}</strong></span>
                 </div>

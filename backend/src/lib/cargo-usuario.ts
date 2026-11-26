@@ -36,7 +36,7 @@ export async function podeEditarUsuarios(usuarioId: string): Promise<boolean> {
 /** Cargo do RH que define o acesso do usuário, se houver (funcionário ligado + cargo com referência). */
 export async function cargoRhDoUsuario(empresaId: string, usuarioId: string) {
   const f = await prisma.funcionario.findFirst({
-    where: { empresaId, usuarioId, status: { not: 'ARQUIVADO' } },
+    where: { empresaId, usuarioId, status: { notIn: ['ARQUIVADO', 'DESLIGADO'] } },
     select: { cargo: { select: { id: true, nome: true, cargoReferencia: true, departamento: { select: { nome: true } } } } },
   });
   const c = f?.cargo;
@@ -51,10 +51,12 @@ type Mudanca = { usuarioId: string; de: string | null; para: Cargo };
  * funcionário a este cargo. Recusa (403) se quem salva não pode fazer isso.
  */
 export async function preverMudancaDeAcesso(opts: {
-  empresaId: string; atorId: string; usuarioId: string | null | undefined; cargoId: string | null | undefined;
+  empresaId: string; atorId: string; usuarioId: string | null | undefined; cargoId: string | null | undefined; status?: string | null;
 }): Promise<Mudanca | null> {
   const { empresaId, atorId, usuarioId, cargoId } = opts;
   if (!usuarioId || !cargoId) return null;
+  // Funcionário desligado não passa acesso ao login (o RH segue editando a ficha).
+  if (opts.status === 'DESLIGADO' || opts.status === 'ARQUIVADO') return null;
   const cargo = await prisma.cargo.findFirst({ where: { id: cargoId, empresaId }, select: { cargoReferencia: true, nome: true } });
   if (!cargo || !ehCargoDeReferencia(cargo.cargoReferencia)) return null;
   const usuario = await prisma.usuario.findFirst({ where: { id: usuarioId, empresaId }, select: { cargo: true } });
@@ -87,7 +89,7 @@ export async function aplicarMudancasDeAcesso(mudancas: Mudanca[], ctx: { empres
  */
 export async function preverMudancasDoCargo(opts: { empresaId: string; atorId: string; cargoId: string; referencia: Cargo }): Promise<Mudanca[]> {
   const funcs = await prisma.funcionario.findMany({
-    where: { empresaId: opts.empresaId, cargoId: opts.cargoId, usuarioId: { not: null }, status: { not: 'ARQUIVADO' } },
+    where: { empresaId: opts.empresaId, cargoId: opts.cargoId, usuarioId: { not: null }, status: { notIn: ['ARQUIVADO', 'DESLIGADO'] } },
     select: { usuarioId: true, usuario: { select: { cargo: true } } },
   });
   const mudancas = funcs

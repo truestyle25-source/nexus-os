@@ -80,6 +80,26 @@ test('Cargo do RH define o acesso do login', { skip: !BANCO_DE_TESTE && 'exige l
       assert.equal((await app.inject({ method: 'PUT', url: `/cargos/${caixa.id}`, headers: tok(rh), payload: { nome: 'Caixa PDV' } })).statusCode, 200);
     });
 
+    await t.test('Fluxo do RH: card mostra o login; lista traz o cargo; editar salário não é barrado; desligado não prende', async () => {
+      const lista = (await app.inject({ method: 'GET', url: '/funcionarios', headers: tok(rh) })).json() as any[];
+      const card = lista.find((f) => f.id === funcMaria.id);
+      assert.equal(card.usuario.nome, 'Maria'); assert.equal(card.usuario.cargo, 'FINANCEIRO');
+      assert.equal(card.usuario.senhaHash, undefined, 'não vaza dados do login');
+      const vinc = (await app.inject({ method: 'GET', url: '/rh/usuarios-vinculaveis', headers: tok(rh) })).json() as any[];
+      assert.equal(vinc.find((u) => u.id === maria.id).cargo, 'FINANCEIRO');
+      // Acesso do login fica diferente do cargo (ex.: ajuste direto); RH sem editar usuários ainda edita o salário.
+      await prisma.usuario.update({ where: { id: maria.id }, data: { cargo: 'OPERADOR' } });
+      const sal = await app.inject({ method: 'PUT', url: '/funcionarios/' + funcMaria.id, headers: tok(rh), payload: { nome: 'Maria Silva', cargoId: gerente.id, usuarioId: maria.id, salario: 2500 } });
+      assert.equal(sal.statusCode, 200, sal.body);
+      assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: maria.id } })).cargo, 'OPERADOR', 'salário não mexe no acesso');
+      // Desligada: o login deixa de ser definido pelo RH e a troca manual volta a valer.
+      const desl = await app.inject({ method: 'PUT', url: '/funcionarios/' + funcMaria.id, headers: tok(rh), payload: { nome: 'Maria Silva', cargoId: gerente.id, usuarioId: maria.id, status: 'DESLIGADO' } });
+      assert.equal(desl.statusCode, 200, desl.body);
+      assert.equal((await app.inject({ method: 'PUT', url: '/usuarios/' + maria.id + '/cargo', headers: tok(gestor), payload: { cargo: 'SUPERVISOR' } })).statusCode, 200);
+      await prisma.funcionario.update({ where: { id: funcMaria.id }, data: { status: 'ATIVO' } });
+      await prisma.usuario.update({ where: { id: maria.id }, data: { cargo: 'FINANCEIRO' } });
+    });
+
     await t.test('Outra empresa: cargo alheio não serve', async () => {
       const alheio = await prisma.cargo.create({ data: { empresaId: outra.id, nome: 'Alheio', cargoReferencia: 'GESTOR' } });
       const r = await app.inject({ method: 'PUT', url: `/funcionarios/${funcMaria.id}`, headers: tok(gestor), payload: { nome: 'Maria Silva', cargoId: alheio.id, usuarioId: maria.id } });

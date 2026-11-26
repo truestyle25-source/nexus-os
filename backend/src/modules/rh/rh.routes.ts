@@ -367,7 +367,7 @@ export async function rhRoutes(app: FastifyInstance) {
     // Quem precisa ver o histórico usa `GET /rh/funcionarios/arquivados`.
     return prisma.funcionario.findMany({
       where: { empresaId: req.user.empresaId, status: { not: 'ARQUIVADO' } },
-      include: { cargo: true, departamento: true },
+      include: { cargo: true, departamento: true, usuario: { select: { id: true, nome: true, email: true, cargo: true } } },
       orderBy: { createdAt: 'desc' },
     });
   });
@@ -472,7 +472,7 @@ export async function rhRoutes(app: FastifyInstance) {
       if (vinculo) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
     // O cargo do RH pode definir o acesso do login: valida ANTES de gravar.
-    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
+    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId, status: data.status ?? 'ATIVO' });
     // CPF único validação
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
@@ -537,7 +537,11 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo && vinculo.id !== id) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
-    const mudancaAcesso = await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId });
+    // Só confere o acesso quando muda o que o define (cargo, login ou situação):
+    // editar salário ou telefone nunca é barrado por causa do acesso do login.
+    const novoStatus = typeof data.status === 'string' ? data.status : anterior.status;
+    const mudouVinculo = anterior.cargoId !== cargoId || (anterior.usuarioId ?? null) !== (textoOpcional(data.usuarioId) ?? null) || anterior.status !== novoStatus;
+    const mudancaAcesso = mudouVinculo ? await preverMudancaDeAcesso({ empresaId: req.user.empresaId, atorId: req.user.id, usuarioId: textoOpcional(data.usuarioId), cargoId, status: novoStatus }) : null;
     if (data.cpf) {
       const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
       if (existe && existe.id !== id) throw new Error('CPF já cadastrado - CPF único Seção 20');
@@ -591,12 +595,12 @@ export async function rhRoutes(app: FastifyInstance) {
   // não podem ser atribuídas à pessoa na aba Desempenho.
   app.get('/rh/usuarios-vinculaveis', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
     const [usuarios, vinculados] = await Promise.all([
-      prisma.usuario.findMany({ where: { empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, email: true }, orderBy: { nome: 'asc' } }),
+      prisma.usuario.findMany({ where: { empresaId: req.user.empresaId, status: 'ATIVO' }, select: { id: true, nome: true, email: true, cargo: true }, orderBy: { nome: 'asc' } }),
       prisma.funcionario.findMany({ where: { empresaId: req.user.empresaId, usuarioId: { not: null } }, select: { usuarioId: true, nome: true } }),
     ]);
     const mapa = new Map<string, string>();
     for (const v of vinculados) if (v.usuarioId) mapa.set(v.usuarioId, v.nome);
-    return usuarios.map((u:any) => ({ id: u.id, nome: u.nome, email: u.email, vinculadoA: mapa.get(u.id) ?? null }));
+    return usuarios.map((u:any) => ({ id: u.id, nome: u.nome, email: u.email, cargo: u.cargo ?? null, vinculadoA: mapa.get(u.id) ?? null }));
   });
   // Advertências (Seção 20 - disciplina)
   app.get('/rh/advertencias', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
