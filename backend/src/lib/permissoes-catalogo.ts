@@ -51,6 +51,20 @@ export const ACOES = ['visualizar', 'criar', 'editar', 'excluir', 'cancelar', 'a
 export type Acao = (typeof ACOES)[number];
 
 /**
+ * Permissões especiais: só fazem sentido em UM módulo (não entram na matriz
+ * módulo × ação). São as alçadas do caixa usadas pelo PDV e pelas vendas.
+ */
+export const PERMISSOES_ESPECIAIS = [
+  { modulo: 'pdv', acao: 'supervisor', rotulo: 'Supervisor', descricao: 'Autoriza sangria, cancelamento de item e cancelamento de venda paga.' },
+  { modulo: 'vendas', acao: 'desconto_supervisor', rotulo: 'Desconto até 30%', descricao: 'Pode conceder ou autorizar descontos de até 30%.' },
+  { modulo: 'vendas', acao: 'desconto_gerente', rotulo: 'Desconto acima de 30%', descricao: 'Pode conceder ou autorizar descontos maiores (alçada de gerente).' },
+] as const;
+
+export function ehPermissaoEspecial(modulo: string, acao: string): boolean {
+  return PERMISSOES_ESPECIAIS.some((p) => p.modulo === modulo && p.acao === acao);
+}
+
+/**
  * Permissões concedidas integralmente ao usuário fundador no momento do
  * cadastro da empresa (/auth/register-company). É uma decisão de produto,
  * não uma limitação técnica: o fundador nasce com acesso total e pode
