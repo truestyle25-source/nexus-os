@@ -563,6 +563,44 @@ type Aprov = {
 };
 const TIPO_APROV: Record<string, string> = { DIVERGENCIA_CONFERENCIA: 'Divergência na conferência', DIVERGENCIA_TURNO: 'Divergência na passagem de turno', AJUSTE_CONCILIACAO_BANCARIA: 'Ajuste de conciliação bancária' };
 
+function LimiteGestor({ atual, onSalvo }: { atual: number; onSalvo: () => Promise<void> | void }) {
+  const [valor, setValor] = useState(String(atual).replace('.', ','));
+  const [motivo, setMotivo] = useState('');
+  const [aviso, setAviso] = useState<{ tom: 'erro' | 'ok'; texto: string } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { setValor(String(atual).replace('.', ',')); }, [atual]);
+  async function salvar() {
+    setAviso(null);
+    const n = Number(valor.replace(/./g, '').replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0) { setAviso({ tom: 'erro', texto: 'Informe um valor válido.' }); return; }
+    setSalvando(true);
+    try {
+      const { data } = await api.put<{ limiteGestor: number }>('/fluxo/configuracao/limite-gestor', { valor: n, justificativa: motivo.trim() });
+      setMotivo('');
+      setAviso({ tom: 'ok', texto: `Limite salvo: acima de ${formatBRL(data.limiteGestor)} exige o gestor.` });
+      await onSalvo();
+    } catch (e) { setAviso({ tom: 'erro', texto: msg(e) }); } finally { setSalvando(false); }
+  }
+  return (
+    <div className="mt-4 rounded-[12px] border border-white/[0.08] bg-white/[0.02] p-4">
+      <div className="text-[11px] uppercase tracking-[0.12em] text-white/40">Limite de aprovação · só o gestor vê</div>
+      <div className="mt-2 flex flex-wrap items-end gap-2.5">
+        <label className="block w-32">
+          <span className="mb-1 block text-[12px] text-white/50">Diferença que exige o gestor (acima de R$)</span>
+          <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} className={campo} aria-label="Limite em reais" />
+        </label>
+        <label className="block min-w-[200px] flex-1">
+          <span className="mb-1 block text-[12px] text-white/50">Motivo da mudança</span>
+          <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: movimento maior no fim de ano" className={campo} />
+        </label>
+        <button type="button" className={btnPrimario} onClick={() => void salvar()} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar limite'}</button>
+      </div>
+      <p className="mt-2 text-[12px] text-white/40">Vale para as próximas solicitações. As que já existem não mudam. A troca fica no histórico.</p>
+      {aviso && <div className="mt-2"><Aviso tom={aviso.tom}>{aviso.texto}</Aviso></div>}
+    </div>
+  );
+}
+
 export function AbaAprovacoes({ onMudou }: { onMudou: () => void }) {
   const [filtro, setFiltro] = useState<'ABERTAS' | ''>('ABERTAS');
   const { dados, erro, recarregar } = useDados<{ aprovacoes: Aprov[]; meuNivel: string | null; limiteGestor: number }>('/fluxo/aprovacoes', filtro ? { status: filtro } : {});
@@ -591,6 +629,7 @@ export function AbaAprovacoes({ onMudou }: { onMudou: () => void }) {
           {nivel ? <Badge tone="accent">Seu nível: {nivel === 'GESTOR' ? 'Gestor' : 'Supervisor'}</Badge> : <Badge tone="neutral">Você só acompanha</Badge>}
         </div>
         <p className="mt-2 text-[12.5px] text-white/40">Nada é aprovado automaticamente. Quem pediu não decide; cada decisão exige justificativa e fica registrada para sempre.</p>
+        {nivel === 'GESTOR' && dados && <LimiteGestor atual={dados.limiteGestor} onSalvo={recarregar} />}
         {aviso && <div className="mt-3"><Aviso tom={aviso.tom}>{aviso.texto}</Aviso></div>}
         {erro && <div className="mt-3"><Aviso tom="erro">{erro}</Aviso></div>}
       </Panel>

@@ -47,8 +47,8 @@ export function montarConferencia(esperado: Record<string, number>, contado: Arr
   return { itens, totalEsperado, totalContado, diferenca: r(c(totalContado) - c(totalEsperado)), divergenciaAbs };
 }
 
-export function nivelExigido(valorAbs: number): 'SUPERVISOR' | 'GESTOR' {
-  return Math.abs(valorAbs) > LIMITE_EXCECAO_GESTOR ? 'GESTOR' : 'SUPERVISOR';
+export function nivelExigido(valorAbs: number, limite: number = LIMITE_EXCECAO_GESTOR): 'SUPERVISOR' | 'GESTOR' {
+  return Math.abs(valorAbs) > limite ? 'GESTOR' : 'SUPERVISOR';
 }
 
 export type StatusAprov = 'PENDENTE' | 'AUTORIZADA' | 'APROVADA' | 'REJEITADA';
