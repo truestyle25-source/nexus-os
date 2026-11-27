@@ -178,7 +178,7 @@ export default function FichaProdutoPage() {
         {aba === 'estoque' && <AbaEstoque form={form} set={set} ficha={ficha} catalogos={catalogos} podeEditar={podeEditar} podeMovimentar={pode('estoque', 'criar')} aoAtualizar={atualizarTudo} avisar={avisar} />}
         {aba === 'kit' && tipoNoFormularioEhKit && <AbaComposicaoKit ficha={ficha} catalogos={catalogos} podeEditar={podeEditar} tipoSalvoKit={tipoSalvoEhKit} aoAtualizar={atualizarTudo} avisar={avisar} aoAlterar={setSujoKit} />}
         {aba === 'movimento' && <AbaMovimento ficha={ficha} catalogos={catalogos} podeVerEstoque={pode('estoque', 'visualizar')} avisar={avisar} />}
-        {aba === 'pdv' && <AbaPdv form={form} set={set} podeEditar={podeEditar} catalogos={catalogos} />}
+        {aba === 'pdv' && <AbaPdv form={form} set={set} podeEditar={podeEditar} catalogos={catalogos} ficha={ficha} onFotoMudou={atualizar} />}
         {aba === 'filial' && <AbaFilial ficha={ficha} podeEditar={podeEditar} aoAtualizar={atualizarTudo} avisar={avisar} aoAlterar={setSujoFilial} />}
         {aba === 'premiacao' && <AbaPremiacao form={form} set={set} podeEditar={podeEditar} podeAdministrar={pode('produtos', 'administrar')} ficha={ficha} />}
         {aba === 'integracoes' && <AbaIntegracoes ficha={ficha} />}

@@ -18,6 +18,7 @@ import { temPermissao } from '../../lib/permissoes.js';
 import { ErroDeNegocio, NaoEncontrado, Conflito } from '../../lib/erros.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { gerarPdf } from '../../lib/pdf.js';
+import { VALIDADE_LINK_FICHA_S, linksDasFotos } from './produto-foto.js';
 import { garantirCatalogoPadrao } from './catalogo-produtos.service.js';
 import { codigoEmUsoPorOutroProduto, registrarHistoricoPrecos } from './produto-campos.js';
 import {
@@ -170,10 +171,11 @@ export async function produtoFichaRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     if (!produto) throw NaoEncontrado('Produto não encontrado nesta empresa.');
-    const [podeVerCusto, regime, filiais] = await Promise.all([
+    const [podeVerCusto, regime, filiais, fotos] = await Promise.all([
       temPermissao(req.user.id, 'custos', 'visualizar'),
       regimeDaEmpresa(empresaId),
       saldosPorFilial(empresaId, id),
+      linksDasFotos(empresaId, [produto.imagemChave], VALIDADE_LINK_FICHA_S),
     ]);
 
     // Cadeia grupo > subgrupos (até 4 níveis).
@@ -206,6 +208,9 @@ export async function produtoFichaRoutes(app: FastifyInstance): Promise<void> {
     return {
       produto: podeVerCusto ? produto : semCusto,
       podeVerCusto,
+      // Foto enviada (links temporários). `produto.imagem` continua sendo só o link digitado.
+      foto: produto.imagemChave ? fotos.get(produto.imagemChave) ?? null : null,
+      temFotoEnviada: !!produto.imagemChave,
       regimeTributario: regime,
       categoriaCadeia: cadeia,
       estoque: {

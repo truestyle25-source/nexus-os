@@ -15,6 +15,7 @@ import { permissaoMiddleware, permissaoQualquerDas } from '../../middlewares/aut
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { NaoEncontrado, ErroDeNegocio } from '../../lib/erros.js';
 import { adquirirIdempotencia, concluirIdempotencia } from '../../lib/idempotencia.js';
+import { VALIDADE_LINK_PDV_S, inicioJanelaFotos, linksDasFotos } from '../produtos/produto-foto.js';
 
 /** Soma os totais do turno de caixa: vendas por forma de pagamento,
  * sangrias, suprimentos e dinheiro esperado em gaveta.
@@ -53,22 +54,26 @@ export async function pdvRoutes(app: FastifyInstance) {
     if (!filial) throw NaoEncontrado('Filial inválida para esta empresa.');
 
     const desde = query.desde ? new Date(query.desde) : null;
+    // Produto com foto enviada volta na sincronização incremental quando a janela de
+    // renovação virou (links assinados expiram; o catálogo fica guardado no aparelho).
+    const renovarFotos = desde !== null && desde < inicioJanelaFotos();
     const filtroAtualizacao = desde
-      ? Prisma.sql`AND GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(k."atualizado", p."updatedAt")) >= ${desde}`
+      ? Prisma.sql`AND (GREATEST(p."updatedAt", COALESCE(e."updatedAt", p."updatedAt"), COALESCE(k."atualizado", p."updatedAt")) >= ${desde}
+          OR (${renovarFotos} AND p."imagemChave" IS NOT NULL))`
       : Prisma.empty;
     const [produtos, total] = await Promise.all([
       prisma.$queryRaw<Array<{
         id: string; empresaId: string; filialId: string; nome: string; sku: string | null;
         codigoBarras: string | null; precoVenda: Prisma.Decimal; precoPromocional: Prisma.Decimal | null;
         promocaoInicio: Date | null; promocaoFim: Date | null; categoriaId: string | null;
-        unidade: string; imagem: string | null; status: string; estoqueFilial: number; atualizadoEm: Date;
+        unidade: string; imagem: string | null; imagemChave: string | null; status: string; estoqueFilial: number; atualizadoEm: Date;
         disponivelPdv: boolean; posicaoPdv: number | null; vendaFracionada: boolean; controlaEstoque: boolean;
         precoFilial: Prisma.Decimal | null; ativoFilial: boolean | null; disponivelFilial: boolean | null;
         codigosBarras: string[] | null;
       }>>(Prisma.sql`
         SELECT p."id", p."empresaId", ${filial.id}::text AS "filialId", p."nome", p."sku",
           p."codigoBarras", p."precoVenda", p."precoPromocional", p."promocaoInicio", p."promocaoFim",
-          p."categoriaId", p."unidade", p."imagem", p."status",
+          p."categoriaId", p."unidade", p."imagem", p."imagemChave", p."status",
           -- KIT não tem estoque próprio: o disponível é quantos kits os componentes permitem montar
           -- nesta filial (componente sem controle de estoque ou com negativo liberado não limita).
           CASE WHEN tp."codigo" = 'KIT'
@@ -100,9 +105,13 @@ export async function pdvRoutes(app: FastifyInstance) {
       `),
       prisma.produto.count({ where: { empresaId: req.user.empresaId } }),
     ]);
+    const fotos = await linksDasFotos(req.user.empresaId, produtos.map((p) => p.imagemChave), VALIDADE_LINK_PDV_S);
     return {
       produtos: produtos.map((produto) => ({
         ...produto,
+        // Foto enviada (link temporário, 400 px) tem prioridade; sem ela, o link antigo cadastrado.
+        imagem: (produto.imagemChave && fotos.get(produto.imagemChave)?.lista) || produto.imagem,
+        imagemChave: undefined,
         // Preço desta filial (aba Filial do cadastro) sobrepõe o preço do produto — o mesmo que POST /vendas aplica.
         precoVenda: Number(produto.precoFilial ?? produto.precoVenda),
         precoFilial: undefined,

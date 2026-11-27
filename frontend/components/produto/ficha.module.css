@@ -238,6 +238,22 @@
 .espacoAbaixo { margin-bottom: var(--pf-3); }
 .previa { max-height: 96px; max-width: 100%; border-radius: var(--pf-raio); border: var(--pf-borda); }
 
+/* Foto do produto (aba PDV) */
+.foto { display: flex; gap: var(--pf-4); align-items: flex-start; padding-top: var(--pf-4); border-top: 1px dashed var(--nx-border-strong); border-radius: var(--pf-raio); }
+.fotoPrevia { flex: 0 0 170px; width: 170px; height: 170px; border-radius: var(--pf-raio); border: var(--pf-borda); background: var(--nx-surface-2); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.fotoPrevia img { width: 100%; height: 100%; object-fit: contain; }
+.fotoCorpo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--pf-2); }
+.fotoTitulo { font-weight: 700; font-size: var(--pf-fonte-campo); }
+.fotoAcoes { display: flex; flex-wrap: wrap; gap: var(--pf-2); margin-top: var(--pf-1); }
+.fotoSoltar { border: 1px dashed color-mix(in srgb, var(--nx-accent) 45%, transparent); background: color-mix(in srgb, var(--nx-accent) 5%, transparent); color: var(--nx-accent); border-radius: var(--pf-raio); padding: var(--pf-2) var(--pf-3); font-size: 12px; line-height: 1.45; }
+.fotoSoltarAtivo { background: color-mix(in srgb, var(--nx-accent) 14%, transparent); border-style: solid; }
+.fotoTamanhos { display: flex; flex-wrap: wrap; gap: var(--pf-2); }
+.fotoTamanhos span { font-size: 11px; color: var(--nx-ink-3); background: var(--nx-surface-2); border: var(--pf-borda); border-radius: 6px; padding: 2px var(--pf-2); }
+@media (max-width: 560px) {
+  .foto { flex-direction: column; }
+  .fotoPrevia { width: 100%; flex-basis: auto; height: auto; aspect-ratio: 1 / 1; max-width: 260px; }
+}
+
 @media (max-width: 760px) {
   .ficha { padding: var(--pf-4); }
 }
