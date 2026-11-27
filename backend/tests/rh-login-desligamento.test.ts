@@ -50,17 +50,10 @@ test('RH e login: acesso só por Usuários; desligar desativa o login', { skip: 
       assert.equal(vinc.find((u) => u.id === maria.id).cargo, 'SUPERVISOR');
     });
 
-    await t.test('Desligar pela edição desativa o login e derruba a sessão aberta', async () => {
-      const sessaoMaria = tok(maria);
-      assert.equal((await app.inject({ method: 'GET', url: '/funcionarios/meus-dados', headers: sessaoMaria })).statusCode !== 401, true);
-      const r = await app.inject({ method: 'PUT', url: `/funcionarios/${funcMaria.id}`, headers: tok(gestor), payload: { nome: 'Maria Silva', usuarioId: maria.id, status: 'DESLIGADO' } });
-      assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().loginDesativado, true);
-      assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: maria.id } })).status, 'INATIVO');
-      assert.equal((await app.inject({ method: 'GET', url: '/usuarios', headers: sessaoMaria })).statusCode, 401, 'sessão antiga recusada');
-      assert.ok(await prisma.auditoria.findFirst({ where: { empresaId: empresa.id, entidade: 'Usuario', entidadeId: maria.id, contexto: { contains: 'desligamento' } } }));
-      // Recontratar não reativa sozinho.
-      await app.inject({ method: 'PUT', url: `/funcionarios/${funcMaria.id}`, headers: tok(gestor), payload: { nome: 'Maria Silva', usuarioId: maria.id, status: 'ATIVO' } });
-      assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: maria.id } })).status, 'INATIVO');
+    await t.test('Desligar pela edição é recusado: desligar é pela aba Desligamento', async () => {
+      const r = await app.inject({ method: 'PUT', url: '/funcionarios/' + funcMaria.id, headers: tok(gestor), payload: { nome: 'Maria Silva', usuarioId: maria.id, status: 'DESLIGADO' } });
+      assert.equal(r.statusCode, 409); assert.match(r.body, /aba Desligamento/);
+      assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: maria.id } })).status, 'ATIVO');
     });
 
     await t.test('Desligar pela aba Desligamento também desativa o login', async () => {
@@ -71,11 +64,15 @@ test('RH e login: acesso só por Usuários; desligar desativa o login', { skip: 
       assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: joao.id } })).status, 'INATIVO');
     });
 
-    await t.test('Ninguém desliga a si mesmo', async () => {
-      const f = (await app.inject({ method: 'POST', url: '/funcionarios', headers: tok(gestor), payload: { nome: 'O Gestor', usuarioId: gestor.id } })).json();
-      const r = await app.inject({ method: 'PUT', url: `/funcionarios/${f.id}`, headers: tok(gestor), payload: { nome: 'O Gestor', usuarioId: gestor.id, status: 'DESLIGADO' } });
+    await t.test('Ninguém desliga a si mesmo; cancelar avisa que o login segue desativado', async () => {
+      const f = (await app.inject({ method: 'POST', url: '/funcionarios', headers: tok(gestor), payload: { nome: 'O Gestor', usuarioId: gestor.id, salario: 3000, dataAdmissao: '2025-01-10' } })).json();
+      const hoje = new Date().toISOString().slice(0, 10);
+      const r = await app.inject({ method: 'POST', url: '/rh/desligamentos', headers: tok(gestor), payload: { funcionarioId: f.id, data: hoje, tipo: 'pedido', motivo: 'Teste' } });
       assert.equal(r.statusCode, 403);
       assert.equal((await prisma.usuario.findUniqueOrThrow({ where: { id: gestor.id } })).status, 'ATIVO');
+      const deslJoao = await prisma.desligamento.findFirstOrThrow({ where: { empresaId: empresa.id, funcionario: { usuarioId: joao.id } } });
+      const c = await app.inject({ method: 'POST', url: '/rh/desligamentos/' + deslJoao.id + '/cancelar', headers: tok(gestor), payload: { motivo: 'Lançado por engano' } });
+      assert.equal(c.statusCode, 200, c.body); assert.equal(c.json().loginInativo, true);
     });
   } finally {
     await prisma.desligamento.deleteMany({ where: { empresaId: empresa.id } }).catch(() => {});

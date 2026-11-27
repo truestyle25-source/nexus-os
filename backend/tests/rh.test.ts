@@ -28,6 +28,7 @@ import { folhaRoutes } from '../src/modules/rh/folha.routes.js';
 import { ErroDeNegocio } from '../src/lib/erros.js';
 import { registerAuthentication } from '../src/middlewares/auth.js';
 import { MODULOS, ACOES } from '../src/lib/permissoes-catalogo.js';
+import { generateRandomValidCpf } from '../src/domain/cpf.js';
 
 const SEGREDO = 'segredo-teste-rh';
 const SUFIXO = Date.now().toString(36);
@@ -98,7 +99,7 @@ async function main() {
     const criar = await app.inject({
       method: 'POST', url: '/funcionarios', headers: H,
       payload: {
-        nome: 'Funcionario Teste', cpf: `${Date.now()}`.padStart(11, '0').slice(0, 11),
+        nome: 'Funcionario Teste', cpf: generateRandomValidCpf(), // CPF agora é validado
         email: `func-${SUFIXO}@teste.local`, dataAdmissao: hj,
         salario: 3000, status: 'ATIVO', origem: 'MANUAL',
       },
@@ -189,7 +190,7 @@ console.log('\n6. Arquivamento apos a janela de 30 dias');
       payload: {
         // CPF DISTINTO do passo 1: `cpf` é único por empresa e o slice de
         // `Date.now()` colidia (mesmos 10 primeiros dígitos).
-        nome: 'Funcionario Para Arquivar', cpf: `9000000${SUFIXO.slice(-4)}`.slice(0, 11),
+        nome: 'Funcionario Para Arquivar', cpf: generateRandomValidCpf(),
         email: `arq-${SUFIXO}@teste.local`, dataAdmissao: hj, salario: 2000,
         status: 'ATIVO', origem: 'MANUAL',
       },

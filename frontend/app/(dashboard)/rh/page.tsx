@@ -1318,11 +1318,16 @@ export default function RH() {
     const q = busca.toLowerCase();
     const okBusca = !busca || (fu.nome || '').toLowerCase().includes(q) || (fu.cpf || '').includes(busca) || (fu.matricula || '').toLowerCase().includes(q) || (fu.idExternoPonto || '').toLowerCase().includes(q);
     const okDep = !filtroDep || fu.departamentoId === filtroDep;
-    const okStatus = !filtroStatus || (filtroStatus === 'ATIVOS' ? fu.status === 'ATIVO' : filtroStatus === 'AFASTADOS' ? (fu.status === 'AFASTADO' || fu.status === 'FERIAS') : true);
+    const okStatus = filtroStatus === 'DESLIGADOS'
+      ? fu.status === 'DESLIGADO'
+      : fu.status !== 'DESLIGADO' && (!filtroStatus || (filtroStatus === 'ATIVOS' ? fu.status === 'ATIVO' : filtroStatus === 'AFASTADOS' ? (fu.status === 'AFASTADO' || fu.status === 'FERIAS') : true));
     return okBusca && okDep && okStatus;
   }), [funcs, busca, filtroDep, filtroStatus]);
 
   const totalAtivos = useMemo(() => funcs.filter((fu: any) => fu.status === 'ATIVO').length, [funcs]);
+  const totalDesligados = useMemo(() => funcs.filter((fu: any) => fu.status === 'DESLIGADO').length, [funcs]);
+  /** Quem ainda trabalha na empresa (pode receber advertência ou suspensão). */
+  const funcsNaEmpresa = useMemo(() => funcs.filter((fu: any) => fu.status !== 'DESLIGADO' && fu.status !== 'ARQUIVADO'), [funcs]);
 
   // calendário
   const hoje = new Date();
@@ -1562,8 +1567,10 @@ export default function RH() {
       return;
     }
     try {
-      await api.post(`/rh/desligamentos/${cancelandoId}/cancelar`, { motivo: motivoCancel.trim() });
-      setNotice(traduzir('desligamento_cancelado', 'Desligamento cancelado. O funcionário voltou a ATIVO e o histórico foi preservado.'));
+      const r: any = await api.post(`/rh/desligamentos/${cancelandoId}/cancelar`, { motivo: motivoCancel.trim() });
+      const loginInativo = Boolean(r?.loginInativo ?? r?.data?.loginInativo);
+      setNotice(traduzir('desligamento_cancelado', 'Desligamento cancelado. O funcionário voltou a ATIVO e o histórico foi preservado.')
+        + (loginInativo ? ' O login dele continua desativado: reative em Configurações → Usuários e Permissões.' : ''));
       setCancelandoId(null);
       setMotivoCancel('');
       await load();
@@ -2074,13 +2081,9 @@ export default function RH() {
       </div>
 
       <div className="rh-badgebar">
-        <span className="rh-bb-violet"><Shield size={12} /> {traduzir('disciplinar_avancado', 'Disciplinar avançado')}</span>
-        <span className="rh-bb-neutral">{traduzir('art_474', 'Art. 474 • máx 30 dias')}</span>
-        <span className="rh-bb-neutral"><Layers size={12} /> {traduzir('fluxo_visual_kanban', 'Fluxo visual Kanban')}</span>
         <span className="rh-bb-live">
           <span className={`rh-dot ${relogio?.status === 'CONECTADO' ? 'ok rh-pulse' : 'off'}`} />
           {relogio?.nome ? relogio.nome : traduzir('ponto_sem_integracao', 'Ponto sem integração')}
-          {' • ID '}{(funcAtivo?.idExternoPonto || idPonto) || '—'}
           {' • '}{relogio?.status === 'CONECTADO' ? traduzir('online', 'online') : traduzir('offline', 'offline')}
         </span>
       </div>
@@ -2110,14 +2113,14 @@ export default function RH() {
                 {deps.map((d: any) => <option key={d.id} value={d.id}>{d.nome}</option>)}
               </select>
               <div className="rh-chips">
-                {['', 'ATIVOS', 'AFASTADOS'].map((s) => (
+                {['', 'ATIVOS', 'AFASTADOS', 'DESLIGADOS'].map((s) => (
                   <button key={s || 'todos'} type="button" className={`rh-chip ${filtroStatus === s ? 'on' : ''}`} onClick={() => setFiltroStatus(s)}>
-                    {s === '' ? 'Todos' : s === 'ATIVOS' ? 'Ativos' : 'Afastados'}
+                    {s === '' ? 'Todos' : s === 'ATIVOS' ? 'Ativos' : s === 'AFASTADOS' ? 'Afastados' : `Desligados (${totalDesligados})`}
                   </button>
                 ))}
               </div>
             </div>
-            <p className="rh-hint">Clique para detalhes • Drawer ID Ponto integrado</p>
+            <p className="rh-hint">"Todos" mostra quem está na empresa. Desligados ficam no filtro próprio.</p>
 
           {showForm && (
             <section className="admin-panel admin-wide">
@@ -2206,7 +2209,7 @@ export default function RH() {
                     <option value="INATIVO">INATIVO</option>
                     <option value="FERIAS">FÉRIAS</option>
                     <option value="AFASTADO">AFASTADO</option>
-                    <option value="DESLIGADO">DESLIGADO</option>
+                    {f.status === 'DESLIGADO' && <option value="DESLIGADO" disabled>DESLIGADO (use a aba Desligamento)</option>}
                   </select>
                 </label>
                 {/*
@@ -2568,7 +2571,7 @@ export default function RH() {
               <form onSubmit={criarAdvertencia} className="admin-inline">
                 <label>{traduzir('funcionario', "Funcionário")}<select required value={advForm.funcionarioId} onChange={(e) => setAdvForm((p: any) => ({ ...p, funcionarioId: e.target.value }))}>
                     <option value="">—</option>
-                    {funcs.map((fu) => <option key={fu.id} value={fu.id}>{fu.nome}</option>)}
+                    {funcsNaEmpresa.map((fu) => <option key={fu.id} value={fu.id}>{fu.nome}</option>)}
                   </select>
                 </label>
                 <label>{traduzir('tipo', "Tipo")}<select value={advForm.tipo} onChange={(e) => setAdvForm((p: any) => ({ ...p, tipo: e.target.value }))}>
@@ -2639,10 +2642,10 @@ export default function RH() {
               <form onSubmit={criarSuspensao} className="admin-inline">
                 <label>{traduzir('funcionario', "Funcionário")}<select required value={susForm.funcionarioId} onChange={(e) => setSusForm((p: any) => ({ ...p, funcionarioId: e.target.value }))}>
                     <option value="">—</option>
-                    {funcs.map((fu) => <option key={fu.id} value={fu.id}>{fu.nome}</option>)}
+                    {funcsNaEmpresa.map((fu) => <option key={fu.id} value={fu.id}>{fu.nome}</option>)}
                   </select>
                 </label>
-                <label>{traduzir('dias', "Dias")}<input required type="number" min="1" max="365" value={susForm.dias} onChange={(e) => setSusForm((p: any) => ({ ...p, dias: e.target.value }))} /></label>
+                <label>{traduzir('dias', "Dias")}<input required type="number" min="1" max="30" value={susForm.dias} onChange={(e) => setSusForm((p: any) => ({ ...p, dias: e.target.value }))} /></label>
                 <label>{traduzir('motivo', "Motivo")}<input required value={susForm.motivo} onChange={(e) => setSusForm((p: any) => ({ ...p, motivo: e.target.value }))} /></label>
                 <label>Início<input type="date" value={susForm.inicio} onChange={(e) => setSusForm((p: any) => ({ ...p, inicio: e.target.value }))} /></label>
                 <label>{traduzir('aplicada_por', "Aplicada por")}<input value={susForm.aplicadaPor} onChange={(e) => setSusForm((p: any) => ({ ...p, aplicadaPor: e.target.value }))} /></label>

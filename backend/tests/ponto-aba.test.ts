@@ -123,6 +123,8 @@ async function main() {
       RETORNO: 'retornoIntervalo', SAIDA: 'saida',
     };
     const tipos = ['ENTRADA', 'SAIDA_INTERVALO', 'RETORNO', 'SAIDA'];
+    // Dia anterior exige o horário real da batida (antes gravava o horário de agora).
+    const HORA: Record<string, string> = { ENTRADA: '08:00', SAIDA_INTERVALO: '12:00', RETORNO: '13:00', SAIDA: '17:00' };
     for (const [i, tipo] of tipos.entries()) {
       // Cada tipo em um DIA próprio: o `@@unique([funcionarioId, data])` faz as
       // quatro marcações do mesmo dia convergirem para a mesma linha, e a
@@ -130,7 +132,7 @@ async function main() {
       const dia = diaNoFuso('America/Sao_Paulo', -10 + i);
       const r = await app.inject({
         method: 'POST', url: '/ponto/manual', headers: H,
-        payload: { funcionarioId: func.id, tipo, data: dia },
+        payload: { funcionarioId: func.id, tipo, data: dia, hora: HORA[tipo] },
       });
       ok(`POST /ponto/manual ${tipo} -> 200`, r.statusCode === 200, `status=${r.statusCode} corpo=${r.body.slice(0, 160)}`);
       ok(`${tipo}: resposta traz o dia gravado`, r.json().dataMarcacao === dia, `veio=${r.json().dataMarcacao} esperado=${dia}`);
@@ -150,7 +152,7 @@ async function main() {
     for (const tipo of tipos) {
       await app.inject({
         method: 'POST', url: '/ponto/manual', headers: H,
-        payload: { funcionarioId: funcSemPrevisto.id, tipo, data: diaUnico },
+        payload: { funcionarioId: funcSemPrevisto.id, tipo, data: diaUnico, hora: HORA[tipo] },
       });
     }
     const linha = await prisma.ponto.findUnique({
@@ -207,7 +209,7 @@ async function main() {
     // (Usar `SAIDA` sobrescreveria a saida com o instante atual.)
     await app.inject({
       method: 'POST', url: '/ponto/manual', headers: H,
-      payload: { funcionarioId: func.id, tipo: 'RETORNO', data: diaAtraso },
+      payload: { funcionarioId: func.id, tipo: 'RETORNO', data: diaAtraso, hora: '13:00' },
     });
     const apurado = await prisma.ponto.findUnique({
       where: { funcionarioId_data: { funcionarioId: func.id, data: new Date(`${diaAtraso}T00:00:00.000Z`) } },

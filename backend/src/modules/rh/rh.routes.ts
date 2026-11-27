@@ -8,6 +8,7 @@ import { filtroPonto } from '../../lib/escopo-proprio.js';
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { decryptSecret, encryptSecret } from '../../lib/secrets.js';
 import { ErroDeNegocio } from '../../lib/erros.js';
+import { normalizeCpf, isValidCpf, formatCpf } from '../../domain/cpf.js';
 // Fuso da empresa: decide a que dia pertence uma marcação de ponto.
 import { dataNoFuso, instanteNaHoraLocal, normalizarFuso } from '../../lib/fuso.js';
 import { fecharExpediente } from './ponto-fechamento.service.js';
@@ -120,7 +121,7 @@ const horarioPrevistoDoFuncionario = (
  * equipe — que é exatamente o problema que a lista de opções fixa resolvia.
  */
 const chaveRotulo = (v: string): string =>
-  v.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+  v.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 /**
  * Resolve o departamento digitado no formulário para um departamento REAL.
@@ -223,6 +224,23 @@ const auditarLoginDesativado = (req: any, usuarioId: string, funcionarioNome: st
   contexto: `Login desativado no desligamento de ${funcionarioNome}`,
 });
 
+/** Situações de quem já não trabalha na empresa. */
+const FORA_DA_EMPRESA = ['DESLIGADO', 'ARQUIVADO'] as const;
+const estaForaDaEmpresa = (status?: string | null) => status === 'DESLIGADO' || status === 'ARQUIVADO';
+
+/**
+ * CPF: só dígitos, com os dígitos verificadores válidos. Devolve null se vazio.
+ * A busca de duplicado olha as duas grafias (só dígitos e com pontos), porque
+ * cadastros antigos podem estar gravados de qualquer um dos jeitos.
+ */
+const cpfDoCadastro = (v: unknown): string | null => {
+  const texto = typeof v === 'string' ? v.trim() : '';
+  if (!texto) return null;
+  if (!isValidCpf(texto)) throw new ErroDeNegocio('CPF inválido. Confira os números.', 422);
+  return normalizeCpf(texto);
+};
+const grafiasDoCpf = (cpf: string) => [cpf, formatCpf(cpf)];
+
 const MES_INICIO = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const DIA_INICIO = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
@@ -232,8 +250,8 @@ export async function rhRoutes(app: FastifyInstance) {
     return prisma.departamento.findMany({ where: { empresaId: req.user.empresaId }, include: { cargos: true, _count: { select: { funcionarios: true } } } });
   });
   app.post('/departamentos', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'criar')] }, async (req:any) => {
-    const { nome, descricao } = req.body as any;
-    const dep = await prisma.departamento.create({ data: { empresaId: req.user.empresaId, nome, descricao } });
+    const { nome, descricao } = z.object({ nome: z.string().trim().min(2, 'Informe o nome do departamento (mínimo 2 letras).'), descricao: z.string().optional() }).parse(req.body ?? {});
+    const dep = await prisma.departamento.create({ data: { empresaId: req.user.empresaId, nome, descricao: textoOpcional(descricao) ?? null } });
     await registrarAuditoria({ usuarioId: req.user.id, empresaId: req.user.empresaId, acao: 'CRIAR', entidade: 'Departamento', entidadeId: dep.id, valorNovo: dep, origem: 'MANUAL', ip: req.ip });
     return dep;
   });
@@ -292,7 +310,7 @@ export async function rhRoutes(app: FastifyInstance) {
     return prisma.cargo.findMany({ where: { empresaId: req.user.empresaId }, include: { departamento: true } });
   });
   app.post('/cargos', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'criar')] }, async (req:any) => {
-    const { nome, departamentoId, descricao } = req.body as any;
+    const { nome, departamentoId, descricao } = z.object({ nome: z.string().trim().min(2, 'Informe o nome do cargo (mínimo 2 letras).'), departamentoId: z.string().optional(), descricao: z.string().optional() }).parse(req.body ?? {});
     if (departamentoId) {
       const dep = await prisma.departamento.findFirst({ where: { id: departamentoId, empresaId: req.user.empresaId } });
       if (!dep) throw new ErroDeNegocio('Departamento inválido para esta empresa.');
@@ -471,11 +489,14 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
-    // CPF único validação
-    if (data.cpf) {
-      const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
-      if (existe) throw new Error('CPF já cadastrado - CPF único Seção 20');
+    // CPF válido e único na empresa (compara com e sem pontuação).
+    const cpf = cpfDoCadastro(data.cpf);
+    if (cpf) {
+      const existe = await prisma.funcionario.findFirst({ where: { cpf: { in: grafiasDoCpf(cpf) }, empresaId: req.user.empresaId } });
+      if (existe) throw new ErroDeNegocio(`CPF já cadastrado para ${existe.nome}.`, 409);
     }
+    // Funcionário novo não nasce desligado: desligar é pela aba Desligamento.
+    if (data.status === 'DESLIGADO') throw new ErroDeNegocio('Para desligar um funcionário use a aba Desligamento (termo e verbas).', 409);
     const func = await prisma.funcionario.create({
       data: {
         empresaId: req.user.empresaId,
@@ -484,7 +505,7 @@ export async function rhRoutes(app: FastifyInstance) {
         cargoId,
         usuarioId: textoOpcional(data.usuarioId),
         nome: data.nome,
-        cpf: textoOpcional(data.cpf),
+        cpf,
         idExternoPonto: textoOpcional(data.idExternoPonto),
         dataAdmissao: dataOpcional(data.dataAdmissao) ?? null,
         dataDesligamento: dataOpcional(data.dataDesligamento) ?? null,
@@ -534,13 +555,28 @@ export async function rhRoutes(app: FastifyInstance) {
       const vinculo = await prisma.funcionario.findFirst({ where: { empresaId: req.user.empresaId, usuarioId: data.usuarioId } });
       if (vinculo && vinculo.id !== id) throw new Error(`Este usuário já está vinculado ao funcionário ${vinculo.nome}.`);
     }
-    if (data.cpf) {
-      const existe = await prisma.funcionario.findFirst({ where: { cpf: data.cpf, empresaId: req.user.empresaId } });
-      if (existe && existe.id !== id) throw new Error('CPF já cadastrado - CPF único Seção 20');
+    // CPF que não mudou é mantido como está (cadastro antigo não trava a edição de outros campos).
+    const cpfMantido = typeof data.cpf === 'string' && anterior.cpf != null && data.cpf.trim() === anterior.cpf;
+    const cpf = cpfMantido ? anterior.cpf : cpfDoCadastro(data.cpf);
+    if (cpf && !cpfMantido) {
+      const existe = await prisma.funcionario.findFirst({ where: { cpf: { in: grafiasDoCpf(cpf) }, empresaId: req.user.empresaId, id: { not: id } } });
+      if (existe) throw new ErroDeNegocio(`CPF já cadastrado para ${existe.nome}.`, 409);
     }
     const statusValidos = ['ATIVO','INATIVO','FERIAS','AFASTADO','DESLIGADO'];
     const status: "ATIVO" | "INATIVO" | "FERIAS" | "AFASTADO" | "DESLIGADO" | undefined =
       typeof data.status === 'string' && statusValidos.includes(data.status) ? data.status : undefined;
+    // DESLIGAR é pela aba Desligamento (termo, verbas, login). VOLTAR de
+    // desligado é cancelando o desligamento — senão os dois registros ficam
+    // contraditórios. Só um desligado antigo SEM registro de desligamento
+    // pode ser reativado por aqui.
+    if (status === 'DESLIGADO' && anterior.status !== 'DESLIGADO') {
+      throw new ErroDeNegocio('Para desligar um funcionário use a aba Desligamento: lá saem o termo e as verbas, e o login é desativado.', 409);
+    }
+    if (anterior.status === 'DESLIGADO' && status && status !== 'DESLIGADO') {
+      const registro = await prisma.desligamento.findFirst({ where: { empresaId: req.user.empresaId, funcionarioId: id, status: { not: 'CANCELADO' } }, select: { id: true } });
+      if (registro) throw new ErroDeNegocio('Este funcionário tem um desligamento registrado. Para reativá-lo, cancele o desligamento na aba Desligamento.', 409);
+    }
+    if (anterior.status === 'ARQUIVADO') throw new ErroDeNegocio('Funcionário arquivado não pode ser editado.', 409);
     const desligamento = dataOpcional(data.dataDesligamento);
     const vaiDesligar = status === 'DESLIGADO' && anterior.status !== 'DESLIGADO';
     const loginDoFuncionario = textoOpcional(data.usuarioId) ?? null;
@@ -551,7 +587,7 @@ export async function rhRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         nome: textoOpcional(data.nome),
-        cpf: textoOpcional(data.cpf),
+        cpf,
         filialId: textoOpcional(data.filialId) ?? null,
         departamentoId,
         cargoId,
@@ -615,8 +651,10 @@ export async function rhRoutes(app: FastifyInstance) {
   app.post('/rh/advertencias', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'criar')] }, async (req:any, reply:any) => {
     const { funcionarioId, tipo, motivo, descricao, data, aplicadaPor } = req.body as any;
     if (!funcionarioId || !motivo) return reply.status(400).send({ error: 'Informe funcionário e motivo.' });
+    if (tipo && !['VERBAL', 'ESCRITA'].includes(tipo)) return reply.status(400).send({ error: 'Tipo de advertência inválido (Verbal ou Escrita).' });
     const func = await prisma.funcionario.findFirst({ where: { id: funcionarioId, empresaId: req.user.empresaId } });
     if (!func) return reply.status(404).send({ error: 'Funcionário não encontrado.' });
+    if (estaForaDaEmpresa(func.status)) return reply.status(409).send({ error: 'Funcionário desligado não recebe advertência.' });
     const adv = await prisma.advertencia.create({
       data: {
         empresaId: req.user.empresaId,
@@ -648,12 +686,16 @@ export async function rhRoutes(app: FastifyInstance) {
     // calculado a partir dele, então um dígito a mais produzia uma suspensão de
     // anos — dado de RH irreal que ninguém corrigiria depois. 365 dias é o
     // limite máximo razoável para um período aquisitivo inteiro.
-    if (Number(dias) > 365) return reply.status(422).send({ error: 'A suspensão não pode exceder 365 dias.' });
+    // CLT art. 474: suspensão acima de 30 dias consecutivos equivale a rescisão injusta.
+    if (!Number.isInteger(Number(dias)) || Number(dias) > 30) return reply.status(422).send({ error: 'A suspensão é de 1 a 30 dias (CLT, art. 474).' });
     const func = await prisma.funcionario.findFirst({ where: { id: funcionarioId, empresaId: req.user.empresaId } });
     if (!func) return reply.status(404).send({ error: 'Funcionário não encontrado.' });
+    if (estaForaDaEmpresa(func.status)) return reply.status(409).send({ error: 'Funcionário desligado não recebe suspensão.' });
     const ini = dataOpcional(inicio) ?? new Date();
     const numDias = Number(dias);
-    const fimCalc = dataOpcional(fim) ?? new Date(ini.getTime() + (numDias - 1) * 86400000);
+    // O fim é sempre calculado pelos dias: um "fim" enviado à parte poderia esticar a suspensão além de 30 dias.
+    void fim;
+    const fimCalc = new Date(ini.getTime() + (numDias - 1) * 86400000);
     const sus = await prisma.suspensao.create({
       data: {
         empresaId: req.user.empresaId,
@@ -672,7 +714,9 @@ export async function rhRoutes(app: FastifyInstance) {
 
 
   app.get('/rh/indicadores', { preHandler: [(app as any).authenticate, await permissaoMiddleware('rh', 'visualizar')] }, async (req:any) => {
-    const total = await prisma.funcionario.count({ where: { empresaId: req.user.empresaId } });
+    // Quadro = quem ainda trabalha na empresa. Desligados e arquivados não
+    // entram: contá-los diluía o absenteísmo e o turnover.
+    const total = await prisma.funcionario.count({ where: { empresaId: req.user.empresaId, status: { notIn: [...FORA_DA_EMPRESA] } } });
     const ativos = await prisma.funcionario.count({ where: { empresaId: req.user.empresaId, status: 'ATIVO' } });
     const porSetor = await prisma.departamento.findMany({ where: { empresaId: req.user.empresaId }, include: { _count: { select: { funcionarios: true } } } });
 
@@ -816,10 +860,13 @@ export async function rhRoutes(app: FastifyInstance) {
       funcionarioId: z.string().min(1),
       tipo: z.enum(['ENTRADA', 'SAIDA_INTERVALO', 'RETORNO', 'SAIDA']),
       data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      // Obrigatória para lançar um dia que não é hoje (correção): o horário real da batida.
+      hora: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
     });
     const marcacao = schema.parse(req.body);
     const funcionario = await prisma.funcionario.findFirst({ where: { id: marcacao.funcionarioId, empresaId: req.user.empresaId } });
     if (!funcionario) throw new ErroDeNegocio('Funcionário inválido para esta empresa.', 404);
+    if (estaForaDaEmpresa(funcionario.status)) throw new ErroDeNegocio('Funcionário desligado não registra ponto.', 409);
 
     // Fuso da empresa: é o que decide a que dia a batida pertence. Uma
     // máquina em UTC leria 23h30 de São Paulo como 02h30 do dia seguinte, e a
@@ -830,8 +877,14 @@ export async function rhRoutes(app: FastifyInstance) {
     // INSTANTE REAL. O cliente não manda horário: mandaria o relógio do
     // navegador, que pode estar errado, e a marcação é um fato do instante em
     // que aconteceu.
-    const instante = new Date();
-    const dia = marcacao.data ?? dataNoFuso(instante, fuso);
+    const hoje = dataNoFuso(new Date(), fuso);
+    const dia = marcacao.data ?? hoje;
+    // Dia passado: o instante é o HORÁRIO INFORMADO naquele dia (antes gravava o
+    // horário de agora num dia antigo). Dia futuro não existe.
+    if (dia > hoje) throw new ErroDeNegocio('Não é possível registrar ponto em data futura.', 422);
+    if (dia !== hoje && !marcacao.hora) throw new ErroDeNegocio('Para lançar um dia anterior, informe o horário da batida.', 422);
+    const instante = dia === hoje && !marcacao.hora ? new Date() : instanteNaHoraLocal(dia, marcacao.hora as string, fuso);
+    if (instante.getTime() > Date.now()) throw new ErroDeNegocio('Não é possível registrar uma batida no futuro.', 422);
     // `Ponto.data` é `@db.Date`: o Prisma grava a parte da data, e
     // `new Date('YYYY-MM-DDT00:00:00Z')` é a meia-noite UTC que o `GET /ponto`
     // devolve de volta — o mesmo registro, sem deslocamento de fuso.
@@ -1070,8 +1123,12 @@ export async function rhRoutes(app: FastifyInstance) {
     const ref = /^\d{4}-\d{2}$/.test(String(mes ?? '')) ? new Date(`${mes}-01T00:00:00`) : new Date();
     const inicio = new Date(ref.getFullYear(), ref.getMonth(), 1);
     const fim = new Date(ref.getFullYear(), ref.getMonth() + 1, 1);
+    // Quem estava na empresa no mês: os ativos e quem saiu durante ele.
     const funcionarios = await prisma.funcionario.findMany({
-      where: { empresaId: req.user.empresaId },
+      where: {
+        empresaId: req.user.empresaId,
+        OR: [{ status: { notIn: [...FORA_DA_EMPRESA] } }, { dataDesligamento: { gte: inicio } }],
+      },
       select: { id: true, nome: true, idExternoPonto: true, usuarioId: true, status: true },
     });
     const usuarioIds = funcionarios.map((f) => f.usuarioId).filter(Boolean) as string[];
@@ -1768,7 +1825,9 @@ export async function rhRoutes(app: FastifyInstance) {
       contexto: `Desligamento ${id} cancelado por ${req.user.id}. Funcionário reativado como ATIVO. Motivo: ${motivo}`,
     });
 
-    return cancelado;
+    // O login NÃO volta sozinho (decisão de Configurações → Usuários); a tela avisa.
+    const func = await prisma.funcionario.findFirst({ where: { id: alvo.funcionarioId, empresaId: req.user.empresaId }, select: { usuario: { select: { status: true } } } });
+    return { ...cancelado, loginInativo: Boolean(func?.usuario && func.usuario.status !== 'ATIVO') };
   });
 
   // ==========================================================================
