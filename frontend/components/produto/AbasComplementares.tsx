@@ -2,15 +2,15 @@
 import { useEffect, useState } from 'react';
 import { Alternador, Aviso, CampoArea, CampoTexto, Grade, Secao, Selo, Tabela, estilos } from './ui';
 import type { FormProduto } from './formulario';
+import { FotoProduto } from './FotoProduto';
 import { fichaApi, fmtData, mensagemDeErro, type Catalogos, type Ficha } from '@/lib/produto-ficha';
 
 type Base = { form: FormProduto; set: <K extends keyof FormProduto>(k: K, v: FormProduto[K]) => void; podeEditar: boolean };
 
 /** Aba PDV: só o que o PDV atual usa de verdade (catálogo, posição, imagem, categoria, fracionado). */
-export function AbaPdv({ form, set, podeEditar, catalogos }: Base & { catalogos: Catalogos }) {
+export function AbaPdv({ form, set, podeEditar, catalogos, ficha, onFotoMudou }: Base & { catalogos: Catalogos; ficha: Ficha; onFotoMudou: () => Promise<unknown> }) {
   const ed = podeEditar ? set : undefined;
   const categoria = catalogos.categorias.find((c) => c.id === form.categoriaId)?.nome;
-  const imagemValida = /^https?:\/\//i.test(form.imagem);
   return (
     <>
       <Secao titulo="Ponto de venda" descricao="Configurações aplicadas ao catálogo do PDV (inclusive no modo offline).">
@@ -19,10 +19,7 @@ export function AbaPdv({ form, set, podeEditar, catalogos }: Base & { catalogos:
           <Alternador l={3} alinharCampo rotulo="Venda fracionada" ligado={form.vendaFracionada} onChange={ed && ((v) => ed('vendaFracionada', v))} />
           <CampoTexto l={3} rotulo="Posição de exibição" valor={form.posicaoPdv} onChange={ed && ((v) => ed('posicaoPdv', v))} numero inputMode="numeric" ajuda="Menor aparece primeiro" />
           <CampoTexto l={3} rotulo="Categoria de venda" valor={categoria ?? 'Sem categoria'} somenteLeitura ajuda="Definida na aba Dados (classificação)" />
-          <CampoTexto l={8} rotulo="Imagem do produto (URL)" valor={form.imagem} onChange={ed && ((v) => ed('imagem', v))} placeholder="https://…" ajuda="Exibida no catálogo do PDV" />
-          <div className={estilos.c4}>
-            {imagemValida ? <img src={form.imagem} alt="Pré-visualização da imagem do produto" className={estilos.previa} /> : <span className={estilos.ajuda}>Sem pré-visualização</span>}
-          </div>
+          <FotoProduto ficha={ficha} link={form.imagem} onLink={ed && ((v) => ed('imagem', v))} podeEditar={podeEditar} onMudou={onFotoMudou} />
         </Grade>
       </Secao>
       <Secao titulo="Recursos não disponíveis no PDV atual" descricao="Ficam registrados no cadastro, mas o PDV ainda não os executa.">

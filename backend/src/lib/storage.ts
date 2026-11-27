@@ -316,3 +316,75 @@ export async function removerObjeto(chave: string): Promise<void> {
     throw new Error(`Falha ao remover o objeto (${resposta.status}).`);
   }
 }
+
+// ---------------------------------------------------------------- links temporários assinados
+
+/** Validade máxima aceita pelo S3 para link pré-assinado (7 dias). */
+export const VALIDADE_MAXIMA_LINK_S = 7 * 24 * 60 * 60;
+
+/**
+ * Link pré-assinado S3 (AWS Signature V4 na query string). Calculado localmente,
+ * sem chamada de rede: quem tem o link lê ESTE objeto até expirar, e só ele.
+ */
+function urlAssinadaS3(cfg: ConfigStorage, chave: string, segundos: number): string {
+  const regiao = cfg.regiao!;
+  const host = hostS3(cfg);
+  const carimbo = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const data = carimbo.slice(0, 8);
+  const escopo = `${data}/${regiao}/s3/aws4_request`;
+  const caminho = `/${esc(chave)}`;
+  const parametros: [string, string][] = [
+    ['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential', `${cfg.accessKeyId}/${escopo}`],
+    ['X-Amz-Date', carimbo],
+    ['X-Amz-Expires', String(segundos)],
+    ['X-Amz-SignedHeaders', 'host'],
+  ];
+  const rfc3986 = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  const query = parametros.map(([k, v]) => `${rfc3986(k)}=${rfc3986(v)}`).sort().join('&');
+  const canonicalRequest = ['GET', caminho, query, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
+  const stringToSign = ['AWS4-HMAC-SHA256', carimbo, escopo, createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+  const mac = (k: Buffer | string, d: string): Buffer => createHmac('sha256', k).update(d).digest();
+  const kAssina = mac(mac(mac(mac(`AWS4${cfg.secretAccessKey}`, data), regiao), 's3'), 'aws4_request');
+  const assinatura = mac(kAssina, stringToSign).toString('hex');
+  return `https://${host}${caminho}?${query}&X-Amz-Signature=${assinatura}`;
+}
+
+/**
+ * Links temporários para várias chaves de uma vez (o catálogo do PDV assina uma
+ * página inteira numa só chamada ao Supabase). Devolve um mapa chave → link;
+ * chave que o provedor não assinou (ex.: objeto inexistente) fica de fora — o
+ * chamador decide o que mostrar no lugar, nunca recebe um link quebrado inventado.
+ */
+export async function urlsAssinadas(chaves: string[], segundos: number): Promise<Map<string, string>> {
+  const unicas = [...new Set(chaves.filter(Boolean))];
+  const resultado = new Map<string, string>();
+  if (!unicas.length) return resultado;
+  const validade = Math.max(60, Math.min(Math.floor(segundos), VALIDADE_MAXIMA_LINK_S));
+  const cfg = configStorage();
+
+  if (cfg.provedor === 's3') {
+    for (const c of unicas) resultado.set(c, urlAssinadaS3(cfg, c, validade));
+    return resultado;
+  }
+
+  const base = cfg.projectUrl!.replace(/\/$/, '');
+  const resposta = await fetch(`${base}/storage/v1/object/sign/${cfg.bucket}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${String(cfg.serviceRoleKey)}`, apikey: String(cfg.serviceRoleKey), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn: validade, paths: unicas }),
+  });
+  if (!resposta.ok) throw new Error(`Supabase Storage recusou a assinatura de links (${resposta.status}).`);
+  const lista = (await resposta.json()) as Array<{ path?: string; signedURL?: string | null; error?: string | null }>;
+  for (const item of lista) {
+    if (item.path && item.signedURL && !item.error) resultado.set(item.path, `${base}/storage/v1${item.signedURL}`);
+  }
+  return resultado;
+}
+
+/** Link temporário para uma única chave (lança se o provedor não assinar). */
+export async function urlAssinada(chave: string, segundos: number): Promise<string> {
+  const url = (await urlsAssinadas([chave], segundos)).get(chave);
+  if (!url) throw new Error('O armazenamento não gerou o link temporário deste arquivo.');
+  return url;
+}

@@ -31,6 +31,9 @@ export interface CodigoBarras { id: Id; codigo: string; tipo: string; principal:
 export interface Ficha {
   produto: Record<string, any> & { id: Id; nome: string; status: string; codigosBarras: CodigoBarras[]; fiscal: Record<string, any> | null; fatoresConversao: Array<{ id: Id; fator: string | number; unidadeOrigemId: Id; unidadeDestinoId: Id; unidadeOrigem: { simbolo: string }; unidadeDestino: { simbolo: string } }> };
   podeVerCusto: boolean;
+  /** Foto enviada (links temporários assinados). `produto.imagem` é só o link digitado. */
+  foto?: { miniatura: string; lista: string; detalhe: string } | null;
+  temFotoEnviada?: boolean;
   regimeTributario: Catalogos['regimeTributario'];
   categoriaCadeia: Array<{ id: Id; nome: string; nivel: number }>;
   estoque: { consolidado: { atual: number; reservado: number; comprometido: number; disponivel: number; valorTotal?: number }; filiais: SaldoFilial[] };
@@ -124,6 +127,8 @@ export const fichaApi = {
   catalogos: () => api.get<Catalogos>('/produtos/catalogos').then((r) => r.data),
   ficha: (id: Id) => api.get<Ficha>(`/produtos/${id}/ficha`).then((r) => r.data),
   salvar: (id: Id, dados: Record<string, unknown>) => api.put(`/produtos/${id}`, dados).then((r) => r.data),
+  enviarFoto: (id: Id, arquivo: { nome: string; base64: string }) => api.post<{ foto: Ficha['foto'] }>(`/produtos/${id}/imagem`, { arquivo }).then((r) => r.data),
+  removerFoto: (id: Id) => api.delete<{ removida: boolean }>(`/produtos/${id}/imagem`).then((r) => r.data),
   status: (id: Id, status: 'ATIVO' | 'INATIVO') => api.patch(`/produtos/${id}/status`, { status }).then((r) => r.data),
   fiscal: (id: Id, dados: Record<string, unknown>) => api.put<{ avisos: Array<{ campo: string; mensagem: string }> }>(`/produtos/${id}/fiscal`, dados).then((r) => r.data),
   fator: (id: Id, dados: { unidadeOrigemId: Id; unidadeDestinoId: Id; fator: number }) => api.put(`/produtos/${id}/fator-conversao`, dados).then((r) => r.data),

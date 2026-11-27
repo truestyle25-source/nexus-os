@@ -429,6 +429,9 @@ model Produto {
   promocaoLimite               Int?
   validade                     DateTime?
   imagem                       String?
+  /// Foto enviada (NEXUS CLUB, F-Foto): chave-base no bucket privado. Tamanhos: <base>-160/-400/-1000.webp.
+  /// Quando preenchida, tem prioridade sobre `imagem` (link). Leitura sempre por link temporário assinado.
+  imagemChave                  String?
   descricao                    String?
   status                       StatusGeral                @default(ATIVO)
   ehKit                        Boolean                    @default(false)
