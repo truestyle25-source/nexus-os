@@ -15,7 +15,7 @@ export const ACESSO_POR_ROTA: Record<string, string[]> = {
   '/fornecedores': ['fornecedores:visualizar'],
   '/clientes': ['clientes:visualizar'],
   '/financeiro': ['financeiro:visualizar'],
-  '/fluxo': ['financeiro:visualizar'],
+  '/fluxo': ['financeiro:visualizar', 'pdv:supervisor'], // supervisor: conferir, autorizar e turnos
   '/dre': ['dre:visualizar'],
   '/metas': ['metas:visualizar', 'metas:equipe', 'metas:proprio'],
   '/rh': ['rh:visualizar'],

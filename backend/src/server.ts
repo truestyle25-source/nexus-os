@@ -17,6 +17,7 @@ import { estoqueRoutes } from './modules/estoque/estoque.routes.js';
 import { comprasRoutes } from './modules/compras/compras.routes.js';
 import { vendasRoutes } from './modules/vendas/vendas.routes.js';
 import { pdvRoutes } from './modules/pdv/pdv.routes.js';
+import { fluxoCaixaRoutes } from './modules/fluxo-caixa/fluxo-caixa.routes.js';
 import { gestaoRoutes } from './modules/gestao/gestao.routes.js';
 import { rhRoutes } from './modules/rh/rh.routes.js';
 // Ciclo 1 — Plano de Desenvolvimento DISC. Registro separado de `rhRoutes`
@@ -257,6 +258,7 @@ await app.register(estoqueRoutes);
 await app.register(comprasRoutes);
 await app.register(vendasRoutes);
 await app.register(pdvRoutes);
+await app.register(fluxoCaixaRoutes);
 await app.register(gestaoRoutes);
 await app.register(rhRoutes);
 // Ciclo 1: rotas na RAIZ (sem prefixo), igual ao restante do módulo RH —

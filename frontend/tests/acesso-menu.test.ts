@@ -23,3 +23,8 @@ test('menu: Financeiro / RH vê RH e Radar', () => {
 test('menu: enquanto carrega (null) mostra tudo — o servidor continua barrando', () => {
   assert.equal(podeAcessar('/rh', null), true);
 });
+
+test('menu: supervisor de caixa vê o Fluxo de Caixa (conferência, aprovações e turnos)', () => {
+  assert.equal(podeAcessar('/fluxo', [...operador, 'pdv:supervisor']), true);
+  assert.equal(podeAcessar('/financeiro', [...operador, 'pdv:supervisor']), false);
+});
