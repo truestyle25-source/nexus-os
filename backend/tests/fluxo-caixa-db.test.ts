@@ -137,6 +137,25 @@ test('Fluxo de Caixa: conferência cega, aprovações, turnos e conciliações',
     assert.equal(d2.json().status, 'APROVADA');
     assert.equal(await prisma.decisaoAprovacaoCaixa.count({ where: { aprovacaoId: { in: [ap1.id, ap2.id] } } }), 2);
 
+    // LIMITE configurável: só o gestor muda, com motivo, auditado; vale para as próximas.
+    const L = '/fluxo/configuracao/limite-gestor';
+    assert.equal((await sup('PUT', L, { valor: 150, justificativa: 'Fim de ano' })).statusCode, 403, 'supervisor não muda');
+    assert.equal((await op('PUT', L, { valor: 150, justificativa: 'Fim de ano' })).statusCode, 403, 'operador não muda');
+    assert.equal((await ges('PUT', L, { valor: 150, justificativa: 'ok' })).statusCode, 400, 'motivo obrigatório');
+    assert.equal((await ges('PUT', L, { valor: -1, justificativa: 'Fim de ano' })).statusCode, 400, 'negativo não');
+    const lim = await ges('PUT', L, { valor: 150, justificativa: 'Movimento maior no fim de ano' });
+    assert.equal(lim.statusCode, 200, lim.body);
+    assert.equal(lim.json().limiteGestor, 150);
+    assert.equal((await sup('GET', '/fluxo/aprovacoes')).json().limiteGestor, 150);
+    assert.equal(ap2.nivelExigido, 'GESTOR');
+    assert.equal((await prisma.aprovacaoCaixa.findUniqueOrThrow({ where: { id: ap2.id } })).nivelExigido, 'GESTOR', 'a que já existia não muda');
+    const conf3 = await fin('POST', `/fluxo/caixas/${caixaId}/conferencias`, { itens: [{ forma: 'DINHEIRO', valor: 30 }, { forma: 'CARTAO_DEBITO', valor: 20 }, { forma: 'CARTAO_CREDITO', valor: 30 }], justificativa: 'Terceira contagem' });
+    assert.equal(conf3.statusCode, 200, conf3.body);
+    assert.equal(conf3.json().aprovacao.nivelExigido, 'SUPERVISOR', 'diferença de 100 fica abaixo do novo limite');
+    const audLim = await prisma.auditoria.findFirstOrThrow({ where: { empresaId, entidade: 'ConfiguracaoFluxoCaixa' }, orderBy: { createdAt: 'desc' } });
+    assert.equal(audLim.usuarioId, gesId);
+    assert.equal(audLim.contexto, 'Movimento maior no fim de ano');
+
     // Nada original mudou.
     const fotoDepois = JSON.stringify([
       await prisma.venda.findMany({ where: { caixaId }, orderBy: { id: 'asc' }, select: { id: true, total: true, status: true, updatedAt: true } }),
@@ -159,6 +178,7 @@ test('Fluxo de Caixa: conferência cega, aprovações, turnos e conciliações',
     await prisma.usuario.create({ data: { id: outroId, empresaId: outraEmp, nome: 'Gestor de fora', email: `${outroId}@nexus.test`, senhaHash: 'x', status: 'ATIVO' } as any });
     await prisma.permissao.createMany({ data: [['pdv', 'administrar'], ['financeiro', 'visualizar'], ['financeiro', 'editar']].map(([modulo, acao]) => ({ usuarioId: outroId, modulo, acao, permitido: true })) as any });
     const fora = como(outroId, outraEmp);
+    assert.equal((await fora('GET', '/fluxo/aprovacoes')).json().limiteGestor, 50, 'limite de outra empresa não é afetado');
     assert.equal((await fora('GET', `/fluxo/caixas/${caixaId}`)).statusCode, 404);
     assert.ok(!(await fora('GET', '/fluxo/caixas')).json().caixas.some((c: any) => c.id === caixaId));
     assert.equal((await fora('POST', `/fluxo/aprovacoes/${ap1.id}/decidir`, { decisao: 'REJEITAR', justificativa: 'De outra empresa' })).statusCode, 404);
@@ -208,6 +228,8 @@ test('Fluxo de Caixa: conferência cega, aprovações, turnos e conciliações',
     // DOCUMENTOS FISCAIS: bloqueado de forma explícita, sem dado inventado.
     assert.equal((await ges('GET', '/fluxo/documentos-fiscais')).json().disponivel, false);
   } finally {
+    await prisma.empresa.update({ where: { id: empresaId }, data: { limiteAprovacaoGestorCaixa: 50 } }).catch(() => {});
+    await prisma.auditoria.deleteMany({ where: { empresaId, entidade: 'ConfiguracaoFluxoCaixa' } }).catch(() => {});
     const aprovIds = (await prisma.aprovacaoCaixa.findMany({ where: { OR: [{ caixaId: caixaId ?? '-' }, { solicitanteId: finId }] }, select: { id: true } })).map((a) => a.id);
     await prisma.decisaoAprovacaoCaixa.deleteMany({ where: { aprovacaoId: { in: aprovIds } } });
     await prisma.aprovacaoCaixa.deleteMany({ where: { id: { in: aprovIds } } });

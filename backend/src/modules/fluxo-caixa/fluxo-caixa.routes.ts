@@ -73,9 +73,15 @@ async function resumoCaixa(empresaId: string, caixa: { id: string; fundoTroco: u
   return resumoDoCaixa(caixa, vendas, movimentacoes);
 }
 
+/** Limite da empresa (R$) acima do qual a divergência exige o gestor. */
+async function limiteGestorDa(db: any, empresaId: string): Promise<number> {
+  const e = await db.empresa.findUnique({ where: { id: empresaId }, select: { limiteAprovacaoGestorCaixa: true } });
+  return e ? Number(e.limiteAprovacaoGestorCaixa) : LIMITE_EXCECAO_GESTOR;
+}
+
 async function criarAprovacao(tx: any, d: { empresaId: string; filialId?: string | null; caixaId?: string | null; tipo: string; referenciaId?: string; descricao: string; valor: number; solicitanteId: string }) {
   return tx.aprovacaoCaixa.create({
-    data: { ...d, filialId: d.filialId ?? null, caixaId: d.caixaId ?? null, nivelExigido: nivelExigido(d.valor) },
+    data: { ...d, filialId: d.filialId ?? null, caixaId: d.caixaId ?? null, nivelExigido: nivelExigido(d.valor, await limiteGestorDa(tx, d.empresaId)) },
   });
 }
 
@@ -209,7 +215,7 @@ export async function fluxoCaixaRoutes(app: FastifyInstance): Promise<void> {
     const ctx = await contexto(req);
     const q = periodo.extend({ caixaId: z.string().optional() }).parse(req.query);
     const { inicio, fim } = janela(q, 7);
-    const entidades = ['Caixa', 'MovimentacaoCaixa', 'Venda', 'ConferenciaCaixa', 'AprovacaoCaixa', 'TurnoCaixa', 'ConciliacaoBancaria', 'ExtratoImportacao', 'Adquirente', 'ContaBancaria', 'DivergenciaCaixa'];
+    const entidades = ['Caixa', 'ConfiguracaoFluxoCaixa', 'MovimentacaoCaixa', 'Venda', 'ConferenciaCaixa', 'AprovacaoCaixa', 'TurnoCaixa', 'ConciliacaoBancaria', 'ExtratoImportacao', 'Adquirente', 'ContaBancaria', 'DivergenciaCaixa'];
     let ids: string[] | undefined;
     if (q.caixaId) {
       const c = await prisma.caixa.findFirst({ where: { id: q.caixaId, empresaId: ctx.empresaId }, select: { id: true } });
@@ -231,6 +237,21 @@ export async function fluxoCaixaRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── 8. APROVAÇÕES ───────────────────────────────────────────────────────
+  // Só o gestor muda o limite; vale para as próximas solicitações e fica auditado.
+  app.put('/fluxo/configuracao/limite-gestor', { preHandler: [auth, await permissaoQualquerDas(VER)] }, async (req: any) => {
+    const ctx = await contexto(req);
+    if (!ctx.gestor) throw new ErroDeNegocio('Só o gestor pode mudar o limite de aprovação.', 403);
+    const body = z.object({
+      valor: z.coerce.number().min(0, 'O limite não pode ser negativo.').max(1_000_000, 'Limite alto demais.'),
+      justificativa: z.string().trim().min(5, 'Explique o motivo da mudança (mínimo 5 caracteres).').max(500),
+    }).parse(req.body);
+    const valor = Math.round(body.valor * 100) / 100;
+    const anterior = await limiteGestorDa(prisma, ctx.empresaId);
+    await prisma.empresa.update({ where: { id: ctx.empresaId }, data: { limiteAprovacaoGestorCaixa: valor } });
+    await registrarAuditoria({ usuarioId: ctx.id, empresaId: ctx.empresaId, acao: 'EDITAR', entidade: 'ConfiguracaoFluxoCaixa', entidadeId: ctx.empresaId, valorAnterior: { limiteGestor: anterior }, valorNovo: { limiteGestor: valor }, origem: 'MANUAL', ip: req.ip, contexto: body.justificativa });
+    return { limiteGestor: valor };
+  });
+
   app.get('/fluxo/aprovacoes', { preHandler: [auth, await permissaoQualquerDas(VER)] }, async (req: any) => {
     const ctx = await contexto(req);
     const q = z.object({ status: z.enum(['PENDENTE', 'AUTORIZADA', 'APROVADA', 'REJEITADA', 'ABERTAS']).optional() }).parse(req.query);
@@ -242,7 +263,7 @@ export async function fluxoCaixaRoutes(app: FastifyInstance): Promise<void> {
     });
     const nomes = await nomesDe([...lista.map((a) => a.solicitanteId), ...lista.flatMap((a) => a.decisoes.map((d) => d.decisorId))], ctx.empresaId);
     return {
-      limiteGestor: LIMITE_EXCECAO_GESTOR,
+      limiteGestor: await limiteGestorDa(prisma, ctx.empresaId),
       meuNivel: ctx.gestor ? 'GESTOR' : ctx.supervisor ? 'SUPERVISOR' : null,
       aprovacoes: lista.map((a) => ({ ...serAprovacao(a), solicitante: nomes[a.solicitanteId] ?? null, decisoes: a.decisoes.map((d) => ({ ...serDecisao(d), decisor: nomes[d.decisorId] ?? null })) })),
     };

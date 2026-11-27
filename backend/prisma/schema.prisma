@@ -96,6 +96,8 @@ model Empresa {
   fornecedores             Fornecedor[]
   // Compras: quando true, pedido precisa de aprovação (compras.administrar) antes do envio.
   comprasExigeAprovacao    Boolean                    @default(false)
+  // Fluxo de Caixa: diferença acima deste valor exige aprovação do gestor (o gestor muda na aba Aprovações).
+  limiteAprovacaoGestorCaixa Decimal                  @default(50) @db.Decimal(12, 2)
   compraRecebimentos       CompraRecebimento[]
   compraRecebimentoItens   CompraRecebimentoItem[]
   compraNotasFiscais       CompraNotaFiscal[]

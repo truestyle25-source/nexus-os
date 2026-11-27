@@ -35,6 +35,9 @@ test('conferência por forma: sobra num meio não compensa falta noutro', () => 
 test('nível de aprovação e máquina de estados nunca aprova sozinha', () => {
   assert.equal(nivelExigido(LIMITE_EXCECAO_GESTOR), 'SUPERVISOR');
   assert.equal(nivelExigido(LIMITE_EXCECAO_GESTOR + 0.01), 'GESTOR');
+  assert.equal(nivelExigido(100, 150), 'SUPERVISOR', 'limite da empresa');
+  assert.equal(nivelExigido(150.01, 150), 'GESTOR');
+  assert.equal(nivelExigido(0.01, 0), 'GESTOR', 'limite zero: toda diferença vai ao gestor');
   assert.deepEqual(proximoStatus({ status: 'PENDENTE', nivelExigido: 'SUPERVISOR' }, 'SUPERVISOR', 'AUTORIZAR'), { ok: true, status: 'AUTORIZADA' });
   assert.deepEqual(proximoStatus({ status: 'PENDENTE', nivelExigido: 'GESTOR' }, 'SUPERVISOR', 'AUTORIZAR'), { ok: true, status: 'AUTORIZADA' });
   assert.equal(proximoStatus({ status: 'AUTORIZADA', nivelExigido: 'GESTOR' }, 'SUPERVISOR', 'APROVAR').ok, false);
