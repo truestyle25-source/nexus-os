@@ -27,7 +27,7 @@ import { comoSistema, definirConsumidorDaRequisicao, definirSistemaDaRequisicao 
 import { registrarAuditoria } from '../auditoria/auditoria.service.js';
 import { clubeHabilitado, hashCpf } from './clube-config.js';
 import { emitirCrachaConsumidor, lerCrachaConsumidor, VALIDADE_SESSAO_CONSUMIDOR_S, type CrachaConsumidor } from './token-consumidor.js';
-import { TERMOS_OBRIGATORIOS_CADASTRO, termosVigentes } from './consentimento.service.js';
+import { TERMOS_OBRIGATORIOS_CADASTRO, termosPendentes, termosVigentes } from './consentimento.service.js';
 import { enviarEmailRedefinicaoClube, enviarEmailTentativaCadastroClube, enviarEmailVerificacaoClube } from './emails-clube.js';
 
 const VALIDADE_VERIFICACAO_MS = 24 * 60 * 60 * 1000;
@@ -66,7 +66,7 @@ async function exigirClube(_req: FastifyRequest, reply: FastifyReply) {
   if (!clubeHabilitado()) return reply.status(503).send({ error: 'O NEXUS CLUB ainda não está disponível.' });
 }
 
-export interface ConsumidorAutenticado { id: string; cracha: CrachaConsumidor }
+export interface ConsumidorAutenticado { id: string; cracha: CrachaConsumidor; termosPendentes: Array<{ id: string; tipo: string; versao: number; publicadoEm: Date }> }
 
 /**
  * Autentica o consumidor: crachá válido (segredo do clube, tipo e audiência), conta ATIVA,
@@ -86,8 +86,17 @@ export async function autenticarConsumidor(req: FastifyRequest, reply: FastifyRe
     || (conta.sessoesValidasDesde && cracha.emitidoEmMs < conta.sessoesValidasDesde.getTime())) {
     return reply.status(401).send({ error: 'Sessão encerrada. Entre novamente.' });
   }
-  (req as any).consumidor = { id: conta.id, cracha } satisfies ConsumidorAutenticado;
+  // Termos mudaram depois do aceite (ex.: a minuta provisória foi trocada pela versão final):
+  // até aceitar a versão nova, a pessoa só vê os próprios dados, aceita os termos ou sai.
+  const pendentes = await termosPendentes(conta.id);
+  if (pendentes.length && !ROTAS_COM_TERMOS_PENDENTES.has(`${req.method} ${req.routeOptions?.url ?? ''}`)) {
+    return reply.status(428).send({ error: 'Os termos do NEXUS CLUB mudaram. Leia e aceite a nova versão para continuar.', codigo: 'TERMOS_PENDENTES', termos: pendentes });
+  }
+  (req as any).consumidor = { id: conta.id, cracha, termosPendentes: pendentes } satisfies ConsumidorAutenticado;
 }
+
+/** O que continua liberado enquanto há termo novo para aceitar. */
+const ROTAS_COM_TERMOS_PENDENTES = new Set(['GET /club/eu', 'POST /club/termos/aceitar', 'POST /club/auth/logout']);
 
 export async function consumidorAuthRoutes(app: FastifyInstance): Promise<void> {
   const porIp = (nome: string, max: number, janelaMs: number) => createRateLimiter(max, janelaMs, { nome });
@@ -223,10 +232,24 @@ export async function consumidorAuthRoutes(app: FastifyInstance): Promise<void> 
     }
     const { token, cracha } = emitirCrachaConsumidor(conta.id);
     await auditar({ consumidorId: conta.id, contexto: 'NEXUS CLUB: entrou', ip: req.ip });
-    return { token, expiraEm: new Date(cracha.exp * 1000).toISOString(), validadeSegundos: VALIDADE_SESSAO_CONSUMIDOR_S, consumidor: { id: conta.id, nome: conta.nome, email: conta.email } };
+    const pendentes = await termosPendentes(conta.id);
+    return { token, expiraEm: new Date(cracha.exp * 1000).toISOString(), validadeSegundos: VALIDADE_SESSAO_CONSUMIDOR_S, consumidor: { id: conta.id, nome: conta.nome, email: conta.email }, termosPendentes: pendentes };
   });
 
   const autenticado = [...base, autenticarConsumidor];
+
+  // Novo aceite quando os termos mudam: precisa aceitar TODAS as versões pendentes de uma vez.
+  app.post('/club/termos/aceitar', { preHandler: autenticado }, async (req, reply) => {
+    const { id, termosPendentes: pendentes } = (req as any).consumidor as ConsumidorAutenticado;
+    const { aceites } = z.object({ aceites: z.array(z.string().min(1)).max(10) }).parse(req.body);
+    if (!pendentes.length) return { ok: true, termosPendentes: [] };
+    if (!pendentes.every((t) => aceites.includes(t.id))) {
+      return reply.status(400).send({ error: 'É preciso aceitar a versão atual dos Termos de Uso e da Política de Privacidade.', termos: pendentes });
+    }
+    await prisma.termoAceite.createMany({ data: pendentes.map((t) => ({ consumidorId: id, termoVersaoId: t.id, empresaId: null, ip: req.ip })), skipDuplicates: true });
+    await auditar({ consumidorId: id, contexto: 'NEXUS CLUB: aceitou nova versão dos termos', ip: req.ip, valorNovo: { termos: pendentes.map((t) => `${t.tipo} v${t.versao}`) } });
+    return { ok: true, termosPendentes: [] };
+  });
 
   app.post('/club/auth/logout', { preHandler: autenticado }, async (req) => {
     const { id, cracha } = (req as any).consumidor as ConsumidorAutenticado;
@@ -292,6 +315,7 @@ export async function consumidorAuthRoutes(app: FastifyInstance): Promise<void> 
     return {
       id: c.id, nome: c.nome, email: c.email, cpf: mascararCpf(c.cpfCifrado), celular: c.celular, whatsapp: c.whatsapp,
       nascimento: c.nascimento ? c.nascimento.toISOString().slice(0, 10) : null, status: c.status, criadaEm: c.createdAt,
+      termosPendentes: ((req as any).consumidor as ConsumidorAutenticado).termosPendentes,
     };
   });
 

@@ -235,6 +235,24 @@ test('NEXUS CLUB — cadastro e autenticação do consumidor', { skip: !BANCO_DE
       token = r.b.token;
     });
 
+    await t.test('termos mudaram: pede novo aceite antes de continuar (troca da minuta provisória pela final)', async () => {
+      assert.deepEqual((await call('GET', '/club/eu', undefined, token)).b.termosPendentes, [], 'sem pendência após o cadastro');
+      const nova = await prisma.termoVersao.create({ data: { tipo: 'TERMOS_USO', versao: (await ultima('TERMOS_USO')) + 1, texto: `Termos de uso definitivos de teste ${SUF}` } });
+      const eu = await call('GET', '/club/eu', undefined, token);
+      assert.equal(eu.s, 200, 'os próprios dados continuam visíveis');
+      assert.deepEqual(eu.b.termosPendentes.map((x: any) => x.id), [nova.id]);
+      const bloq = await call('PUT', '/club/eu', { nome: 'Maria Bloqueada' }, token);
+      assert.equal(bloq.s, 428); assert.equal(bloq.b.codigo, 'TERMOS_PENDENTES');
+      const login = await call('POST', '/club/auth/login', { login: email, senha: 'Trocada789' });
+      assert.deepEqual(login.b.termosPendentes.map((x: any) => x.id), [nova.id], 'o login avisa a pendência');
+      assert.equal((await call('POST', '/club/termos/aceitar', { aceites: [] }, token)).s, 400);
+      const ok = await call('POST', '/club/termos/aceitar', { aceites: [nova.id] }, token);
+      assert.equal(ok.s, 200, JSON.stringify(ok.b));
+      assert.equal((await call('PUT', '/club/eu', { nome: 'Maria Liberada' }, token)).s, 200, 'liberado depois do aceite');
+      const ac = await prisma.termoAceite.findFirst({ where: { consumidorId: contaId, termoVersaoId: nova.id } });
+      assert.ok(ac?.aceitoEm && ac.ip, 'novo aceite gravado com data e IP');
+    });
+
     await t.test('limite de tentativas: a 11ª tentativa na mesma conta em 15 min é barrada, mesmo de IPs diferentes', async () => {
       const alvo = `alvo-${SUF}@teste.local`;
       const sts: number[] = [];
