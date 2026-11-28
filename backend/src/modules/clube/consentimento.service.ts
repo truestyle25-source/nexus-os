@@ -27,6 +27,21 @@ export async function termosVigentes(tipos: TipoTermo[], empresaId: string | nul
   return lista.filter((t): t is NonNullable<typeof t> => !!t);
 }
 
+/**
+ * Termos obrigatórios cuja versão VIGENTE a pessoa ainda não aceitou (ex.: publicou-se uma
+ * versão nova depois do cadastro). Enquanto houver pendência, o clube pede o novo aceite.
+ */
+export async function termosPendentes(consumidorId: string) {
+  const vigentes = await termosVigentes(TERMOS_OBRIGATORIOS_CADASTRO);
+  if (!vigentes.length) return [];
+  const aceitos = await prisma.termoAceite.findMany({
+    where: { consumidorId, termoVersaoId: { in: vigentes.map((t) => t.id) } },
+    select: { termoVersaoId: true },
+  });
+  const ok = new Set(aceitos.map((a) => a.termoVersaoId));
+  return vigentes.filter((t) => !ok.has(t.id)).map(({ id, tipo, versao, publicadoEm }) => ({ id, tipo, versao, publicadoEm }));
+}
+
 export interface NovoConsentimento {
   empresaId: string;
   consumidorId: string;
