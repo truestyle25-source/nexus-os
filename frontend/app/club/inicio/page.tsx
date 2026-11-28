@@ -2,11 +2,12 @@
 /**
  * Início do cliente (mockup 02): troca de clube, cartão "seu clube nesta loja" e últimas compras.
  * Só dados reais: benefício configurado pela loja e vendas ligadas a esta pessoa nesta loja.
- * Promoções entram na Fase 7.
+ * Promoções em destaque: as ativas da vitrine (Fase 7), com preço calculado pelo servidor.
  */
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { clubApi, dataCurta, reais } from '@/lib/club/api';
+import { clubApi, dataCurta, reais, type PromocaoVitrine } from '@/lib/club/api';
+import { CartaoPromocao } from '@/components/club/CartaoPromocao';
 import { AppClube, Caixa, Secao, SeletorClube, useMeusClubes, useSessaoClube } from '@/components/club/AppClube';
 import { Aviso } from '@/components/club/ui';
 
@@ -16,10 +17,13 @@ export default function InicioClube() {
   const { eu, erro } = useSessaoClube();
   const { clubes, selecionado, clube, escolher, erro: erroClubes } = useMeusClubes(!!eu);
   const [compras, setCompras] = useState<Compra[] | null>(null);
+  const [promos, setPromos] = useState<PromocaoVitrine[] | null>(null);
 
   useEffect(() => {
-    setCompras(null);
-    if (!selecionado || clube?.status !== 'ATIVO') return;
+    setCompras(null); setPromos(null);
+    if (!selecionado) return;
+    clubApi.promocoes(selecionado).then(setPromos).catch(() => setPromos([]));
+    if (clube?.status !== 'ATIVO') return;
     clubApi.compras(selecionado).then(setCompras).catch(() => setCompras([]));
   }, [selecionado, clube?.status]);
 
@@ -54,7 +58,17 @@ export default function InicioClube() {
                       Benefício do clube: {clube.beneficioPercentual.toLocaleString('pt-BR')}% de desconto{clube.limiteBeneficio ? ` (até ${reais(clube.limiteBeneficio)} por compra)` : ''}
                     </p>
                   ) : null}
+                  {!!promos?.length && (
+                    <Link href="/club/promocoes" className="mt-3 flex items-center justify-between rounded-[12px] bg-white/15 px-3 py-2 text-[13px] font-semibold">
+                      <span>🏷️ {promos.length} {promos.length === 1 ? 'promoção ativa' : 'promoções ativas'} para você</span><span>Ver →</span>
+                    </Link>
+                  )}
                 </div>
+              )}
+              {!!promos?.length && (
+                <Secao titulo="Em destaque" acao={<Link href="/club/promocoes" className="text-[13px] font-semibold text-[#A78BFA]">Ver todas</Link>}>
+                  <div className="grid grid-cols-2 gap-3">{promos.slice(0, 2).map((p) => <CartaoPromocao key={p.id} p={p} compacto />)}</div>
+                </Secao>
               )}
               {clube?.status === 'PENDENTE_VINCULO' && (
                 <div className="mt-4"><Aviso>A loja está confirmando o seu cadastro. Enquanto isso, as compras e as autorizações ficam aguardando.</Aviso></div>

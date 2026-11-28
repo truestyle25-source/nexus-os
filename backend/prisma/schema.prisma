@@ -206,6 +206,8 @@ model Empresa {
   termosAceite             TermoAceite[]
   consentimentosEvento     ConsentimentoEvento[]
   consentimentosAtual      ConsentimentoAtual[]
+  promocoesClube           Promocao[]
+  promocoesClubeFiliais    PromocaoFilial[]
 }
 
 // --- Importação de dados (CSV/API) --------------------------------------------
@@ -262,6 +264,7 @@ model Filial {
   produtosConfig       ProdutoFilial[]
   historicoPrecos      ProdutoPrecoHistorico[]
   fornecedores         Fornecedor[]
+  promocoesClube       PromocaoFilial[]
 
   @@index([empresaId])
 }
@@ -513,6 +516,7 @@ model Produto {
   fatoresConversao             FatorConversao[]
 
   @@unique([empresaId, sku])
+  promocoesClube                Promocao[]
   @@unique([empresaId, codigoBarras])
   @@index([empresaId])
   @@index([sku])
@@ -4380,4 +4384,65 @@ model ConsentimentoAtual {
 
   @@unique([empresaId, consumidorId, canal, finalidade])
   @@index([consumidorId])
+}
+
+// =============================================================================
+// NEXUS CLUB — Fase 7: promoções do clube (sempre ligadas a um Produto real).
+// O preço "de" é o preço atual do produto (lido na hora); a promoção guarda só o
+// preço "por", o período, quem pode usar e as filiais. "Agendada/Ativa/Vencida" é
+// calculado pelas datas de uma promoção PUBLICADA.
+// =============================================================================
+
+enum TipoPromocao {
+  TODOS // qualquer cliente
+  MEMBROS // só membros do clube
+}
+
+enum StatusPromocao {
+  RASCUNHO
+  PUBLICADA
+  ENCERRADA // encerrada antes do fim pela loja
+  CANCELADA
+}
+
+model Promocao {
+  id               String           @id @default(cuid())
+  empresaId        String
+  empresa          Empresa          @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  produtoId        String
+  produto          Produto          @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+  tipo             TipoPromocao     @default(MEMBROS)
+  titulo           String?
+  descricao        String?
+  precoPromocional Decimal          @db.Decimal(12, 2)
+  inicio           DateTime
+  fim              DateTime
+  status           StatusPromocao   @default(RASCUNHO)
+  /// Quantidade máxima por compra (null = sem limite).
+  limitePorCliente Int?
+  /// Sem filiais escolhidas = vale em todas as filiais da empresa.
+  todasFiliais     Boolean          @default(true)
+  criadoPorId      String
+  publicadoPorId   String?
+  publicadaEm      DateTime?
+  encerradaEm      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  filiais          PromocaoFilial[]
+
+  @@index([empresaId, status, fim])
+  @@index([produtoId])
+}
+
+model PromocaoFilial {
+  id         String   @id @default(cuid())
+  empresaId  String
+  empresa    Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  promocaoId String
+  promocao   Promocao @relation(fields: [promocaoId], references: [id], onDelete: Cascade)
+  filialId   String
+  filial     Filial   @relation(fields: [filialId], references: [id], onDelete: Restrict)
+
+  @@unique([promocaoId, filialId])
+  @@index([empresaId])
 }
