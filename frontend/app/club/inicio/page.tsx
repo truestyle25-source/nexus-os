@@ -1,91 +1,83 @@
 'use client';
 /**
- * Área do cliente — Fase 4: a conta (dados, telefone, senha, sair).
- * Os clubes, promoções e benefícios entram aqui na Fase 5.
+ * Início do cliente (mockup 02): troca de clube, cartão "seu clube nesta loja" e últimas compras.
+ * Só dados reais: benefício configurado pela loja e vendas ligadas a esta pessoa nesta loja.
+ * Promoções entram na Fase 7.
  */
-import { useState, type FormEvent } from 'react';
-import { clubApi, problemaSenha, salvarSessaoClube } from '@/lib/club/api';
-import { useSessaoClube } from '@/components/club/sessao';
-import { Aviso, BotaoPrimario, BotaoSecundario, Campo, Cartao, PaginaClube, Titulo } from '@/components/club/ui';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { clubApi, dataCurta, reais } from '@/lib/club/api';
+import { AppClube, Caixa, Secao, SeletorClube, useMeusClubes, useSessaoClube } from '@/components/club/AppClube';
+import { Aviso } from '@/components/club/ui';
+
+type Compra = { id: string; data: string; total: number; itens: number };
 
 export default function InicioClube() {
-  const { eu, setEu, erro, sair } = useSessaoClube();
-  const [edit, setEdit] = useState<{ nome: string; celular: string; whatsapp: string } | null>(null);
-  const [senhas, setSenhas] = useState<{ atual: string; nova: string } | null>(null);
-  const [msg, setMsg] = useState<{ tom: 'ok' | 'erro'; texto: string } | null>(null);
-  const [carregando, setCarregando] = useState(false);
+  const { eu, erro } = useSessaoClube();
+  const { clubes, selecionado, clube, escolher, erro: erroClubes } = useMeusClubes(!!eu);
+  const [compras, setCompras] = useState<Compra[] | null>(null);
 
-  const salvarDados = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!edit) return;
-    setCarregando(true); setMsg(null);
-    try {
-      const r = await clubApi.atualizarEu({ nome: edit.nome.trim(), celular: edit.celular.trim() || null, whatsapp: edit.whatsapp.trim() || null });
-      setEu((v) => (v ? { ...v, ...r } as typeof v : v));
-      setEdit(null); setMsg({ tom: 'ok', texto: 'Dados atualizados.' });
-    } catch (err) { setMsg({ tom: 'erro', texto: (err as Error).message }); }
-    finally { setCarregando(false); }
-  };
-
-  const trocarSenha = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!senhas) return;
-    const p = problemaSenha(senhas.nova);
-    if (p) { setMsg({ tom: 'erro', texto: p }); return; }
-    setCarregando(true); setMsg(null);
-    try {
-      const r = await clubApi.trocarSenha(senhas.atual, senhas.nova);
-      salvarSessaoClube(r.token);
-      setSenhas(null); setMsg({ tom: 'ok', texto: 'Senha trocada. As sessões em outros aparelhos foram encerradas.' });
-    } catch (err) { setMsg({ tom: 'erro', texto: (err as Error).message }); }
-    finally { setCarregando(false); }
-  };
+  useEffect(() => {
+    setCompras(null);
+    if (!selecionado || clube?.status !== 'ATIVO') return;
+    clubApi.compras(selecionado).then(setCompras).catch(() => setCompras([]));
+  }, [selecionado, clube?.status]);
 
   return (
-    <PaginaClube largura={560}>
-      <Cartao>
-        {erro && <Aviso tom="erro">{erro}</Aviso>}
-        {!eu && !erro && <p className="text-[#8B8BA7] text-[14px]">Carregando…</p>}
-        {eu && (
-          <>
-            <Titulo sub="Sua conta vale para todas as lojas que usam o NEXUS CLUB.">Olá, {eu.nome.split(' ')[0]}!</Titulo>
-            {msg && <Aviso tom={msg.tom}>{msg.texto}</Aviso>}
+    <AppClube eu={eu} carregando={!eu && !erro}>
+      {(erro || erroClubes) && <Aviso tom="erro">{erro || erroClubes}</Aviso>}
+      {eu && (
+        <>
+          <h1 className="text-[22px] font-bold mt-1">Olá, {eu.nome.split(' ')[0]} 👋</h1>
+          <p className="text-[13px] text-[#8B8BA7] mb-4">
+            {clubes == null ? 'Carregando seus clubes…' : clubes.length ? `Você participa de ${clubes.length} ${clubes.length === 1 ? 'clube' : 'clubes'}` : 'Você ainda não participa de nenhum clube.'}
+          </p>
 
-            {!edit ? (
-              <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-[14px] mb-5">
-                <dt className="text-[#8B8BA7]">Nome</dt><dd className="text-white">{eu.nome}</dd>
-                <dt className="text-[#8B8BA7]">E-mail</dt><dd className="text-white break-all">{eu.email}</dd>
-                <dt className="text-[#8B8BA7]">CPF</dt><dd className="text-white">{eu.cpf ?? '—'}</dd>
-                <dt className="text-[#8B8BA7]">Celular</dt><dd className="text-white">{eu.celular || '—'}</dd>
-                <dt className="text-[#8B8BA7]">WhatsApp</dt><dd className="text-white">{eu.whatsapp || '—'}</dd>
-              </dl>
-            ) : (
-              <form onSubmit={salvarDados} className="mb-4">
-                <Campo rotulo="Nome" value={edit.nome} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} />
-                <Campo rotulo="Celular" value={edit.celular} onChange={(e) => setEdit({ ...edit, celular: e.target.value })} type="tel" inputMode="tel" />
-                <Campo rotulo="WhatsApp" value={edit.whatsapp} onChange={(e) => setEdit({ ...edit, whatsapp: e.target.value })} type="tel" inputMode="tel" ajuda="E-mail e CPF não mudam por aqui." />
-                <div className="flex gap-2"><BotaoPrimario type="submit" carregando={carregando}>Salvar</BotaoPrimario><BotaoSecundario type="button" onClick={() => setEdit(null)}>Cancelar</BotaoSecundario></div>
-              </form>
-            )}
+          {clubes && clubes.length === 0 && (
+            <Caixa className="p-5 text-center">
+              <p className="text-[15px] font-semibold mb-1">Encontre as lojas onde você compra</p>
+              <p className="text-[13px] text-[#8B8BA7] mb-4">Entre no clube de cada loja para ver benefícios e suas compras.</p>
+              <Link href="/club/lojas" className="inline-flex h-11 px-5 items-center rounded-[14px] bg-[#7C3AED] font-semibold text-[14px]">Encontrar loja</Link>
+            </Caixa>
+          )}
 
-            {senhas && (
-              <form onSubmit={trocarSenha} className="mb-4">
-                <Campo rotulo="Senha atual" value={senhas.atual} onChange={(e) => setSenhas({ ...senhas, atual: e.target.value })} type="password" autoComplete="current-password" />
-                <Campo rotulo="Nova senha" value={senhas.nova} onChange={(e) => setSenhas({ ...senhas, nova: e.target.value })} type="password" autoComplete="new-password" ajuda="Pelo menos 8 caracteres, com letras e números." />
-                <div className="flex gap-2"><BotaoPrimario type="submit" carregando={carregando}>Trocar senha</BotaoPrimario><BotaoSecundario type="button" onClick={() => setSenhas(null)}>Cancelar</BotaoSecundario></div>
-              </form>
-            )}
+          {clubes && clubes.length > 0 && (
+            <>
+              <SeletorClube clubes={clubes} selecionado={selecionado} escolher={escolher} />
+              {clube && (
+                <div className="mt-4 rounded-[22px] p-5 bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] shadow-[0_12px_30px_rgba(124,58,237,0.35)]">
+                  <p className="text-[11px] font-bold tracking-[0.14em] uppercase text-white/80">Seu clube nesta loja</p>
+                  <p className="text-[22px] font-bold mt-1">{clube.nome}</p>
+                  <p className="text-[13px] text-white/85">Cliente desde {new Date(clube.entrouEm).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}</p>
+                  {clube.beneficioPercentual ? (
+                    <p className="mt-3 rounded-[12px] bg-white/15 px-3 py-2 text-[13px] font-semibold">
+                      Benefício do clube: {clube.beneficioPercentual.toLocaleString('pt-BR')}% de desconto{clube.limiteBeneficio ? ` (até ${reais(clube.limiteBeneficio)} por compra)` : ''}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              {clube?.status === 'PENDENTE_VINCULO' && (
+                <div className="mt-4"><Aviso>A loja está confirmando o seu cadastro. Enquanto isso, as compras e as autorizações ficam aguardando.</Aviso></div>
+              )}
 
-            {!edit && !senhas && (
-              <div className="flex flex-wrap gap-2">
-                <BotaoSecundario type="button" onClick={() => { setMsg(null); setEdit({ nome: eu.nome, celular: eu.celular ?? '', whatsapp: eu.whatsapp ?? '' }); }}>Editar dados</BotaoSecundario>
-                <BotaoSecundario type="button" onClick={() => { setMsg(null); setSenhas({ atual: '', nova: '' }); }}>Trocar senha</BotaoSecundario>
-                <BotaoSecundario type="button" onClick={sair}>Sair</BotaoSecundario>
-              </div>
-            )}
-          </>
-        )}
-      </Cartao>
-    </PaginaClube>
+              {clube?.status === 'ATIVO' && (
+                <Secao titulo="Últimas compras" acao={<Link href="/club/compras" className="text-[13px] font-semibold text-[#A78BFA]">Ver todas</Link>}>
+                  <Caixa>
+                    {compras == null && <p className="p-4 text-[13px] text-[#8B8BA7]">Carregando…</p>}
+                    {compras?.length === 0 && <p className="p-4 text-[13px] text-[#8B8BA7]">Nenhuma compra identificada nesta loja ainda. Elas aparecem aqui quando o caixa identifica você.</p>}
+                    {compras?.slice(0, 3).map((c, i) => (
+                      <div key={c.id} className={`flex items-center justify-between px-4 py-3 text-[14px] ${i ? 'border-t border-[#2A2A3E]' : ''}`}>
+                        <span className="text-[#C9C9E0]">{dataCurta(c.data)} · {c.itens} {c.itens === 1 ? 'item' : 'itens'}</span>
+                        <span className="font-bold">{reais(c.total)}</span>
+                      </div>
+                    ))}
+                  </Caixa>
+                </Secao>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </AppClube>
   );
 }

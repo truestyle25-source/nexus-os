@@ -62,7 +62,7 @@ const auditar = (dados: { consumidorId?: string; contexto: string; ip?: string; 
     ip: dados.ip, contexto: dados.contexto, valorNovo: dados.valorNovo,
   })).catch(() => undefined);
 
-async function exigirClube(_req: FastifyRequest, reply: FastifyReply) {
+export async function exigirClube(_req: FastifyRequest, reply: FastifyReply) {
   if (!clubeHabilitado()) return reply.status(503).send({ error: 'O NEXUS CLUB ainda não está disponível.' });
 }
 

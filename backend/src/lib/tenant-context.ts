@@ -116,6 +116,16 @@ export function definirConsumidorDaRequisicao(consumidorId: string): void {
   ctx.motivo = undefined;
 }
 
+/**
+ * NEXUS CLUB: o consumidor dentro de UM clube. Só chame depois de conferir no servidor que a
+ * pessoa participa (ou está entrando) daquele clube: com a empresa aberta, as regras do banco
+ * deixam gravar a carteirinha, o vínculo ao cliente e as autorizações daquela loja.
+ */
+export function comEmpresaDoConsumidor<T>(consumidorId: string, empresaId: string, fn: () => T | PromiseLike<T>): Promise<T> {
+  if (!consumidorId || !empresaId) return Promise.reject(new Error('comEmpresaDoConsumidor: consumidorId e empresaId obrigatórios.'));
+  return armazenamento.run({ escopo: 'consumidor', consumidorId, empresaId }, async () => await fn());
+}
+
 /** Executa `fn` como o consumidor (fora de requisição: testes, tarefas). */
 export function comConsumidor<T>(consumidorId: string, fn: () => T | PromiseLike<T>): Promise<T> {
   if (!consumidorId) return Promise.reject(new Error('comConsumidor: consumidorId obrigatório.'));

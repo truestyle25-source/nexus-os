@@ -45,7 +45,7 @@ export function salvarSessaoClube(token: string, conta?: ContaResumo) {
 }
 
 export function limparSessaoClube() {
-  try { localStorage.removeItem(CHAVE_TOKEN); localStorage.removeItem(CHAVE_CONTA); } catch { /* sem armazenamento */ }
+  try { localStorage.removeItem(CHAVE_TOKEN); localStorage.removeItem(CHAVE_CONTA); localStorage.removeItem('nexus_club_clube_atual'); } catch { /* sem armazenamento */ }
 }
 
 async function pedir<T>(metodo: string, caminho: string, corpo?: unknown, autenticado = false): Promise<T> {
@@ -83,7 +83,41 @@ export const clubApi = {
   atualizarEu: (d: { nome?: string; celular?: string | null; whatsapp?: string | null }) => pedir<Partial<Eu>>('PUT', '/club/eu', d, true),
   trocarSenha: (senhaAtual: string, novaSenha: string) => pedir<{ token: string }>('POST', '/club/eu/senha', { senhaAtual, novaSenha }, true),
   aceitarTermos: (aceites: string[]) => pedir<{ ok: true }>('POST', '/club/termos/aceitar', { aceites }, true),
+  // Fase 5 — área do cliente
+  lojas: (busca = '') => pedir<Array<ClubeResumo & { participo: boolean }>>('GET', `/club/lojas${busca ? `?busca=${encodeURIComponent(busca)}` : ''}`, undefined, true),
+  clubes: () => pedir<Array<ClubeResumo & { status: StatusMembro; entrouEm: string }>>('GET', '/club/clubes', undefined, true),
+  entrar: (clube: string) => pedir<{ status: StatusMembro }>('POST', `/club/clubes/${clube}/entrar`, {}, true),
+  sair: (clube: string) => pedir<{ ok: true }>('POST', `/club/clubes/${clube}/sair`, {}, true),
+  clube: (clube: string) => pedir<DetalheClube>('GET', `/club/clubes/${clube}`, undefined, true),
+  consentir: (clube: string, canal: Canal, autorizar: boolean, termoVersaoId?: string) =>
+    pedir<{ canal: Canal; autorizado: boolean; atualizadoEm: string }>('PUT', `/club/clubes/${clube}/consentimentos/${canal}`, { autorizar, termoVersaoId }, true),
+  historico: (clube: string) => pedir<Array<{ id: string; canal: Canal; acao: 'CONCEDIDO' | 'REVOGADO'; origem: string; data: string; versaoTexto: number | null }>>('GET', `/club/clubes/${clube}/consentimentos/historico`, undefined, true),
+  compras: (clube: string) => pedir<Array<{ id: string; data: string; total: number; desconto: number; itens: number }>>('GET', `/club/clubes/${clube}/compras`, undefined, true),
+  exportar: () => pedir<Record<string, unknown>>('GET', '/club/eu/exportar', undefined, true),
+  encerrar: (senha: string) => pedir<{ ok: true }>('POST', '/club/eu/encerrar', { senha, confirmo: true }, true),
 };
+
+export type Canal = 'WHATSAPP' | 'EMAIL' | 'APP';
+export type StatusMembro = 'ATIVO' | 'PENDENTE_VINCULO' | 'SAIU' | 'BLOQUEADO';
+export interface ClubeResumo { id: string; nome: string; cor: string | null; beneficioPercentual: number | null; limiteBeneficio: number | null }
+export interface DetalheClube {
+  clube: ClubeResumo;
+  membro: { status: StatusMembro; entrouEm: string };
+  autorizacao: { id: string; versao: number; texto: string } | null;
+  consentimentos: Array<{ canal: Canal; autorizado: boolean; atualizadoEm: string | null }>;
+}
+export const ROTULO_CANAL: Record<Canal, { nome: string; ajuda: string }> = {
+  WHATSAPP: { nome: 'WhatsApp', ajuda: 'Ofertas e avisos da loja pelo WhatsApp' },
+  EMAIL: { nome: 'E-mail', ajuda: 'Ofertas da loja por e-mail' },
+  APP: { nome: 'Notificações no app', ajuda: 'Avisos dentro do NEXUS CLUB' },
+};
+
+const CHAVE_CLUBE = 'nexus_club_clube_atual';
+export function clubeAtual(): string | null { return lerLocal(CHAVE_CLUBE); }
+export function escolherClube(id: string) { try { localStorage.setItem(CHAVE_CLUBE, id); } catch { /* sem armazenamento */ } }
+
+export const reais = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+export const dataCurta = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export const ROTULO_TERMO: Record<string, string> = { TERMOS_USO: 'Termos de Uso', POLITICA_PRIVACIDADE: 'Política de Privacidade' };
 
