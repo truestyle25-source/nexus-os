@@ -29,6 +29,14 @@ async function main() {
     console.error('Texto muito curto (menos de 200 caracteres): confira o arquivo.');
     process.exit(2);
   }
+  // Minuta não vai ao ar: campos a preencher ([RAZÃO SOCIAL], [CNPJ]...) ou a marca MINUTA bloqueiam.
+  const pendentes = [...new Set(texto.match(/\[[A-ZÀ-Ú0-9][^\]\n]{1,80}\]/g) ?? [])];
+  if (pendentes.length || /\bMINUTA\b/i.test(texto)) {
+    console.error('Texto NÃO publicado: ainda é minuta.');
+    if (pendentes.length) console.error(`Campos a preencher (${pendentes.length}): ${pendentes.slice(0, 12).join(', ')}${pendentes.length > 12 ? ', …' : ''}`);
+    if (/\bMINUTA\b/i.test(texto)) console.error('Remova a marca "MINUTA" depois da revisão jurídica.');
+    process.exit(2);
+  }
   await comoSistema('club:publicar-termo', async () => {
     const atual = await prisma.termoVersao.findFirst({ where: { tipo: tipo as (typeof TIPOS)[number], empresaId: null }, orderBy: { versao: 'desc' }, select: { versao: true, texto: true } });
     if (atual?.texto.trim() === texto) {
