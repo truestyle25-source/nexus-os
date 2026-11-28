@@ -74,6 +74,18 @@ poderia ser mesclado. Aumente quando entrar outra pessoa.
 `RateLimitJanela` e `TarefaAgendada`. É aditiva. **Deve ser aplicada antes ou junto do deploy do backend**:
 o código novo usa essas tabelas no login e no rate limit.
 
+**NEXUS CLUB, Fase 2 (`202701020000_nexus_club_fase2_dados`, aditiva):** cria as tabelas `ContaConsumidor`,
+`ConsumidorToken`, `ClubeConfig`, `MembroClube`, `TermoVersao`, `TermoAceite`, `ConsentimentoEvento` e
+`ConsentimentoAtual`, o valor `NEXUS_CLUB` em `Origem`, a função `app_consumidor_id()` e as travas entre empresas.
+- As tabelas já nascem com RLS (a própria migração cria as regras); mesmo assim rode o passo 4 depois
+  (`01_rls_policies.sql`) e também `02_papeis.sql` (as senhas dos papéis: use as atuais), que concede a função
+  nova ao `nexus_app` e mantém os históricos `TermoAceite`/`ConsentimentoEvento` sem UPDATE/DELETE. Se o
+  `03_ownership.sql` for reaplicado, ele também passa a função nova para o `nexus_migrator`.
+- Testado num banco igual ao de produção (todas as migrações anteriores + scripts 01–03 da `main`), com a migração
+  aplicada pelo `nexus_migrator`: tabelas protegidas antes de reaplicar o 01, e 04 com 22 verificações ok.
+- O drift do passo 5 tolera também `DROP INDEX "TermoVersao_plataforma_tipo_versao_key"` (índice único parcial).
+- Nenhum código em uso lê estas tabelas ainda (Fase 3 em diante): a migração pode ir antes do deploy.
+
 ## 5. Staging
 Hoje existe só o ambiente isolado **local** (Docker `nexus_staging_pg` e `nexus_postgres`), usado nos testes de carga, RLS e backup.
 

@@ -54,10 +54,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO nexus_app
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO nexus_app;
 REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM nexus_app;
 REVOKE ALL ON TABLE public."_prisma_migrations" FROM nexus_app;
+-- NEXUS CLUB: históricos de aceite de termo e de consentimento (LGPD) não se alteram nem se apagam.
+REVOKE UPDATE, DELETE ON TABLE public."TermoAceite", public."ConsentimentoEvento" FROM nexus_app;
 
 -- Funções usadas pelas policies
 GRANT EXECUTE ON FUNCTION public.app_empresa_id() TO nexus_app, nexus_migrator;
 GRANT EXECUTE ON FUNCTION public.app_escopo_sistema() TO nexus_app, nexus_migrator;
+GRANT EXECUTE ON FUNCTION public.app_consumidor_id() TO nexus_app, nexus_migrator;
 
 -- Objetos criados no futuro (pelo administrador hoje, pelo nexus_migrator depois)
 ALTER DEFAULT PRIVILEGES FOR ROLE nexus_migrator IN SCHEMA public
