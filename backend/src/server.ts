@@ -58,6 +58,7 @@ import { fornecedorFichaRoutes } from './modules/fornecedores/fornecedor-ficha.r
 import { compraFichaRoutes } from './modules/compras/compra-ficha.routes.js';
 import { produtoFichaRoutes } from './modules/produtos/produto-ficha.routes.js';
 import { produtoFotoRoutes } from './modules/produtos/produto-foto.routes.js';
+import { consumidorAuthRoutes } from './modules/clube/consumidor-auth.routes.js';
 import { radarRoutes } from './modules/radar/radar.routes.js';
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
 import { registerAuthentication } from './middlewares/auth.js';
@@ -299,6 +300,8 @@ await app.register(compraFichaRoutes);
 await app.register(produtoFichaRoutes);
 // Foto do produto (NEXUS CLUB, F-Foto): envio para o armazenamento privado.
 await app.register(produtoFotoRoutes);
+// NEXUS CLUB (Fase 3): cadastro e login do consumidor. Desligado até NEXUS_CLUB_HABILITADO=true + segredos.
+await app.register(consumidorAuthRoutes);
 await app.register(fiscalRoutes);
 // Radar Organizacional: uma única chamada (/radar/resumo) alimenta a tela.
 await app.register(radarRoutes, { prefix: "/radar" });

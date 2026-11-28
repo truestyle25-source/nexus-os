@@ -19,12 +19,17 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  *                com base em entrada do cliente. Sempre com um `motivo`, para
  *                auditoria.
  */
-export type EscopoTenant = 'nenhum' | 'tenant' | 'sistema';
+export type EscopoTenant = 'nenhum' | 'tenant' | 'sistema' | 'consumidor';
 
 export type ContextoTenant = {
   escopo: EscopoTenant;
   empresaId?: string;
   usuarioId?: string;
+  /**
+   * NEXUS CLUB: conta do consumidor autenticado (`app.consumidor_id` no banco). No escopo
+   * 'consumidor' só ela vale: a pessoa enxerga a própria conta e o que é dela (regras da Fase 2).
+   */
+  consumidorId?: string;
   motivo?: string;
   /** Transação interativa aberta pelo wrapper de `lib/prisma.ts` (uso interno). */
   tx?: unknown;
@@ -83,6 +88,7 @@ export function definirSistemaDaRequisicao(motivo: string): void {
   ctx.motivo = motivo;
   ctx.empresaId = undefined;
   ctx.usuarioId = undefined;
+  ctx.consumidorId = undefined;
 }
 
 /** Marca a requisição atual como autenticada para a empresa/usuário validados. */
@@ -92,5 +98,26 @@ export function definirTenantDaRequisicao(empresaId: string, usuarioId: string):
   ctx.escopo = 'tenant';
   ctx.empresaId = empresaId;
   ctx.usuarioId = usuarioId;
+  ctx.consumidorId = undefined;
   ctx.motivo = undefined;
+}
+
+/**
+ * NEXUS CLUB: marca a requisição atual como do consumidor validado (rotas /club). Ele não
+ * enxerga nada das empresas: só a própria conta e o que é dele (regras da Fase 2).
+ */
+export function definirConsumidorDaRequisicao(consumidorId: string): void {
+  const ctx = armazenamento.getStore();
+  if (!ctx) return;
+  ctx.escopo = 'consumidor';
+  ctx.consumidorId = consumidorId;
+  ctx.empresaId = undefined;
+  ctx.usuarioId = undefined;
+  ctx.motivo = undefined;
+}
+
+/** Executa `fn` como o consumidor (fora de requisição: testes, tarefas). */
+export function comConsumidor<T>(consumidorId: string, fn: () => T | PromiseLike<T>): Promise<T> {
+  if (!consumidorId) return Promise.reject(new Error('comConsumidor: consumidorId obrigatório.'));
+  return armazenamento.run({ escopo: 'consumidor', consumidorId }, async () => await fn());
 }

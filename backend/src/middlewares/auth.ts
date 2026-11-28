@@ -81,6 +81,12 @@ export const registerAuthentication = fp(async (app: any) => {
       return reply.status(401).send({ message: 'Não autenticado' })
     }
 
+    // NEXUS CLUB (trava 2 de 3): crachá de consumidor nunca entra no sistema da empresa.
+    // (Trava 1: o id dele não está na tabela de usuários. Trava 3: é assinado com outro segredo.)
+    if (request.user?.tipo === 'CONSUMIDOR' || request.user?.aud === 'nexus-club') {
+      return reply.status(401).send({ message: 'Não autenticado' })
+    }
+
     // Validacao aprimorada do identificado do usuario a partir do JWT.
     // O payload do JWT e DECLARADO com `id: string` (src/types/fastify.d.ts),
     // mas a assinatura de tipos nao e validacao em runtime: um token assinado sem
