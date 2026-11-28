@@ -38,4 +38,5 @@ BEGIN
 END $$;
 ALTER FUNCTION public.app_empresa_id() OWNER TO CURRENT_USER;
 ALTER FUNCTION public.app_escopo_sistema() OWNER TO CURRENT_USER;
+DO $$ BEGIN IF to_regprocedure('public.app_consumidor_id()') IS NOT NULL THEN ALTER FUNCTION public.app_consumidor_id() OWNER TO CURRENT_USER; END IF; END $$;
 COMMIT;

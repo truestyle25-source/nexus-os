@@ -33,6 +33,13 @@ AS $$ SELECT coalesce(current_setting('app.escopo', true), '') = 'sistema' $$;
 REVOKE ALL ON FUNCTION public.app_empresa_id() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.app_escopo_sistema() FROM PUBLIC;
 
+-- NEXUS CLUB: conta do consumidor autenticado nas rotas /club (app.consumidor_id).
+CREATE OR REPLACE FUNCTION public.app_consumidor_id() RETURNS text
+  LANGUAGE sql STABLE PARALLEL SAFE
+  SET search_path = pg_catalog
+AS $$ SELECT nullif(current_setting('app.consumidor_id', true), '') $$;
+REVOKE ALL ON FUNCTION public.app_consumidor_id() FROM PUBLIC;
+
 -- 1) Todas as tabelas com coluna "empresaId": isolamento direto por empresa.
 DO $$
 DECLARE t text;
@@ -96,9 +103,10 @@ CREATE POLICY nexus_sistema ON public."LoginAttempt" FOR ALL TO PUBLIC
 --    requisição autenticada e gravado no logout/troca de senha.
 ALTER TABLE public."TokenRevogado" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS nexus_tenant ON public."TokenRevogado";
+--    Desde o NEXUS CLUB também na sessão do consumidor (logout em /club).
 CREATE POLICY nexus_tenant ON public."TokenRevogado" FOR ALL TO PUBLIC
-  USING (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL)
-  WITH CHECK (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL);
+  USING (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL OR public.app_consumidor_id() IS NOT NULL)
+  WITH CHECK (public.app_escopo_sistema() OR public.app_empresa_id() IS NOT NULL OR public.app_consumidor_id() IS NOT NULL);
 
 --    RateLimitJanela (contadores de rate limit por IP/usuário) e TarefaAgendada
 --    (trava das tarefas diárias entre instâncias): infraestrutura, só sistema.
@@ -111,6 +119,47 @@ ALTER TABLE public."TarefaAgendada" ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS nexus_sistema ON public."TarefaAgendada";
 CREATE POLICY nexus_sistema ON public."TarefaAgendada" FOR ALL TO PUBLIC
   USING (public.app_escopo_sistema()) WITH CHECK (public.app_escopo_sistema());
+
+-- 4b) NEXUS CLUB. As tabelas com empresaId já receberam nexus_tenant no item 1; aqui
+--     entram a conta GLOBAL do consumidor e as leituras do próprio consumidor
+--     (permissivas: somam-se à regra da empresa). Mesmo texto da migração
+--     202701020000_nexus_club_fase2_dados.
+ALTER TABLE public."ContaConsumidor" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS nexus_consumidor ON public."ContaConsumidor";
+CREATE POLICY nexus_consumidor ON public."ContaConsumidor" FOR ALL TO PUBLIC
+  USING (public.app_escopo_sistema() OR id = public.app_consumidor_id())
+  WITH CHECK (public.app_escopo_sistema() OR id = public.app_consumidor_id());
+
+ALTER TABLE public."ConsumidorToken" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS nexus_sistema ON public."ConsumidorToken";
+CREATE POLICY nexus_sistema ON public."ConsumidorToken" FOR ALL TO PUBLIC
+  USING (public.app_escopo_sistema()) WITH CHECK (public.app_escopo_sistema());
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['MembroClube', 'TermoAceite', 'ConsentimentoEvento', 'ConsentimentoAtual']
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS nexus_consumidor_leitura ON public.%I', t);
+    EXECUTE format(
+      'CREATE POLICY nexus_consumidor_leitura ON public.%I AS PERMISSIVE FOR SELECT TO PUBLIC
+         USING ("consumidorId" = public.app_consumidor_id())', t);
+  END LOOP;
+END $$;
+
+DROP POLICY IF EXISTS nexus_consumidor_aceite ON public."TermoAceite";
+CREATE POLICY nexus_consumidor_aceite ON public."TermoAceite" AS PERMISSIVE FOR INSERT TO PUBLIC
+  WITH CHECK ("consumidorId" = public.app_consumidor_id() AND "empresaId" IS NULL);
+
+DROP POLICY IF EXISTS nexus_consumidor_leitura ON public."ClubeConfig";
+CREATE POLICY nexus_consumidor_leitura ON public."ClubeConfig" AS PERMISSIVE FOR SELECT TO PUBLIC
+  USING (public.app_consumidor_id() IS NOT NULL AND "ativo" AND ("publico" OR EXISTS (
+    SELECT 1 FROM public."MembroClube" m
+    WHERE m."empresaId" = "ClubeConfig"."empresaId" AND m."consumidorId" = public.app_consumidor_id())));
+
+DROP POLICY IF EXISTS nexus_termo_leitura ON public."TermoVersao";
+CREATE POLICY nexus_termo_leitura ON public."TermoVersao" AS PERMISSIVE FOR SELECT TO PUBLIC
+  USING ("empresaId" IS NULL OR public.app_consumidor_id() IS NOT NULL);
 
 -- 5) Controle: nenhuma tabela de public pode ficar sem RLS (exceto o histórico
 --    de migrações do Prisma, que só o dono acessa).

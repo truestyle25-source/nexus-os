@@ -16,6 +16,7 @@ enum Origem {
   PONTO
   INTEGRACAO
   IA
+  NEXUS_CLUB
 }
 
 enum StatusGeral {
@@ -198,6 +199,13 @@ model Empresa {
   produtosCodigosBarras    ProdutoCodigoBarras[]
   produtosPrecoHistorico   ProdutoPrecoHistorico[]
   produtosFiliais          ProdutoFilial[]
+  // NEXUS CLUB (Fase 2) — 2026-11-27
+  clubeConfig              ClubeConfig?
+  membrosClube             MembroClube[]
+  termosVersao             TermoVersao[]
+  termosAceite             TermoAceite[]
+  consentimentosEvento     ConsentimentoEvento[]
+  consentimentosAtual      ConsentimentoAtual[]
 }
 
 // --- Importação de dados (CSV/API) --------------------------------------------
@@ -1226,6 +1234,7 @@ model Cliente {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   vendas             Venda[]
+  membrosClube       MembroClube[]
 
   @@index([empresaId])
 }
@@ -4150,4 +4159,225 @@ model Adquirente {
   createdAt        DateTime @default(now())
 
   @@index([empresaId])
+}
+
+// =============================================================================
+// NEXUS CLUB — Fase 2: dados da conta do consumidor, clubes, termos e consentimentos.
+// Plano aprovado em 27/11/2026. Promoções, campanhas e marcações no item de venda
+// entram nas fases 7 a 9 (cada uma com sua migração), para não criar tabela sem uso.
+//
+// Isolamento (RLS na migração e em prisma/seguranca/01_rls_policies.sql):
+// - ContaConsumidor e ConsumidorToken são GLOBAIS (uma pessoa, vários clubes): só o
+//   escopo "sistema" ou a própria conta (app.consumidor_id) enxergam.
+// - As demais têm empresaId: a empresa só vê o que é dela; o consumidor só LÊ o que
+//   é dele. Escrita pelo consumidor só com o contexto da empresa aberto pelo servidor.
+// - TermoAceite e ConsentimentoEvento são históricos: o papel da aplicação não
+//   altera nem apaga linhas.
+// =============================================================================
+
+enum StatusContaConsumidor {
+  PENDENTE_VERIFICACAO // cadastrou, ainda não confirmou o e-mail
+  ATIVA
+  BLOQUEADA
+  ENCERRADA // a pessoa encerrou a conta (dados pessoais anonimizados)
+}
+
+enum TipoTokenConsumidor {
+  VERIFICAR_EMAIL
+  REDEFINIR_SENHA
+}
+
+enum StatusMembroClube {
+  ATIVO
+  PENDENTE_VINCULO // a empresa tem mais de um Cliente com o CPF: ela escolhe qual
+  SAIU
+  BLOQUEADO
+}
+
+enum TipoTermo {
+  TERMOS_USO
+  POLITICA_PRIVACIDADE
+  AUTORIZACAO_MARKETING
+}
+
+enum CanalConsentimento {
+  WHATSAPP
+  EMAIL
+  APP
+}
+
+enum FinalidadeConsentimento {
+  MARKETING
+}
+
+enum AcaoConsentimento {
+  CONCEDIDO
+  REVOGADO
+}
+
+enum OrigemConsentimento {
+  APP
+  PDV
+  WHATSAPP_SAIR
+  GESTOR
+  SISTEMA
+}
+
+/// Pessoa (consumidor). GLOBAL: não pertence a nenhuma empresa.
+model ContaConsumidor {
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  /// HMAC do CPF (só dígitos) com segredo do servidor: acha a conta sem guardar o CPF aberto.
+  cpfHash              String                @unique
+  /// CPF cifrado (lib/secrets.ts), lido só quando necessário (ex.: exportar dados).
+  cpfCifrado           String
+  nome                 String
+  celular              String?
+  whatsapp             String?
+  nascimento           DateTime?             @db.Date
+  senhaHash            String
+  emailVerificadoEm    DateTime?
+  status               StatusContaConsumidor @default(PENDENTE_VERIFICACAO)
+  /// Tokens emitidos antes disto são recusados (troca de senha, sair de todos os aparelhos).
+  sessoesValidasDesde  DateTime?
+  encerradaEm          DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  tokens               ConsumidorToken[]
+  membros              MembroClube[]
+  termosAceite         TermoAceite[]
+  consentimentosEvento ConsentimentoEvento[]
+  consentimentosAtual  ConsentimentoAtual[]
+}
+
+/// Token de uso único (verificação de e-mail, redefinição de senha). Só o hash fica guardado.
+model ConsumidorToken {
+  id           String              @id @default(cuid())
+  consumidorId String
+  consumidor   ContaConsumidor     @relation(fields: [consumidorId], references: [id], onDelete: Cascade)
+  tipo         TipoTokenConsumidor
+  tokenHash    String              @unique
+  expiraEm     DateTime
+  usadoEm      DateTime?
+  createdAt    DateTime            @default(now())
+
+  @@index([consumidorId, tipo])
+  @@index([expiraEm])
+}
+
+/// Configuração do clube de uma empresa. Começa DESLIGADO.
+model ClubeConfig {
+  id                  String   @id @default(cuid())
+  empresaId           String   @unique
+  empresa             Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  nome                String
+  logoChave           String?
+  corPrimaria         String?
+  ativo               Boolean  @default(false)
+  /// Aparece na busca de lojas do app. Sem isso, só entra quem recebe o convite da loja.
+  publico             Boolean  @default(false)
+  beneficioPercentual Decimal? @db.Decimal(5, 2)
+  limiteBeneficio     Decimal? @db.Decimal(12, 2)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+/// Carteirinha: a participação de uma pessoa no clube de uma empresa.
+model MembroClube {
+  id               String            @id @default(cuid())
+  empresaId        String
+  empresa          Empresa           @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  consumidorId     String
+  consumidor       ContaConsumidor   @relation(fields: [consumidorId], references: [id], onDelete: Restrict)
+  /// Cliente desta empresa ligado à pessoa (nulo enquanto PENDENTE_VINCULO).
+  clienteId        String?
+  cliente          Cliente?          @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  status           StatusMembroClube @default(ATIVO)
+  entrouEm         DateTime          @default(now())
+  saiuEm           DateTime?
+  /// Código aleatório do QR da carteirinha (não contém CPF); trocado periodicamente.
+  codigoQr         String?
+  codigoQrGeradoEm DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([empresaId, consumidorId])
+  @@unique([empresaId, codigoQr])
+  @@index([consumidorId])
+  @@index([clienteId])
+}
+
+/// Versão de um termo. empresaId nulo = termo da plataforma NEXUS CLUB (público).
+model TermoVersao {
+  id                   String                @id @default(cuid())
+  empresaId            String?
+  empresa              Empresa?              @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  tipo                 TipoTermo
+  versao               Int
+  texto                String
+  publicadoEm          DateTime              @default(now())
+  criadoPorId          String?
+  createdAt            DateTime              @default(now())
+  aceites              TermoAceite[]
+  consentimentosEvento ConsentimentoEvento[]
+
+  @@unique([empresaId, tipo, versao])
+  @@index([tipo, publicadoEm])
+}
+
+/// Aceite de um termo (histórico: não se altera nem se apaga).
+model TermoAceite {
+  id            String          @id @default(cuid())
+  consumidorId  String
+  consumidor    ContaConsumidor @relation(fields: [consumidorId], references: [id], onDelete: Restrict)
+  termoVersaoId String
+  termoVersao   TermoVersao     @relation(fields: [termoVersaoId], references: [id], onDelete: Restrict)
+  /// Empresa do termo (nulo para termos da plataforma).
+  empresaId     String?
+  empresa       Empresa?        @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  ip            String?
+  aceitoEm      DateTime        @default(now())
+
+  @@unique([consumidorId, termoVersaoId])
+  @@index([empresaId])
+}
+
+/// Histórico de autorizações (LGPD): cada concessão ou revogação é uma linha nova.
+model ConsentimentoEvento {
+  id              String                  @id @default(cuid())
+  empresaId       String
+  empresa         Empresa                 @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  consumidorId    String
+  consumidor      ContaConsumidor         @relation(fields: [consumidorId], references: [id], onDelete: Restrict)
+  canal           CanalConsentimento
+  finalidade      FinalidadeConsentimento @default(MARKETING)
+  acao            AcaoConsentimento
+  termoVersaoId   String?
+  termoVersao     TermoVersao?            @relation(fields: [termoVersaoId], references: [id], onDelete: Restrict)
+  origem          OrigemConsentimento
+  /// Funcionário que registrou (origem GESTOR ou PDV).
+  registradoPorId String?
+  ip              String?
+  createdAt       DateTime                @default(now())
+
+  @@index([empresaId, consumidorId, canal])
+  @@index([consumidorId])
+}
+
+/// Situação atual da autorização (consulta rápida na hora de enviar). Sem linha = não autorizado.
+model ConsentimentoAtual {
+  id           String                  @id @default(cuid())
+  empresaId    String
+  empresa      Empresa                 @relation(fields: [empresaId], references: [id], onDelete: Restrict)
+  consumidorId String
+  consumidor   ContaConsumidor         @relation(fields: [consumidorId], references: [id], onDelete: Restrict)
+  canal        CanalConsentimento
+  finalidade   FinalidadeConsentimento @default(MARKETING)
+  situacao     AcaoConsentimento
+  /// Último evento que definiu a situação.
+  eventoId     String
+  atualizadoEm DateTime                @default(now())
+
+  @@unique([empresaId, consumidorId, canal, finalidade])
+  @@index([consumidorId])
 }

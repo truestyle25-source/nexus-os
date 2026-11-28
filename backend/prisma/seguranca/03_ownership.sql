@@ -38,4 +38,5 @@ BEGIN
 END $$;
 ALTER FUNCTION public.app_empresa_id() OWNER TO nexus_migrator;
 ALTER FUNCTION public.app_escopo_sistema() OWNER TO nexus_migrator;
+ALTER FUNCTION public.app_consumidor_id() OWNER TO nexus_migrator;
 COMMIT;

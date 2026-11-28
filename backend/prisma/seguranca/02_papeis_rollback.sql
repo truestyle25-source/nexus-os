@@ -15,6 +15,7 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM nexus_app;
 REVOKE ALL ON SCHEMA public FROM nexus_app, nexus_migrator;
 REVOKE EXECUTE ON FUNCTION public.app_empresa_id() FROM nexus_app, nexus_migrator;
 REVOKE EXECUTE ON FUNCTION public.app_escopo_sistema() FROM nexus_app, nexus_migrator;
+DO $$ BEGIN IF to_regprocedure('public.app_consumidor_id()') IS NOT NULL THEN EXECUTE 'REVOKE EXECUTE ON FUNCTION public.app_consumidor_id() FROM nexus_app, nexus_migrator'; END IF; END $$;
 DROP ROLE IF EXISTS nexus_app;
 DROP ROLE IF EXISTS nexus_migrator;
 COMMIT;
