@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import api, { getToken } from '@/lib/api';
 import ModuleHeader from '@/components/ModuleHeader';
+import PainelClube from '@/components/clube-admin/PainelClube';
 // Respeita Moeda / Idioma / Formato de hora da aba Configuracoes.
 import { formatBRL } from '@/lib/format';
 import { t as traduzir, tMenu } from '@/lib/i18n';
@@ -154,6 +155,11 @@ export default function ClientesPage() {
   const [salvando, setSalvando] = useState(false);
   const [busca, setBusca] = useState('');
   const [tab, setTab] = useState<TabCliente>('TODOS');
+  const [visao, setVisao] = useState<'cadastro' | 'clube'>('cadastro');
+  const [permissoes, setPermissoes] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    api.get<{ permissions?: string[] }>('/auth/me').then((r) => setPermissoes(new Set(r.data.permissions ?? []))).catch(() => undefined);
+  }, []);
   const [ordem, setOrdem] = useState<Ordenacao>('valor');
   const [form, setForm] = useState<ClienteForm>(FORM_VAZIO);
   const [editando, setEditando] = useState<Cliente | null>(null);
@@ -551,6 +557,18 @@ export default function ClientesPage() {
         }
       />
 
+      {/* NEXUS CLUB (Fase 6): "Cadastro" é a tela de sempre; "★ NEXUS CLUB" abre o painel do clube. */}
+      <nav className="flex gap-1 border-b border-[var(--nexus-border)]" aria-label="Clientes">
+        {([['cadastro', 'Cadastro'], ['clube', '★ NEXUS CLUB']] as const).map(([k, rotulo]) => (
+          <button key={k} type="button" onClick={() => setVisao(k)} aria-current={visao === k ? 'page' : undefined}
+            className={`px-3 py-2 text-[13px] font-semibold border-b-2 -mb-px ${visao === k ? 'border-[var(--nexus-accent)] text-[var(--nexus-text)]' : 'border-transparent text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]'}`}>
+            {rotulo}
+          </button>
+        ))}
+      </nav>
+
+      {visao === 'clube' ? <PainelClube permissoes={permissoes} /> : (<>
+
       {erro && (
         <div
           role="alert"
@@ -829,6 +847,7 @@ export default function ClientesPage() {
         )}
       </section>
 
+      </>)}
       {/* Modal de cadastro/edição */}
       {modalAberto && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">

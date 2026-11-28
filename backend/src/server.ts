@@ -60,6 +60,7 @@ import { produtoFichaRoutes } from './modules/produtos/produto-ficha.routes.js';
 import { produtoFotoRoutes } from './modules/produtos/produto-foto.routes.js';
 import { consumidorAuthRoutes } from './modules/clube/consumidor-auth.routes.js';
 import { areaClienteRoutes } from './modules/clube/area-cliente.routes.js';
+import { adminClubeRoutes } from './modules/clube/admin-clube.routes.js';
 import { radarRoutes } from './modules/radar/radar.routes.js';
 import { fiscalRoutes } from './modules/fiscal/fiscal.routes.js';
 import { registerAuthentication } from './middlewares/auth.js';
@@ -305,6 +306,8 @@ await app.register(produtoFotoRoutes);
 await app.register(consumidorAuthRoutes);
 // NEXUS CLUB (Fase 5): área do cliente — clubes, autorizações, compras, meus dados.
 await app.register(areaClienteRoutes);
+// NEXUS CLUB (Fase 6): painel da loja (aba NEXUS CLUB em Clientes).
+await app.register(adminClubeRoutes);
 await app.register(fiscalRoutes);
 // Radar Organizacional: uma única chamada (/radar/resumo) alimenta a tela.
 await app.register(radarRoutes, { prefix: "/radar" });
