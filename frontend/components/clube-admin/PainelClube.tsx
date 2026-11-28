@@ -1,12 +1,13 @@
 'use client';
 /**
- * Aba "★ NEXUS CLUB" do módulo Clientes (Fase 6, mockup 05): Visão geral, Membros, Termos e
- * Configurações. Promoções (Fase 7) e Campanhas (Fase 8) entram como sub-abas próprias.
+ * Aba "★ NEXUS CLUB" do módulo Clientes (mockup 05): Visão geral, Promoções (Fase 7), Membros,
+ * Termos e Configurações. Campanhas (Fase 8) entra como sub-aba própria.
  * Indicadores só com dados reais do banco: sem dado, mostra 0 ou "—", nunca valor de exemplo.
  */
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import api from '@/lib/api';
 import { formatBRL } from '@/lib/format';
+import PromocoesClube from './PromocoesClube';
 
 const s = {
   card: 'bg-[var(--nexus-panel)] border border-[var(--nexus-border)] rounded-[16px] p-[18px]',
@@ -18,7 +19,7 @@ const s = {
   td: 'px-3 py-2.5 text-[13px] text-[var(--nexus-text)] border-t border-[var(--nexus-border)] align-middle',
 };
 
-type Aba = 'visao' | 'membros' | 'termos' | 'config';
+type Aba = 'visao' | 'promocoes' | 'membros' | 'termos' | 'config';
 type Config = { id: string; nome: string; ativo: boolean; publico: boolean; cor: string | null; beneficioPercentual: number | null; limiteBeneficio: number | null };
 type Visao = {
   plataformaLigada: boolean; config: Config | null; textoAutorizacao: { versao: number; publicadoEm: string } | null;
@@ -50,7 +51,7 @@ export default function PainelClube({ permissoes }: { permissoes: Set<string> })
   const carregarVisao = useCallback(() => api.get<Visao>('/clientes/clube/visao-geral').then((r) => setVisao(r.data)).catch((e) => setErro(erroDe(e))), []);
   useEffect(() => { void carregarVisao(); }, [carregarVisao]);
 
-  const abas: Array<[Aba, string]> = [['visao', 'Visão geral'], ['membros', 'Membros'], ['termos', 'Termos'], ['config', 'Configurações']];
+  const abas: Array<[Aba, string]> = [['visao', 'Visão geral'], ['promocoes', 'Promoções'], ['membros', 'Membros'], ['termos', 'Termos'], ['config', 'Configurações']];
   return (
     <div className="space-y-4">
       <nav className="flex flex-wrap gap-1 border-b border-[var(--nexus-border)]" aria-label="NEXUS CLUB">
@@ -62,6 +63,7 @@ export default function PainelClube({ permissoes }: { permissoes: Set<string> })
       {erro && <Aviso tom="erro">{erro}</Aviso>}
       {visao && !visao.plataformaLigada && <Aviso>O NEXUS CLUB ainda está desligado na plataforma: você já pode configurar o clube e o texto de autorização; os clientes só conseguem entrar quando ele for ligado.</Aviso>}
       {aba === 'visao' && <VisaoGeral visao={visao} irPara={setAba} />}
+      {aba === 'promocoes' && <PromocoesClube pode={(m, a) => permissoes.has(`${m}:${a}`)} />}
       {aba === 'membros' && <Membros pode={pode} aoMudar={carregarVisao} />}
       {aba === 'termos' && <Termos pode={pode} aoMudar={carregarVisao} />}
       {aba === 'config' && <Configuracao pode={pode} atual={visao?.config ?? null} aoSalvar={carregarVisao} />}

@@ -47,7 +47,7 @@ function difere(a: number, b: number): boolean {
 /** Motivo mínimo exigido do operador de PDV ao cancelar uma venda. */
 export const MOTIVO_MINIMO_CANCELAMENTO = 10;
 
-const ALCADAS_DESCONTO: Array<{ ate: number; permissoes: Array<{ modulo: string; acao: string }>; rotulo: string }> = [
+export const ALCADAS_DESCONTO: Array<{ ate: number; permissoes: Array<{ modulo: string; acao: string }>; rotulo: string }> = [
   { ate: 10, permissoes: [{ modulo: 'vendas', acao: 'criar' }, { modulo: 'pdv', acao: 'criar' }], rotulo: 'operador' },
   // `pdv:editar` NÃO entra aqui: é a permissão que todo operador de caixa
   // precisa para sangria e fechamento, e por isso dava a qualquer caixa a

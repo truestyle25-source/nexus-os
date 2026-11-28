@@ -43,7 +43,7 @@ const auditarClube = (d: { empresaId?: string; consumidorId: string; contexto: s
  * Clube visível para a pessoa: ativo e público, ou do qual ela participa. Conferido aqui no código
  * E nas regras do banco (defesa dupla: o código não depende do papel com que o banco é acessado).
  */
-async function clubeVisivel(clubeId: string, consumidorId: string) {
+export async function clubeVisivel(clubeId: string, consumidorId: string) {
   const c = await prisma.clubeConfig.findUnique({ where: { id: clubeId } });
   if (!c || !c.ativo) throw NaoEncontrado('Clube não encontrado.');
   if (!c.publico && !(await carteirinha(consumidorId, c.empresaId))) throw NaoEncontrado('Clube não encontrado.');
@@ -55,7 +55,7 @@ async function carteirinha(consumidorId: string, empresaId: string) {
 }
 
 /** Carteirinha ativa (ou aguardando a loja escolher o cadastro) — senão 403. */
-async function exigirMembro(consumidorId: string, empresaId: string) {
+export async function exigirMembro(consumidorId: string, empresaId: string) {
   const m = await carteirinha(consumidorId, empresaId);
   if (!m || (m.status !== 'ATIVO' && m.status !== 'PENDENTE_VINCULO')) throw new ErroDeNegocio('Você não participa deste clube.', 403);
   return m;

@@ -93,10 +93,16 @@ export const clubApi = {
     pedir<{ canal: Canal; autorizado: boolean; atualizadoEm: string }>('PUT', `/club/clubes/${clube}/consentimentos/${canal}`, { autorizar, termoVersaoId }, true),
   historico: (clube: string) => pedir<Array<{ id: string; canal: Canal; acao: 'CONCEDIDO' | 'REVOGADO'; origem: string; data: string; versaoTexto: number | null }>>('GET', `/club/clubes/${clube}/consentimentos/historico`, undefined, true),
   compras: (clube: string) => pedir<Array<{ id: string; data: string; total: number; desconto: number; itens: number }>>('GET', `/club/clubes/${clube}/compras`, undefined, true),
+  promocoes: (clube: string) => pedir<PromocaoVitrine[]>('GET', `/club/clubes/${clube}/promocoes`, undefined, true),
   exportar: () => pedir<Record<string, unknown>>('GET', '/club/eu/exportar', undefined, true),
   encerrar: (senha: string) => pedir<{ ok: true }>('POST', '/club/eu/encerrar', { senha, confirmo: true }, true),
 };
 
+export interface PromocaoVitrine {
+  id: string; tipo: 'TODOS' | 'MEMBROS'; titulo: string | null; descricao: string | null;
+  produto: { nome: string; unidade: string; foto: string | null };
+  de: number; por: number; desconto: number; fim: string; limitePorCliente: number | null; filiais: string[] | null;
+}
 export type Canal = 'WHATSAPP' | 'EMAIL' | 'APP';
 export type StatusMembro = 'ATIVO' | 'PENDENTE_VINCULO' | 'SAIU' | 'BLOQUEADO';
 export interface ClubeResumo { id: string; nome: string; cor: string | null; beneficioPercentual: number | null; limiteBeneficio: number | null }

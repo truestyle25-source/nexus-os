@@ -1,7 +1,7 @@
 'use client';
 /**
  * Moldura do app do cliente (Fase 5, mockups 02 e 04): cabeçalho, troca de clube e menu
- * embaixo (Início, Compras, Minha conta). Celular primeiro; no computador vira uma coluna central.
+ * embaixo (Início, Promoções, Compras, Minha conta). Celular primeiro; no computador vira uma coluna central.
  * Cada clube é uma loja separada: a troca só muda qual loja a tela mostra.
  */
 import Link from 'next/link';
@@ -34,6 +34,7 @@ export function useMeusClubes(ativo: boolean) {
 
 const ABAS = [
   { href: '/club/inicio', rotulo: 'Início', icone: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z' },
+  { href: '/club/promocoes', rotulo: 'Promoções', icone: 'M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01' },
   { href: '/club/compras', rotulo: 'Compras', icone: 'M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4' },
   { href: '/club/conta', rotulo: 'Minha conta', icone: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-8 9a8 8 0 0 1 16 0' },
 ];
@@ -52,7 +53,7 @@ export function AppClube({ titulo, children, eu, carregando }: { titulo?: ReactN
         </header>
         <main className="flex-1 px-4 pb-28">{carregando ? <p className="text-[#8B8BA7] text-[14px] mt-6">Carregando…</p> : children}</main>
         <nav className="fixed bottom-0 left-0 right-0 border-t border-[#2A2A3E] bg-[#12121F]/95 backdrop-blur" aria-label="Menu do NEXUS CLUB">
-          <div className="mx-auto max-w-[560px] grid grid-cols-3">
+          <div className="mx-auto max-w-[560px] grid grid-cols-4">
             {ABAS.map((a) => {
               const ativo = caminho === a.href;
               return (
