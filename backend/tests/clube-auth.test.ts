@@ -61,7 +61,7 @@ test('crachá do consumidor: assinatura, tipo, audiência e validade', () => {
     assert.equal(lerCrachaConsumidor(`${c}.${adulterado}.${s}`), null, 'carga adulterada');
     const none = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
     assert.equal(lerCrachaConsumidor(`${none}.${p}.`), null, 'alg none');
-    process.env.NEXUS_CLUB_JWT_SECRET = 'outro-segredo-qualquer-0123456789abcdefgh';
+    process.env.NEXUS_CLUB_JWT_SECRET = randomBytes(24).toString('hex'); // outro segredo qualquer
     assert.equal(lerCrachaConsumidor(token), null, 'segredo diferente');
   } finally {
     if (antes === undefined) delete process.env.NEXUS_CLUB_JWT_SECRET; else process.env.NEXUS_CLUB_JWT_SECRET = antes;

@@ -1,3 +1,7 @@
 # Falso positivo revisado e autorizado pelo responsavel em 24/11/2026: token inventado (EAAG + alfabeto)
 # no teste do filtro de vazamento da NEXUS AI. Ignora SO esta ocorrencia (commit:arquivo:regra:linha).
 08222a3e8411150908bdf15b59acb658e3846faf:backend/tests/nexus-ai-fundacao.test.ts:generic-api-key:171
+
+# Falso positivo (27/11/2026): segredo inventado no teste do cracha do NEXUS CLUB, ja trocado por valor
+# gerado na hora no commit seguinte. Ignora SO esta ocorrencia; nao e segredo real.
+66f936a6855c9a36632de2794f6ef431e303cf7d:backend/tests/clube-auth.test.ts:generic-api-key:64
