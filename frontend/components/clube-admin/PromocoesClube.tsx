@@ -106,7 +106,13 @@ function NovaPromocao({ fechar, salvo, pode }: { fechar: () => void; salvo: (t: 
     return { desconto, margem: margem(por), margemAntes: margem(produto.precoVenda), abaixoCusto: produto.custo != null && por < produto.custo, naoBaixa: por >= produto.precoVenda };
   }, [produto, por]);
   const alcada = conta ? (conta.desconto <= 10 ? 'operador' : conta.desconto <= 30 ? 'supervisor' : 'gerente') : null;
-  const temAlcada = alcada === 'operador' || (alcada === 'supervisor' && (pode('vendas', 'editar') || pode('vendas', 'desconto_supervisor') || pode('vendas', 'desconto_gerente'))) || (alcada === 'gerente' && (pode('vendas', 'desconto_gerente') || pode('vendas', 'gerente') || pode('vendas', 'desconto')));
+  // Mesmas faixas de ALCADAS_DESCONTO do servidor (vendas.routes.ts): o servidor confere de novo ao publicar.
+  const ALCADA: Record<string, string[]> = {
+    operador: ['criar'],
+    supervisor: ['desconto_supervisor', 'desconto_gerente', 'desconto', 'editar', 'gerente'],
+    gerente: ['desconto_gerente', 'desconto', 'gerente'],
+  };
+  const temAlcada = alcada === 'operador' || (!!alcada && ALCADA[alcada].some((acao) => pode('vendas', acao)));
 
   const salvar = async (publicar: boolean, e?: FormEvent) => {
     e?.preventDefault(); setErro('');

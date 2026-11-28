@@ -21,7 +21,8 @@ cada loja só enxerga o que é dela. Plano aprovado em 27/11/2026 (plano princip
 - **Fase 9 — PDV:** identificar o cliente por CPF/QR no caixa, aplicar promoção de membro e benefício
   (calculados pelo servidor, com a regra única de `backend/src/modules/clube/preco-clube.ts`).
   **Muda o layout do PDV: precisa de aprovação com imagem antes.** Até lá, as promoções aparecem no
-  app do cliente, mas **não mudam o preço no caixa**.
+  app do cliente, mas **não mudam o preço no caixa**. Nessa etapa, o preço “de” passa a considerar o
+  preço próprio de cada filial (hoje a promoção compara com o preço do produto).
 - **Termos finais:** a minuta está em `docs/nexus-club/termos/` (publicada só como provisória, para teste).
 - **Decisões:** idade mínima; manter ou não a data de nascimento; texto sobre o CPF obrigatório.
 
@@ -36,7 +37,9 @@ Antes de abrir o cadastro ao público: publicar os termos finais
 quem aceitou a versão provisória precisa aceitar a nova (o servidor pede sozinho).
 
 ## Segurança (resumo)
-- Conta do consumidor **global**: só o próprio consumidor (ou o sistema) a lê; a loja nunca.
+- Conta do consumidor **global**: só o próprio consumidor (ou o sistema) a lê; a loja nunca lê a conta
+  nem sabe de outros clubes. Ao **entrar** num clube, a loja passa a ter um **cadastro de cliente dela**
+  (nome, e-mail, telefone e CPF), como qualquer cliente da loja; a tela “Encontrar loja” avisa isso.
 - Tabelas por empresa com RLS; o consumidor só **lê** o que é dele; a empresa do clube só é aberta
   pelo servidor depois de conferir a carteirinha.
 - Três travas entre crachás (tabela de usuários, tipo `CONSUMIDOR`, segredos diferentes), testadas
