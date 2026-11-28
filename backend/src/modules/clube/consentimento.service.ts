@@ -18,9 +18,10 @@ export const TERMOS_OBRIGATORIOS_CADASTRO: TipoTermo[] = ['TERMOS_USO', 'POLITIC
 
 /** Versão mais recente publicada de cada tipo (plataforma ou de uma empresa). */
 export async function termosVigentes(tipos: TipoTermo[], empresaId: string | null = null) {
-  const agora = new Date();
   const lista = await Promise.all(tipos.map((tipo) => prisma.termoVersao.findFirst({
-    where: { tipo, empresaId, publicadoEm: { lte: agora } },
+    // Publicar é imediato (não há agendamento): vale a maior versão. Sem comparar com o relógio do
+    // servidor, que pode diferir alguns segundos do relógio do banco.
+    where: { tipo, empresaId },
     orderBy: [{ versao: 'desc' }],
     select: { id: true, tipo: true, versao: true, texto: true, publicadoEm: true },
   })));
