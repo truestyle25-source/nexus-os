@@ -5,7 +5,7 @@ import { contextoAtual, executarComContexto, type ContextoTenant } from './tenan
  * Cliente Prisma com contexto de empresa para RLS.
  *
  * Toda operação feita com contexto 'tenant' ou 'sistema' é executada junto com
- * `set_config('app.empresa_id' | 'app.usuario_id' | 'app.escopo', ..., true)`
+ * `set_config('app.empresa_id' | 'app.usuario_id' | 'app.consumidor_id' | 'app.escopo', ..., true)`
  * na MESMA transação. O `true` torna os valores locais à transação (SET LOCAL),
  * então nada vaza entre requisições, nem pelo pooler do Supabase.
  *
@@ -86,6 +86,7 @@ function setConfig(cliente: { $executeRaw: PrismaClient['$executeRaw'] }, ctx: C
   return cliente.$executeRaw`select
     set_config('app.empresa_id', ${ctx.empresaId ?? ''}, true),
     set_config('app.usuario_id', ${ctx.usuarioId ?? ''}, true),
+    set_config('app.consumidor_id', ${ctx.consumidorId ?? ''}, true),
     set_config('app.escopo', ${ctx.escopo}, true)`;
 }
 

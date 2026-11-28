@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate deploy",
     "estoque:snapshot": "tsx src/scripts/gerarSnapshotsDiarios.ts",
     "backup": "tsx src/scripts/backup.ts",
+    "club:publicar-termo": "tsx src/scripts/publicar-termo-clube.ts",
     "backup:restaurar": "tsx src/scripts/restaurar-backup.ts"
   },
   "dependencies": {
