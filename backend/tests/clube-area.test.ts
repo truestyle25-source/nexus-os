@@ -157,6 +157,24 @@ test('NEXUS CLUB — área do cliente', { skip: !BANCO_DE_TESTE && 'exige localh
       assert.equal((await call('POST', `/club/clubes/${mercado.clube.id}/entrar`, ana.token)).b.status, 'ATIVO', 'pode voltar');
     });
 
+    await t.test('dois cliques ao mesmo tempo em "entrar": um cadastro só, sem erro', async () => {
+      const duda = await pessoa('Duda');
+      const [r1, r2] = await Promise.all([1, 2].map(() => call('POST', `/club/clubes/${padaria.clube.id}/entrar`, duda.token)));
+      assert.deepEqual([r1.s, r2.s].sort(), [200, 201], JSON.stringify([r1.b, r2.b]));
+      assert.equal(await prisma.cliente.count({ where: { empresaId: padaria.empresa.id, documento: duda.cpf } }), 1, 'sem cadastro duplicado na loja');
+      assert.equal(await prisma.membroClube.count({ where: { empresaId: padaria.empresa.id, consumidorId: duda.id } }), 1);
+    });
+
+    await t.test('voltar ao clube com dois cadastros do mesmo CPF: aguarda a loja, sem cadastro ligado', async () => {
+      const eva = await pessoa('Eva');
+      assert.equal((await call('POST', `/club/clubes/${mercado.clube.id}/entrar`, eva.token)).b.status, 'ATIVO');
+      assert.equal((await call('POST', `/club/clubes/${mercado.clube.id}/sair`, eva.token)).s, 200);
+      await prisma.cliente.create({ data: { empresaId: mercado.empresa.id, nome: 'Eva (outro cadastro)', documento: formatCpf(eva.cpf) } });
+      assert.equal((await call('POST', `/club/clubes/${mercado.clube.id}/entrar`, eva.token)).b.status, 'PENDENTE_VINCULO');
+      const m = await prisma.membroClube.findUniqueOrThrow({ where: { empresaId_consumidorId: { empresaId: mercado.empresa.id, consumidorId: eva.id } } });
+      assert.equal(m.clienteId, null, 'pendente não fica ligado ao cadastro antigo');
+    });
+
     await t.test('baixar meus dados: conta, termos, clubes e autorizações (CPF completo, sem senha)', async () => {
       const r = await call('GET', '/club/eu/exportar', ana.token);
       assert.equal(r.s, 200);

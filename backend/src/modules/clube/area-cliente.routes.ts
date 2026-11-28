@@ -96,17 +96,35 @@ export async function areaClienteRoutes(app: FastifyInstance): Promise<void> {
 
     const conta = await prisma.contaConsumidor.findUniqueOrThrow({ where: { id }, select: { nome: true, email: true, celular: true, whatsapp: true, cpfCifrado: true } });
     let cpf = '';
-    try { cpf = normalizeCpf(decryptSecret(conta.cpfCifrado)); } catch { /* sem CPF legível: cria cadastro novo sem documento */ }
+    try { cpf = normalizeCpf(decryptSecret(conta.cpfCifrado)); } catch (e) {
+      req.log.warn({ err: e }, 'NEXUS CLUB: CPF da conta ilegível ao entrar no clube (chave de cifra trocada?)');
+    }
 
     const resultado = await comEmpresaDoConsumidor(id, clube.empresaId, async () => {
-      // Liga ao cadastro que a loja já tem com este CPF (sem duplicar). Mais de um: a loja escolhe.
+      // 1) Garante a carteirinha ANTES de mexer no cadastro da loja: com dois cliques ao mesmo
+      //    tempo, só um pedido "ganha"; o outro devolve a situação atual e não cria nada.
+      let membroId: string;
+      if (atual) {
+        const tomou = await prisma.membroClube.updateMany({ where: { id: atual.id, status: 'SAIU' }, data: { status: 'ATIVO', saiuEm: null, entrouEm: new Date() } });
+        if (!tomou.count) return { status: (await carteirinha(id, clube.empresaId))!.status, novoCadastro: false, concorrente: true };
+        membroId = atual.id;
+      } else {
+        try {
+          membroId = (await prisma.membroClube.create({ data: { empresaId: clube.empresaId, consumidorId: id, status: 'ATIVO' }, select: { id: true } })).id;
+        } catch (e: any) {
+          if (e?.code !== 'P2002') throw e;
+          return { status: (await carteirinha(id, clube.empresaId))!.status, novoCadastro: false, concorrente: true };
+        }
+      }
+      // 2) Liga ao cadastro que a loja já tem com este CPF (sem duplicar). Mais de um: a loja escolhe.
       const existentes = cpf.length === 11
         ? await prisma.cliente.findMany({ where: { empresaId: clube.empresaId, documento: { in: [cpf, formatCpf(cpf)] } }, select: { id: true } })
         : [];
       let clienteId: string | null = null;
       let status: 'ATIVO' | 'PENDENTE_VINCULO' = 'ATIVO';
       if (existentes.length === 1) clienteId = existentes[0].id;
-      else if (existentes.length > 1) status = 'PENDENTE_VINCULO';
+      else if (existentes.length > 1) status = 'PENDENTE_VINCULO'; // fica sem cadastro até a loja escolher
+      else if (atual?.clienteId) clienteId = atual.clienteId; // voltou ao clube: reaproveita o cadastro de antes
       else {
         const novo = await prisma.cliente.create({
           data: { empresaId: clube.empresaId, nome: conta.nome, documento: cpf || null, email: conta.email, telefone: conta.whatsapp || conta.celular || null, origem: 'NEXUS_CLUB' },
@@ -114,12 +132,10 @@ export async function areaClienteRoutes(app: FastifyInstance): Promise<void> {
         });
         clienteId = novo.id;
       }
-      const dados = { status, clienteId: clienteId ?? atual?.clienteId ?? null, saiuEm: null, entrouEm: new Date() };
-      const m = atual
-        ? await prisma.membroClube.update({ where: { id: atual.id }, data: dados })
-        : await prisma.membroClube.create({ data: { empresaId: clube.empresaId, consumidorId: id, ...dados } });
-      return { status: m.status, novoCadastro: existentes.length === 0 };
+      const m = await prisma.membroClube.update({ where: { id: membroId }, data: { status, clienteId } });
+      return { status: m.status, novoCadastro: existentes.length === 0 && !atual?.clienteId, concorrente: false };
     });
+    if (resultado.concorrente) return reply.status(200).send({ status: resultado.status });
     await auditarClube({ empresaId: clube.empresaId, consumidorId: id, ip: req.ip, contexto: `NEXUS CLUB: entrou no clube (${resultado.status === 'PENDENTE_VINCULO' ? 'loja precisa escolher o cadastro' : resultado.novoCadastro ? 'cadastro de cliente criado' : 'ligado ao cadastro existente'})` });
     return reply.status(atual ? 200 : 201).send({ status: resultado.status });
   });

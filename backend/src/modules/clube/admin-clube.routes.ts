@@ -13,8 +13,8 @@
  *
  * Permissões reaproveitam o catálogo atual (plano D.6): ver = clientes:visualizar; editar
  * vínculo = clientes:editar; configurar/termos/bloquear = clientes:administrar.
- * A loja NUNCA vê a conta global da pessoa (e-mail/CPF da conta, outros clubes): só o seu
- * cadastro de cliente e a carteirinha do seu clube.
+ * A loja NUNCA lê a conta global da pessoa nem sabe de outros clubes: vê o cadastro de cliente
+ * DELA (criado ou ligado quando a pessoa entra no clube, com nome/contato/CPF) e a carteirinha.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
