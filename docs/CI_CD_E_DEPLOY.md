@@ -78,9 +78,12 @@ o código novo usa essas tabelas no login e no rate limit.
 `ConsumidorToken`, `ClubeConfig`, `MembroClube`, `TermoVersao`, `TermoAceite`, `ConsentimentoEvento` e
 `ConsentimentoAtual`, o valor `NEXUS_CLUB` em `Origem`, a função `app_consumidor_id()` e as travas entre empresas.
 - As tabelas já nascem com RLS (a própria migração cria as regras); mesmo assim rode o passo 4 depois
-  (`01_rls_policies.sql`) e também `02_papeis.sql` (as senhas dos papéis: use as atuais), que concede a função
-  nova ao `nexus_app` e mantém os históricos `TermoAceite`/`ConsentimentoEvento` sem UPDATE/DELETE. Se o
-  `03_ownership.sql` for reaplicado, ele também passa a função nova para o `nexus_migrator`.
+  (`01_rls_policies.sql`). Ele roda pelo próprio `nexus_migrator`, dono das tabelas e funções.
+- **Não** é preciso reaplicar `02_papeis.sql`: a migração já concede a função nova ao `nexus_app` e tira dele
+  UPDATE/DELETE em `TermoAceite`/`ConsentimentoEvento`. Atenção: o 02 **redefine as senhas** dos papéis — rodá-lo
+  com senha diferente da que está no Render derruba o acesso do backend.
+- **Aplicada em produção em 27/11/2026** (backup verificado antes): 01 reaplicado pelo `nexus_migrator`; conferido
+  0 tabelas sem RLS, regras das 8 tabelas, `nexus_app` sem UPDATE/DELETE nos históricos, 3 travas, drift ok.
 - Testado num banco igual ao de produção (todas as migrações anteriores + scripts 01–03 da `main`), com a migração
   aplicada pelo `nexus_migrator`: tabelas protegidas antes de reaplicar o 01, e 04 com 22 verificações ok.
 - O drift do passo 5 tolera também `DROP INDEX "TermoVersao_plataforma_tipo_versao_key"` (índice único parcial).
