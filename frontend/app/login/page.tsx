@@ -3,10 +3,23 @@
 import { useEffect, useState } from 'react';
 import { api, API_URL, saveToken, clearToken } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { LoginCliente } from '@/components/club/LoginCliente';
+import { clubApi } from '@/lib/club/api';
 
 export default function LoginPage() {
 const router = useRouter();
-const [tab, setTab] = useState<'entrar' | 'criar'>('entrar');
+const [tab, setTab] = useState<'entrar' | 'criar' | 'cliente'>('entrar');
+// NEXUS CLUB: a aba "Sou cliente NEXUS" só aparece quando o clube está ligado no servidor.
+const [clubeAtivo, setClubeAtivo] = useState(false);
+useEffect(() => {
+  let vivo = true;
+  clubApi.status().then((s) => {
+    if (!vivo) return;
+    setClubeAtivo(!!s.habilitado);
+    if (s.habilitado && new URLSearchParams(window.location.search).get('aba') === 'cliente') setTab('cliente');
+  }).catch(() => undefined);
+  return () => { vivo = false; };
+}, []);
 const [showSenha, setShowSenha] = useState(false);
 const [showSenha2, setShowSenha2] = useState(false);
 
@@ -233,10 +246,26 @@ return ( <div className="min-h-screen w-full bg-[#0B0B18] flex flex-col items-ce
           >
             Criar conta
           </button>
+
+          {clubeAtivo && (
+            <button
+              type="button"
+              onClick={() => setTab('cliente')}
+              className={`flex-1 h-10 rounded-full text-[13px] md:text-[14px] font-semibold transition-all duration-300 flex items-center justify-center whitespace-nowrap px-2 ${
+                tab === 'cliente'
+                  ? 'bg-[#2A2A35] text-[#C4B5FD] shadow-[0_2px_8px_rgba(0,0,0,0.3)]'
+                  : 'text-[#8B8BA7] hover:text-[#A0A0BB]'
+              }`}
+            >
+              ★ <span className="hidden sm:inline ml-1">Sou cliente NEXUS</span><span className="sm:hidden ml-1">Sou cliente</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {tab === 'entrar' ? (
+      {tab === 'cliente' ? (
+        <LoginCliente />
+      ) : tab === 'entrar' ? (
         <div className="px-7 md:px-8 pb-8 pt-2">
           <h1 className="text-white font-bold text-[26px] md:text-[28px] leading-tight tracking-tight">
             Bem-vindo ao NEXUS OS

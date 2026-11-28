@@ -13,10 +13,11 @@ import type { NextRequest } from 'next/server';
  * Regras:
  *  - Sem flag + rota protegida  -> redireciona para /login
  *  - Com flag + /login          -> redireciona para / (dashboard)
- *  - Rotas públicas passam livre: login, esqueci-senha, redefinir-senha, /auth/*
+ *  - Rotas públicas passam livre: login, esqueci-senha, redefinir-senha, /auth/*, /club/* (NEXUS CLUB:
+ *    área do consumidor, com sessão própria; nunca usa o cookie do painel)
  */
 
-const ROTAS_PUBLICAS = ['/login', '/esqueci-senha', '/redefinir-senha', '/auth'];
+const ROTAS_PUBLICAS = ['/login', '/esqueci-senha', '/redefinir-senha', '/auth', '/club'];
 
 function ehPublica(pathname: string): boolean {
   return ROTAS_PUBLICAS.some(
